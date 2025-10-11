@@ -1,10 +1,10 @@
 # Pseudo-sync `R.css` with upstream R
 
 > <https://github.com/posit-dev/ark/pull/119>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1577
 
@@ -42,5 +42,5 @@ VS in R 4.3.1
 
 <img width="455" alt="Screenshot 2023-10-18 at 1 39 41 PM" src="https://github.com/posit-dev/amalthea/assets/19150088/34c8b3ac-d0ad-4578-88d3-2bac63db430f">
 
- 
+
 

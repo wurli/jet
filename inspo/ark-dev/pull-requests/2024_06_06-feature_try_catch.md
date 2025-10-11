@@ -1,10 +1,10 @@
 # Include error-site Rust backtraces on unexpected R-level errors
 
 > <https://github.com/posit-dev/ark/pull/385>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This PR improves the backtraces in our panic and error reports when an unexpected R error occurs somewhere in Ark internals.
 

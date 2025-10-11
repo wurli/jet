@@ -1,10 +1,10 @@
 # Set `R_MAIN_THREAD_ID` at the very beginning of setup again
 
 > <https://github.com/posit-dev/ark/pull/580>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/4973
 
@@ -16,4 +16,4 @@ I'm mildly surprised that the test passes on Windows, I thought the Rprofile wou
 
 ## @jennybc at 2024-10-11T02:26:46Z
 
-FWIW this gets me back to a happy place in a positron dev build 🎉 
+FWIW this gets me back to a happy place in a positron dev build 🎉

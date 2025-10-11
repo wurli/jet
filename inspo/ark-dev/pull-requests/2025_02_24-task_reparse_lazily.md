@@ -1,10 +1,10 @@
 # Generate srcrefs lazily
 
 > <https://github.com/posit-dev/ark/pull/719>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This PR disables the generation of srcrefs on session init to avoid the associated memory cost. Addresses https://github.com/posit-dev/positron/issues/5050. Instead srcref generation is lazily triggered when the user calls `debug()` or `debugonce()`.
 

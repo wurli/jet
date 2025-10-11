@@ -1,12 +1,12 @@
 # Switch to nextest for testing
 
 > <https://github.com/posit-dev/ark/pull/753>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-This PR switches us to using nextest for our testing https://nexte.st/. It also adds a `justfile` so we can use `just test` and `just test-insta` to easily invoke nextest. We have enjoyed this setup over on Air so far. 
+This PR switches us to using nextest for our testing https://nexte.st/. It also adds a `justfile` so we can use `just test` and `just test-insta` to easily invoke nextest. We have enjoyed this setup over on Air so far.
 
 You will need to install nextest and just binaries locally, see below.
 

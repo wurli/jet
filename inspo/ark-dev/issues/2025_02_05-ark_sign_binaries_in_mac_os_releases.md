@@ -1,7 +1,7 @@
 # Ark: Sign binaries in macOS releases
 
 > <https://github.com/posit-dev/ark/issues/698>
-> 
+>
 > * Author: @lionel-
 > * State: OPEN
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwBw", name = "bug", description = "Something isn't working", color = "E99695")

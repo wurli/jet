@@ -1,7 +1,7 @@
 # For Jupyter, `q()` should probably be overridden to error and tell you how to actually shut down the right way
 
 > <https://github.com/posit-dev/ark/issues/554>
-> 
+>
 > * Author: @DavisVaughan
 > * State: OPEN
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABwXx3RQ", name = "area: jupyter kernel", description = "", color = "C2E0C6")

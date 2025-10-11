@@ -1,10 +1,10 @@
 # Localize special logic in `is_http_url()` helper
 
 > <https://github.com/posit-dev/ark/pull/821>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Merges into https://github.com/posit-dev/ark/pull/818
 

@@ -1,10 +1,10 @@
 # Add support for configuring a custom Posit Package Manager URL
 
 > <https://github.com/posit-dev/ark/pull/906>
-> 
+>
 > * Author: @atheriel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This commit builds on the existing support for installing packages from Posit Public Package Manager via `--default-repos=posit-ppm` by allowing users to pass a specific Package Manager repository, overriding the hardcoded https://packagemanager.posit.co/cran/latest URL.
 

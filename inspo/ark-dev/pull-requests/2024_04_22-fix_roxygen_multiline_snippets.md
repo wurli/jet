@@ -1,10 +1,10 @@
 # Replace `\n` with `\n#' ` in roxygen tag snippets
 
 > <https://github.com/posit-dev/ark/pull/319>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1851
 

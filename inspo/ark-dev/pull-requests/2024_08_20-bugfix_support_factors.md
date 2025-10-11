@@ -1,10 +1,10 @@
 # Data Explorer: Add support for factors summary stats
 
 > <https://github.com/posit-dev/ark/pull/478>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2161
 

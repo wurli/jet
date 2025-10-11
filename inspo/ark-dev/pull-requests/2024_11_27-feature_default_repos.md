@@ -1,10 +1,10 @@
 # Add a command-line argument to specify default repositories
 
 > <https://github.com/posit-dev/ark/pull/645>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This change makes the kernel's behavior around setting default repositories configurable. Before the change, we always set the CRAN repository to `cran.rstudio.com` if it was set to `@CRAN@`. After it, there's a new `--default-repos` command line option which provides additional options for setting repositories:
 

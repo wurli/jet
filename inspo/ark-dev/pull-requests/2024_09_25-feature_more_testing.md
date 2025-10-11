@@ -1,10 +1,10 @@
 # Add testing on Windows, macOS, and R 4.2
 
 > <https://github.com/posit-dev/ark/pull/545>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This PR has the goal of getting us the following CI structure:
 - Windows (stable rust, release R)
@@ -55,7 +55,7 @@ There seems to be some kind of issue occasionally. I sometimes see this locally
 ```
 [2024-09-26T21:24:52Z ERROR amalthea::kernel] While forwarding outbound message: ZeroMQ protocol error on Stdin socket: Host unreachable
 test test_kernel has been running for over 60 seconds
-``` 
+```
 
 and one of our builds above shows it too
 

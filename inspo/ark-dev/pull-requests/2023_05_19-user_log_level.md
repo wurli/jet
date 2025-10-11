@@ -1,10 +1,10 @@
 # Take into account user-specified log level
 
 > <https://github.com/posit-dev/ark/pull/3>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Currently we pass `RUST_LOG` to the log macros via `set_max_level()` but not to our logger implementation. This causes macros of higher verbosity level than "info" to be excluded from the log. To fix this, we now set `LOGGER.level` to the user value during initialisation.
 

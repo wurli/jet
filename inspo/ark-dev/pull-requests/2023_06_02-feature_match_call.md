@@ -1,16 +1,16 @@
 # + `match_node_call()` and refine `library()` diagnostics
 
 > <https://github.com/posit-dev/ark/pull/19>
-> 
+>
 > * Author: @romainfrancois
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Related to https://github.com/rstudio/positron/issues/528 https://github.com/rstudio/positron/issues/641
 
-`match_node_call()` converts the ast into a synthetic R call, so that we can match child nodes to the argument names. 
+`match_node_call()` converts the ast into a synthetic R call, so that we can match child nodes to the argument names.
 
-In the use case here, this means we can differentiate between: 
+In the use case here, this means we can differentiate between:
 
  - skip the diagnostic for the `package=` and `help=` arguments
 
@@ -18,11 +18,11 @@ In the use case here, this means we can differentiate between:
 
 <img width="306" alt="image" src="https://github.com/posit-dev/amalthea/assets/2625526/1929646f-274a-4422-8054-918dae8b78c4">
 
- - unless `character.only = ` is set to `FALSE` in which case we do need to check if the symbol is in scope: 
+ - unless `character.only = ` is set to `FALSE` in which case we do need to check if the symbol is in scope:
 
 <img width="434" alt="image" src="https://github.com/posit-dev/amalthea/assets/2625526/261bff41-398b-4acf-9a75-90bc9e4ef031">
 
-i.e. no diagnostic here: 
+i.e. no diagnostic here:
 
 <img width="349" alt="image" src="https://github.com/posit-dev/amalthea/assets/2625526/46900508-6253-4e2a-9e2a-7b6375fc22d6">
 
@@ -34,15 +34,15 @@ I'm not sure it's worth avoiding using R's `match.call()` and implement our own 
 
 ## @romainfrancois at 2023-06-02T12:29:03Z
 
-Another thing that might be interesting is to check for invalid arguments: 
+Another thing that might be interesting is to check for invalid arguments:
 
 ```r
 > match.call(library, quote(library(foo, bar = "baz")))
-Error in match.call(definition, call, expand.dots, envir) : 
+Error in match.call(definition, call, expand.dots, envir) :
   unused argument (bar = "baz")
 ```
 
-And offer diagnostics for partial names: 
+And offer diagnostics for partial names:
 
 ```r
 > match.call(library, quote(library(pack = dplyr)))
@@ -51,7 +51,7 @@ library(package = dplyr)
 
 ## @romainfrancois at 2023-06-06T13:29:10Z
 
-This might be too complicated and not flex enough, but the idea is to delegate diagnostics to the R side for some known calls, e.g. `library()`: 
+This might be too complicated and not flex enough, but the idea is to delegate diagnostics to the R side for some known calls, e.g. `library()`:
 
 <img width="375" alt="image" src="https://github.com/posit-dev/amalthea/assets/2625526/cdbfdd98-cdf2-4fb3-a1a8-11ed3f610211">
 

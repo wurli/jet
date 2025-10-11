@@ -1,10 +1,10 @@
 # Use an `RwLock` for `AUXILIARY_EVENT_TX`
 
 > <https://github.com/posit-dev/ark/pull/668>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Part of https://github.com/posit-dev/ark/issues/661
 

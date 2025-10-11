@@ -1,10 +1,10 @@
 # Add a workaround for an argument matching error
 
 > <https://github.com/posit-dev/ark/pull/429>
-> 
+>
 > * Author: @yutannihilation
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 A workaround for https://github.com/posit-dev/positron/issues/3467.
 

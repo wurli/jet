@@ -1,10 +1,10 @@
 # Surface invalid filter errors to the UI
 
 > <https://github.com/posit-dev/ark/pull/336>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2884
 

@@ -1,10 +1,10 @@
 # Implement selection range LSP feature
 
 > <https://github.com/posit-dev/ark/pull/321>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Powering "expand selection" and "shrink selection" commands, which are super cool!
 

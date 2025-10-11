@@ -1,10 +1,10 @@
 # Fixes for Jupyter compatibility
 
 > <https://github.com/posit-dev/ark/pull/405>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/281
 Addresses https://github.com/posit-dev/positron/issues/786

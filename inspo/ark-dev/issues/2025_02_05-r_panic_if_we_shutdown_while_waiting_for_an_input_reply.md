@@ -1,7 +1,7 @@
 # R: Panic if we shutdown while waiting for an `input_reply`
 
 > <https://github.com/posit-dev/ark/issues/694>
-> 
+>
 > * Author: @DavisVaughan
 > * State: OPEN
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwBw", name = "bug", description = "Something isn't working", color = "E99695")

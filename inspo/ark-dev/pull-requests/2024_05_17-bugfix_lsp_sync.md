@@ -1,10 +1,10 @@
 # Run LSP handlers consecutively by default
 
 > <https://github.com/posit-dev/ark/pull/361>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Branched from https://github.com/posit-dev/amalthea/pull/360 (Follow this link to see preparations for this PR)
 

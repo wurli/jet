@@ -1,7 +1,7 @@
 # ark: Plots are not Jupyter compatible
 
 > <https://github.com/posit-dev/ark/issues/687>
-> 
+>
 > * Author: @jmcphers
 > * State: OPEN
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwBw", name = "bug", description = "Something isn't working", color = "E99695")
@@ -22,7 +22,7 @@ So -- how do we know if we're connected to Positron or some other front end, so 
 - A special token included in the session identifier, indicating a Positron session?
 - Positron could open a comm with a special ID when connecting to the kernel? We can check to see if this comm is open to know if we are connected to Positron. (I kind of like this idea because it gives us a central place to put custom Positron messages that aren't otherwise associated with a UI widget.)
 
-Alternately, we could just always output every kind of plot, and let the front end sort it out -- Positron will ignore the static bits, and other front ends will ignore the dynamic bits. 
+Alternately, we could just always output every kind of plot, and let the front end sort it out -- Positron will ignore the static bits, and other front ends will ignore the dynamic bits.
 
 ## @petetronic at 2023-05-17T14:34:57Z
 

@@ -1,10 +1,10 @@
 # Embed modules in binary
 
 > <https://github.com/posit-dev/ark/pull/223>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 With this PR we now use rust-embed to embed the module files in the binary. This will make ark easier to package across platforms as we no longer need to make any assumptions/indirections about where to find our local resources. In debug builds we still watch the module files for change and source from there if any, we're still in a good position to debug.
 

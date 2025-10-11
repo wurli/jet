@@ -1,10 +1,10 @@
 # Return NULL if context is NULL
 
 > <https://github.com/posit-dev/ark/pull/237>
-> 
+>
 > * Author: @jennybc
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2191
 

@@ -1,10 +1,10 @@
 # Run R tasks on the R thread
 
 > <https://github.com/posit-dev/ark/pull/109>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1536
 Addresses https://github.com/posit-dev/positron/issues/1516
@@ -39,12 +39,12 @@ modified   crates/ark/src/r_task.rs
      if unsafe { R_TASK_BYPASS } {
 @@ -62,7 +62,7 @@ where
          };
- 
+
          // Move `f` to heap and erase its lifetime
 -        let closure: Box<dyn FnOnce() + Send + 'env> = Box::new(closure);
 +        let closure: Box<dyn FnOnce() + 'env> = Box::new(closure);
          let closure: Box<dyn FnOnce() + Send + 'static> = unsafe { std::mem::transmute(closure) };
- 
+
          // Channel to communicate completion status of the task/closure
 ```
 

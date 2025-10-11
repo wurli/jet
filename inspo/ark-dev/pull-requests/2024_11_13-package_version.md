@@ -1,10 +1,10 @@
 # Expose package version info
 
 > <https://github.com/posit-dev/ark/pull/625>
-> 
+>
 > * Author: @jennybc
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Required by https://github.com/posit-dev/positron/pull/5365 to address https://github.com/posit-dev/positron/issues/1957
 

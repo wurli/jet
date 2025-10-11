@@ -1,10 +1,10 @@
 # Set the client side SUB IOPub socket subscription *before* we connect
 
 > <https://github.com/posit-dev/ark/pull/673>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 I am hoping this fixes some very strange weirdness we've been seeing ever since we added the `Welcome` message handshake infrastructure. In particular, this error we see in CI a lot:
 

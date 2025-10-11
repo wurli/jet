@@ -1,7 +1,7 @@
 # Problem with breadcrumbs and special-comment based sections
 
 > <https://github.com/posit-dev/ark/issues/846>
-> 
+>
 > * Author: @juliasilge
 > * State: CLOSED
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwDw", name = "enhancement", description = "New feature or request", color = "C5DEF5")

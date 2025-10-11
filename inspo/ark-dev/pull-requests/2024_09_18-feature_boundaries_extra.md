@@ -1,10 +1,10 @@
 # Distinguish whitespace and include syntax error messages
 
 > <https://github.com/posit-dev/ark/pull/532>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 We now distinguish between complete inputs and pure whitespace. This way we don't need to send long streaks of empty lines and comments over the network for evaluation, since there is nothing to evaluate.
 

@@ -1,10 +1,10 @@
 # data explorer: update comms with convert to code messages
 
 > <https://github.com/posit-dev/ark/pull/873>
-> 
+>
 > * Author: @isabelizimm
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 related to: https://github.com/posit-dev/positron/issues/8531
 

@@ -1,10 +1,10 @@
 # Document soft-dependencies of Ark on R packages and warn if not met
 
 > <https://github.com/posit-dev/ark/pull/417>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Adds documentation for our package min-version dependencies: https://github.com/posit-dev/ark/blob/feature/roxygen-check/doc/package-dependencies.md
 

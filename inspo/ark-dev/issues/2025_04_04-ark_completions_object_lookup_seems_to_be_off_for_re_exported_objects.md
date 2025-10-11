@@ -1,7 +1,7 @@
 # Ark: Completions object lookup seems to be off for re-exported objects
 
 > <https://github.com/posit-dev/ark/issues/764>
-> 
+>
 > * Author: @DavisVaughan
 > * State: CLOSED
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwBw", name = "bug", description = "Something isn't working", color = "E99695")

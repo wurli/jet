@@ -1,10 +1,10 @@
 # Hold TS nodes as raw data instead of external pointers
 
 > <https://github.com/posit-dev/ark/pull/168>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1888
 

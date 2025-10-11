@@ -1,24 +1,24 @@
 # R: Don't inline arguments in function calls to prevent overwhelming information in error messages
 
 > <https://github.com/posit-dev/ark/issues/695>
-> 
+>
 > * Author: @lionel-
 > * State: OPEN
-> * Labels: 
+> * Labels:
 
 When we make a function call from Rust to R in Ark, we currently inline arguments in our calls. This can result in overwhelming display of information when printing the call, e.g. this example from @jmcphers:
 
 ```
-exiting from: .ps.filter_rows(table = list(mpg = c(21, 21, 22.8, 21.4, 18.7, 
-18.1, 14.3, 24.4, 22.8, 19.2, 17.8, 16.4, 17.3, 15.2, 10.4, 10.4, 
-14.7, 32.4, 30.4, 33.9, 21.5, 15.5, 15.2, 13.3, 19.2, 27.3, 26, 
-30.4, 15.8, 19.7, 15, 21.4), cyl = c(6, 6, 4, 6, 8, 6, 8, 4, 
-4, 6, 6, 8, 8, 8, 8, 8, 8, 4, 4, 4, 4, 8, 8, 8, 8, 4, 4, 4, 8, 
-6, 8, 4), disp = c(160, 160, 108, 258, 360, 225, 360, 146.7, 
-140.8, 167.6, 167.6, 275.8, 275.8, 275.8, 472, 460, 440, 78.7, 
-75.7, 71.1, 120.1, 318, 304, 350, 400, 79, 120.3, 95.1, 351, 
-145, 301, 121), hp = c(110, 110, 93, 110, 175, 105, 245, 62, 
-95, 123, 123, 180, 180, 180, 205, 215, 230, 66, 52, 65, 97, 150, 
+exiting from: .ps.filter_rows(table = list(mpg = c(21, 21, 22.8, 21.4, 18.7,
+18.1, 14.3, 24.4, 22.8, 19.2, 17.8, 16.4, 17.3, 15.2, 10.4, 10.4,
+14.7, 32.4, 30.4, 33.9, 21.5, 15.5, 15.2, 13.3, 19.2, 27.3, 26,
+30.4, 15.8, 19.7, 15, 21.4), cyl = c(6, 6, 4, 6, 8, 6, 8, 4,
+4, 6, 6, 8, 8, 8, 8, 8, 8, 4, 4, 4, 4, 8, 8, 8, 8, 4, 4, 4, 8,
+6, 8, 4), disp = c(160, 160, 108, 258, 360, 225, 360, 146.7,
+140.8, 167.6, 167.6, 275.8, 275.8, 275.8, 472, 460, 440, 78.7,
+75.7, 71.1, 120.1, 318, 304, 350, 400, 79, 120.3, 95.1, 351,
+145, 301, 121), hp = c(110, 110, 93, 110, 175, 105, 245, 62,
+95, 123, 123, 180, 180, 180, 205, 215, 230, 66, 52, 65, 97, 150,
 ```
 
 In particular these overly exhaustive messages can make it all the way to the frontend in error notification popups. This happens when an unexpected error happens on one of our R methods. The error is formatted with the offending call and propagated all the way back to the frontend as an RPC error, which we display as notification: https://github.com/posit-dev/positron/issues/2195

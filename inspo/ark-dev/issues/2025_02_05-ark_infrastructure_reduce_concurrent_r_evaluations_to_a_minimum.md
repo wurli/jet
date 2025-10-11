@@ -1,10 +1,10 @@
 # Ark: Infrastructure: Reduce concurrent R evaluations to a minimum
 
 > <https://github.com/posit-dev/ark/issues/691>
-> 
+>
 > * Author: @lionel-
 > * State: OPEN
-> * Labels: 
+> * Labels:
 
 Currently there are many places where we evaluate R code / access the R API through the use of `r_task()`, which hooks into R's polled events. This makes it easy to implement analytic features but has a number of downsides:
 

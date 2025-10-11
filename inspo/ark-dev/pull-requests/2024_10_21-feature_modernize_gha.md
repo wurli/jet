@@ -1,10 +1,10 @@
 # Modernize all GHA dependencies
 
 > <https://github.com/posit-dev/ark/pull/600>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/4821
 

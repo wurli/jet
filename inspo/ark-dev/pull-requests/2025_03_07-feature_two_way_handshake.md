@@ -1,10 +1,10 @@
 # Wait for an IOPub subscription during server startup
 
 > <https://github.com/posit-dev/ark/pull/734>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This PR addresses two issues:
 

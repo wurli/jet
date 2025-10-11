@@ -1,10 +1,10 @@
 # Implement JEP 65
 
 > <https://github.com/posit-dev/ark/pull/577>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Closes https://github.com/posit-dev/ark/issues/569
 

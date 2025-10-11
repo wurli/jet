@@ -1,10 +1,10 @@
 # Avoid crashing when given input longer than R's buffer
 
 > <https://github.com/posit-dev/ark/pull/202>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1767
 Which is this TODO left for ark https://github.com/posit-dev/positron/issues/1326#issuecomment-1745389921

@@ -1,10 +1,10 @@
 # Support for browser and custom prompts
 
 > <https://github.com/posit-dev/ark/pull/64>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Requires rstudio/positron#833
 Addresses rstudio/positron#407

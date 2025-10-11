@@ -1,10 +1,10 @@
 # Refuse to provide a statement range in the face of parse errors
 
 > <https://github.com/posit-dev/ark/pull/837>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Part of https://github.com/posit-dev/positron/issues/5023
 

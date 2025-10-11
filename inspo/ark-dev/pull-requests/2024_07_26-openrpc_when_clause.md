@@ -1,10 +1,10 @@
 # Add new `.ps.ui.evaluateWhenClause` OpenRPC method
 
 > <https://github.com/posit-dev/ark/pull/449>
-> 
+>
 > * Author: @juliasilge
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 I was thinking about how to address https://github.com/posit-dev/positron/issues/2697 and have a proposed approach in this PR plus one I will open next in Positron. I looked at how various extensions (like the git extension, etc) check for whether we are in a git repo in the workspace and all that checking is typically based on context keys. In an extension specifically, you can check those keys with a [when clause](https://code.visualstudio.com/api/references/when-clause-contexts) and I realized that approach (i.e. a string) could work well as an OpenRPC method and would be flexible for other context keys we need to check from runtimes.
 

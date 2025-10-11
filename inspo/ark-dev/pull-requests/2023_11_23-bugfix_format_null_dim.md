@@ -1,10 +1,10 @@
 # Recover from unconforming `format()` methods
 
 > <https://github.com/posit-dev/ark/pull/159>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Branched from #158.
 Addresses posit-dev/positron#1862.

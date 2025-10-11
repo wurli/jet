@@ -1,10 +1,10 @@
 # Simplify LSP settings
 
 > <https://github.com/posit-dev/ark/pull/865>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 I think you'll like this one @DavisVaughan.
 

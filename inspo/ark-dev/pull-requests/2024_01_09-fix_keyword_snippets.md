@@ -1,10 +1,10 @@
 # Ensure we show completions for anonymous nodes
 
 > <https://github.com/posit-dev/ark/pull/199>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1803#issuecomment-1865020221
 

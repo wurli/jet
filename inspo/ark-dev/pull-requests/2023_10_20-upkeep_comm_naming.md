@@ -1,10 +1,10 @@
 # Renaming proposal for comm API
 
 > <https://github.com/posit-dev/ark/pull/125>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Currently `CommMsg` is used for serialisation and is not user-facing and instead the comms are creating `CommChannelMsg`. I propose to reverse this:
 

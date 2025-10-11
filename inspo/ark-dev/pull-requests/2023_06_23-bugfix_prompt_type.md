@@ -1,10 +1,10 @@
 # Refactor prompt detection
 
 > <https://github.com/posit-dev/ark/pull/51>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Progress towards rstudio/positron#535.
 

@@ -1,10 +1,10 @@
 # Fix indentation with `OnTypeFormatting` method for `\n`
 
 > <https://github.com/posit-dev/ark/pull/329>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Adds an LSP method for `OnTypeFormatting` to correct the indentation of the frontend.
 

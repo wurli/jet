@@ -1,10 +1,10 @@
 # Type `NFRAME_CALL` with an `Option<SEXP>`
 
 > <https://github.com/posit-dev/ark/pull/61>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Minor tweak as followup to looking at https://github.com/posit-dev/amalthea/pull/51/
 

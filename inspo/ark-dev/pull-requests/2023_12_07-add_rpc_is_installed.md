@@ -1,10 +1,10 @@
 # Add new `.ps.rpc.is_installed`
 
 > <https://github.com/posit-dev/ark/pull/174>
-> 
+>
 > * Author: @juliasilge
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Behold my amazing engineering work! 😉
 

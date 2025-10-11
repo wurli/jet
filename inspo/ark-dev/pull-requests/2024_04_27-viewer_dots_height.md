@@ -1,10 +1,10 @@
 # Add `height` arg to viewer, for RStudio compatibility
 
 > <https://github.com/posit-dev/ark/pull/328>
-> 
+>
 > * Author: @juliasilge
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2900
 
@@ -12,16 +12,16 @@ RStudio's viewer does have a `height` arg:
 
 ``` r
 getOption("viewer")
-#> function (url, height = NULL) 
+#> function (url, height = NULL)
 #> {
-#>     if (!is.character(url) || (length(url) != 1)) 
-#>         stop("url must be a single element character vector.", 
+#>     if (!is.character(url) || (length(url) != 1))
+#>         stop("url must be a single element character vector.",
 #>             call. = FALSE)
-#>     if (identical(height, "maximize")) 
+#>     if (identical(height, "maximize"))
 #>         height <- -1
-#>     if (!is.null(height) && (!is.numeric(height) || (length(height) != 
-#>         1))) 
-#>         stop("height must be a single element numeric vector or 'maximize'.", 
+#>     if (!is.null(height) && (!is.numeric(height) || (length(height) !=
+#>         1)))
+#>         stop("height must be a single element numeric vector or 'maximize'.",
 #>             call. = FALSE)
 #>     invisible(.Call("rs_viewer", url, height, PACKAGE = "(embedding)"))
 #> }

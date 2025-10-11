@@ -1,10 +1,10 @@
 # Ark: Analysis: Routine to find all copies of an exported function
 
 > <https://github.com/posit-dev/ark/issues/690>
-> 
+>
 > * Author: @lionel-
 > * State: OPEN
-> * Labels: 
+> * Labels:
 
 When an exported function is updated in a namespace, for instance to insert breakpoints (https://github.com/posit-dev/positron/issues/1766) or update its source references, we need to update all imported copies too. This includes:
 

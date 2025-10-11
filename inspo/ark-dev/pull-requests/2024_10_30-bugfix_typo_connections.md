@@ -1,10 +1,10 @@
 # Fix name of code metadata attribute
 
 > <https://github.com/posit-dev/ark/pull/614>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Name should match:
 

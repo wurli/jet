@@ -1,10 +1,10 @@
 # Declare that we are in debug mode if any frame is marked with `RDEBUG`
 
 > <https://github.com/posit-dev/ark/pull/346>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2310 enough for public beta, I think
 

@@ -1,10 +1,10 @@
 # Add support for `haven_labelled` in the data explorer
 
 > <https://github.com/posit-dev/ark/pull/634>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/5327 by specializing some data explorer code paths in order to support the haven labelled data type.
 

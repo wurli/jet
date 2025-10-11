@@ -1,10 +1,10 @@
 # Compile portably for x64 and arm64 Linux
 
 > <https://github.com/posit-dev/ark/pull/486>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/4506
 Addresses the ark side of https://github.com/posit-dev/positron/issues/3854
@@ -64,7 +64,7 @@ Here are four other routes we could take:
 - Produce separate builds of Ark that link against the appropriate OpenSSL for each Linux distribution (minimally by ABI compatibility)
 - [Run away from home and live in the woods](https://www.wikihow.com/Run-Away-from-Home-and-Live-in-the-Woods)
 
-Producing separate builds is probably the easiest way forward and it's what we have always done to fix this problem. But I think it would also be worth investigating where the dependency is coming from and seeing if there are alternatives. 
+Producing separate builds is probably the easiest way forward and it's what we have always done to fix this problem. But I think it would also be worth investigating where the dependency is coming from and seeing if there are alternatives.
 
 ## @DavisVaughan at 2024-08-28T17:39:47Z
 

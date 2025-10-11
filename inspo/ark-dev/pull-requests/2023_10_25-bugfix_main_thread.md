@@ -1,10 +1,10 @@
 # Run R on the main thread
 
 > <https://github.com/posit-dev/ark/pull/128>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Follow-up to https://github.com/posit-dev/positron/issues/4
 Addresses https://github.com/posit-dev/positron/issues/1420 (cc @jmcphers)

@@ -1,10 +1,10 @@
 # Wrap `R_MAIN` in an `UnsafeCell`
 
 > <https://github.com/posit-dev/ark/pull/664>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Progress towards #661.
 Workaround for #663 (see this issue for context).

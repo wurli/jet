@@ -1,10 +1,10 @@
 # Use github runner for macOS builds
 
 > <https://github.com/posit-dev/ark/pull/492>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Branched from #491.
 

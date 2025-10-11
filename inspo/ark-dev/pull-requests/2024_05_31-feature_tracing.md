@@ -1,10 +1,10 @@
 # Switch to tracing crate for logging and profiling
 
 > <https://github.com/posit-dev/ark/pull/375>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Branched from #371.
 

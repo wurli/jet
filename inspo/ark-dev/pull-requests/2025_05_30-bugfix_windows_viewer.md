@@ -1,10 +1,10 @@
 # Don't normalize HTTP URLs for the Viewer
 
 > <https://github.com/posit-dev/ark/pull/818>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This change addresses an issue that keeps URLs from being loaded into the Viewer on Windows. The issue is that we call `normalizePath` on everything that gets loaded into the Viewer, which is great for file paths but unsurprisingly doesn't work on URLs.
 

@@ -1,10 +1,10 @@
 # Spawn idle R tasks that don't run at interrupt time
 
 > <https://github.com/posit-dev/ark/pull/371>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Branched from #365.
 

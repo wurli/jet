@@ -1,10 +1,10 @@
 # showing only first class
 
 > <https://github.com/posit-dev/ark/pull/38>
-> 
+>
 > * Author: @romainfrancois
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Followup to https://github.com/rstudio/positron/issues/638#issuecomment-1572521749
 

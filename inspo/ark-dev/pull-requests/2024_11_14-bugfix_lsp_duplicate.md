@@ -1,10 +1,10 @@
 # Be defensive about global aux channel being dropped
 
 > <https://github.com/posit-dev/ark/pull/626>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Follow-up to https://github.com/posit-dev/ark/pull/617
 Addresses https://github.com/posit-dev/positron/issues/5321

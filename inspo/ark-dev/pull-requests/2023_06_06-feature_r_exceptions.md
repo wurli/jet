@@ -1,10 +1,10 @@
 # Implement Jupyter compatible exceptions
 
 > <https://github.com/posit-dev/ark/pull/21>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/rstudio/positron/issues/201
 
@@ -24,7 +24,7 @@ If rlang < 1.1.1.9000 is installed (i.e. if you don't currently have dev rlang),
 
 ---
 
-Some examples 
+Some examples
 
 <img width="365" alt="Screen Shot 2023-06-07 at 1 24 31 PM" src="https://github.com/posit-dev/amalthea/assets/19150088/8bab5849-8cbf-43dd-a9e5-f34800ad3692">
 

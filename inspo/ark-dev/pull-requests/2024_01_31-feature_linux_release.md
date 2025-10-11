@@ -1,10 +1,10 @@
 # Add workflow to build .deb and .rpm binaries
 
 > <https://github.com/posit-dev/ark/pull/227>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 
 
@@ -14,7 +14,7 @@ I considered that too but thought it'd be helpful for Linux users to provide the
 
 ## @jmcphers at 2024-01-31T22:00:33Z
 
-Very nice of you! We can leave as is since you've already got it set up, hopefully not too much hassle to extract the files from these over on the consumption side. 
+Very nice of you! We can leave as is since you've already got it set up, hopefully not too much hassle to extract the files from these over on the consumption side.
 
 ## @lionel- at 2024-02-01T06:07:42Z
 

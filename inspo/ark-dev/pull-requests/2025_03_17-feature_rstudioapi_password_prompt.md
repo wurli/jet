@@ -1,10 +1,10 @@
 # Add new OpenRPC method to ask for a password
 
 > <https://github.com/posit-dev/ark/pull/747>
-> 
+>
 > * Author: @juliasilge
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2890
 

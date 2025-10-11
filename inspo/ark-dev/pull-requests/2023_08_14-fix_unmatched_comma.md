@@ -1,10 +1,10 @@
 # Various diagnostic improvements
 
 > <https://github.com/posit-dev/ark/pull/76>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 There were some hard coded magic `kind_id()` values that we pull from here:
 https://raw.githubusercontent.com/r-lib/tree-sitter-r/next/src/parser.c
@@ -74,7 +74,7 @@ At this point, none of this code throws any diagnostics anymore:
 
 ```r
 fn <- function(a, b) {
-    
+
 }
 
 x <- 2

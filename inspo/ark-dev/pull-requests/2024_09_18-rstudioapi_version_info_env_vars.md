@@ -1,10 +1,10 @@
 # Update `.rs.api.versionInfo()`
 
 > <https://github.com/posit-dev/ark/pull/531>
-> 
+>
 > * Author: @juliasilge
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses posit-dev/positron#4081
 Addresses posit-dev/positron#4706
@@ -23,12 +23,12 @@ In the R console, you should see these types of results:
 .rs.api.versionInfo()
 #> $citation
 #> To cite Positron in publications use:
-#> 
+#>
 #>   Posit team (2024). Positron: A next generation data science IDE.
 #>   Posit Software, PBC, Boston, MA. URL https://www.posit.co/.
-#> 
+#>
 #> A BibTeX entry for LaTeX users is
-#> 
+#>
 #>   @Manual{,
 #>     title = {Positron: A next generation data science IDE},
 #>     author = {{Posit team}},
@@ -37,28 +37,28 @@ In the R console, you should see these types of results:
 #>     year = {2024},
 #>     url = {https://www.posit.co/},
 #>   }
-#> 
+#>
 #> $mode
 #> [1] "desktop"
-#> 
+#>
 #> $version
 #> [1] '2024.9.0'
-#> 
+#>
 #> $long_version
 #> [1] "2024.09.0+0"
-#> 
+#>
 #> $ark_version
-#>                                              branch 
-#>                                              "main" 
-#>                                              commit 
-#>                                          "8f5040d6" 
-#>                                                date 
-#>                           "2024-09-17 16:28:06 MDT" 
-#>                                              flavor 
-#>                                             "debug" 
-#>                                                path 
-#> "/Users/juliasilge/Work/posit/ark/target/debug/ark" 
-#>                                             version 
+#>                                              branch
+#>                                              "main"
+#>                                              commit
+#>                                          "8f5040d6"
+#>                                                date
+#>                           "2024-09-17 16:28:06 MDT"
+#>                                              flavor
+#>                                             "debug"
+#>                                                path
+#> "/Users/juliasilge/Work/posit/ark/target/debug/ark"
+#>                                             version
 #>                                           "0.1.136"
 ```
 

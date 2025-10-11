@@ -1,12 +1,12 @@
 # Emit functions passed as named arguments as document symbols
 
 > <https://github.com/posit-dev/ark/pull/858>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Branched from #856 
+Branched from #856
 Addresses https://github.com/posit-dev/positron/issues/6546
 Addresses https://github.com/posit-dev/positron/issues/6107 and https://github.com/posit-dev/positron/issues/5241
 

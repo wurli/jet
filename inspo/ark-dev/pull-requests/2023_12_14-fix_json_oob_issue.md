@@ -1,10 +1,10 @@
 # Fix JSON OOB issue
 
 > <https://github.com/posit-dev/ark/pull/182>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 See also, https://github.com/posit-dev/positron/issues/1947
 

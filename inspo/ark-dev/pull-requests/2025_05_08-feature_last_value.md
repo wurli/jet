@@ -1,10 +1,10 @@
 # Add option to show `.Last.value` in the Variables pane
 
 > <https://github.com/posit-dev/ark/pull/794>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Quick airplane feature to optionally show `.Last.value` in Positron's Variables pane when the option `positron.show_last_value` is set.
 

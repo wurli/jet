@@ -1,12 +1,12 @@
 # Support graphics engine version 17
 
 > <https://github.com/posit-dev/ark/pull/839>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Closes #838 
+Closes #838
 
 Here is the R commit bumping to graphics engine 17:
 https://github.com/wch/r-source/commit/a98d9f88c7f73e5f4da8209d9373bf4316ee2d10#diff-f28e48750631b022aa07416a102087eb10c48bbec71234002e20bc46c52599e9R2493

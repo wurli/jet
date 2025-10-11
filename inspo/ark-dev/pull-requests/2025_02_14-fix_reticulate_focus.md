@@ -1,10 +1,10 @@
 # Fix reticulate focus
 
 > <https://github.com/posit-dev/ark/pull/713>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 When there's already a comm open for reticulate, we need to send an event message to the front-end:
 
@@ -34,7 +34,7 @@ https://github.com/posit-dev/ark/blob/52895fc3eca8d73593d89e16c5efd671907cda81/c
 
 I had an intermediate approach where I stored to the `comm` socket (and thus the necessary channels) in the global: https://github.com/posit-dev/ark/pull/713/commits/4695ccf93c3fef633ca11fcdce966faf2f3e40a5
 
-Does this sound right to you? Are there problems in storing a clone of the comm socket and calling it from the R thread (potentially at the same time as the service thread)? It seemed fine to me, but I don't know about the socket internals. 
+Does this sound right to you? Are there problems in storing a clone of the comm socket and calling it from the R thread (potentially at the same time as the service thread)? It seemed fine to me, but I don't know about the socket internals.
 
 ## @dfalbel at 2025-02-25T16:24:07Z
 

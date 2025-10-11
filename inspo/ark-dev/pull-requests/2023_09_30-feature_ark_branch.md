@@ -1,10 +1,10 @@
 # Record git branch, in addition to the commit hash
 
 > <https://github.com/posit-dev/ark/pull/106>
-> 
+>
 > * Author: @jennybc
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 I've found `.ps.ark.version()` very useful in the past 24 hours and I think it will be even more awesome to surface the branch name.
 
@@ -14,18 +14,18 @@ Here's how this looks:
 
 ```
 > .ps.ark.version()
-                                      branch 
-                        "feature/ark-branch" 
-                                      commit 
-                                   "96ed51f" 
-                                        date 
-                   "2023-09-30 08:26:54 PDT" 
-                                      flavor 
-                                     "debug" 
-                                        path 
-"/Users/jenny/rrr/amalthea/target/debug/ark" 
-                                     version 
-                                    "0.1.10" 
+                                      branch
+                        "feature/ark-branch"
+                                      commit
+                                   "96ed51f"
+                                        date
+                   "2023-09-30 08:26:54 PDT"
+                                      flavor
+                                     "debug"
+                                        path
+"/Users/jenny/rrr/amalthea/target/debug/ark"
+                                     version
+                                    "0.1.10"
 ```
 
 and, in case you are wondering, the case of detached HEAD:
@@ -33,17 +33,17 @@ and, in case you are wondering, the case of detached HEAD:
 
 ```
 > .ps.ark.version()
-                                      branch 
-                                          "" 
-                                      commit 
-                                   "d2b67b4" 
-                                        date 
-                   "2023-09-30 07:44:19 PDT" 
-                                      flavor 
-                                     "debug" 
-                                        path 
-"/Users/jenny/rrr/amalthea/target/debug/ark" 
-                                     version 
+                                      branch
+                                          ""
+                                      commit
+                                   "d2b67b4"
+                                        date
+                   "2023-09-30 07:44:19 PDT"
+                                      flavor
+                                     "debug"
+                                        path
+"/Users/jenny/rrr/amalthea/target/debug/ark"
+                                     version
                                     "0.1.10"
 ```
 

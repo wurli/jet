@@ -1,10 +1,10 @@
 # Generate virtual documents for namespace functions without source refs
 
 > <https://github.com/posit-dev/ark/pull/251>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2285
 Addresses part of https://github.com/posit-dev/positron/issues/1729
@@ -76,7 +76,7 @@ Warning message:
 Problem while running user `onLoad` hook for package dplyr.
 ℹ The hook inherits from `package:base`.
 Caused by error in `fun()`:
-! argument "path" is missing, with no default 
+! argument "path" is missing, with no default
 ```
 
 Ah this seems to be because pkgload doesn't supply the 2nd `path` argument, unlike base R
@@ -691,8 +691,8 @@ Full traceback below, but here are some related bits
 [R]  297: std::rt::lang_start
 [R]              at /rustc/82e1608dfa6e0b5569232559e3d385fea5a93112/library/std/src/rt.rs:166:17
 [R]  298: _main
-[R] 
-[R] 
+[R]
+[R]
 ```
 
 </details>

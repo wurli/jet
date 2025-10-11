@@ -1,10 +1,10 @@
 # Static diagnostics for `library()` and `require()` calls
 
 > <https://github.com/posit-dev/ark/pull/870>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1325
 Progress towards https://github.com/posit-dev/positron/issues/2321

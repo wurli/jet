@@ -1,10 +1,10 @@
 # Fix hanging issues in integration tests
 
 > <https://github.com/posit-dev/ark/pull/558>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Closes #551.
 Branched from #547.

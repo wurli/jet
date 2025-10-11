@@ -1,10 +1,10 @@
 # Remove unnecessary mut from OnceCell and OnceLock
 
 > <https://github.com/posit-dev/ark/pull/428>
-> 
+>
 > * Author: @yutannihilation
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Fix https://github.com/posit-dev/positron/issues/3912
 

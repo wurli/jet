@@ -1,10 +1,10 @@
 # Bump anyhow to 1.0.80 and drop backtrace crate
 
 > <https://github.com/posit-dev/ark/pull/263>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 On the Windows VM, the `indexer::start()` command we use in LSP initialization takes over 40 seconds to complete when run in the `vctrs/` project. On a Mac, this typically takes a few milliseconds.
 

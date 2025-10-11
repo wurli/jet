@@ -1,10 +1,10 @@
 # Define include, share, and doc environment variables
 
 > <https://github.com/posit-dev/ark/pull/640>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/3637.
 

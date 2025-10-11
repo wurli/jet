@@ -1,13 +1,13 @@
 # Add support for alternative `RegistrationFile`
 
 > <https://github.com/posit-dev/ark/pull/576>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Closes #563 
-Joint work with @lionel- 
+Closes #563
+Joint work with @lionel-
 
 This PR implements the alternative `RegistrationFile` approach outlined in JEP 66 that allows for a "handshake" to occur between the client and server on startup. In particular, it allows the server to be in charge of picking the ports, and immediately binds to them as it picks them, avoiding any race conditions here.
 

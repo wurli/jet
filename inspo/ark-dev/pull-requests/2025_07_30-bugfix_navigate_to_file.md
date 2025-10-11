@@ -1,10 +1,10 @@
 # Fix navigate to file on Windows
 
 > <https://github.com/posit-dev/ark/pull/887>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/8374
 

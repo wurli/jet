@@ -1,10 +1,10 @@
 # Refactor symbol search
 
 > <https://github.com/posit-dev/ark/pull/597>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Progress towards https://github.com/posit-dev/positron/issues/3822.
 
@@ -47,9 +47,9 @@ Does that makes sense?
 ## @kv9898 at 2024-10-23T14:28:14Z
 
 > I'm thinking that only `index_expression_list()` (added in this PR) needs to keep track of the section stack and pass the currently active store to its children.
-> 
+>
 > Now that all methods _own_ their store, we no longer need any ref or mut ref. So `index_expression_list()` will be able to push and pop section stores out of its stack and we only work with owned values that we move around.
-> 
+>
 > Does that makes sense?
 
 Oh yes it does. I wrote a new pull request to this specific branch in https://github.com/posit-dev/ark/pull/606.

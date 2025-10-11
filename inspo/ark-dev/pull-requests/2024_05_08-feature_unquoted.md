@@ -1,10 +1,10 @@
 # Add option to allow unquoted formatting of strings
 
 > <https://github.com/posit-dev/ark/pull/344>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 The objective of this is to address https://github.com/posit-dev/positron/issues/2865
 Which is caused by `FormattedVector` automatically quoting strings when formatting string elements, which is used by the environments pane to display strings like this:

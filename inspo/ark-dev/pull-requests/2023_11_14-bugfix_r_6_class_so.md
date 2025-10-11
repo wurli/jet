@@ -1,10 +1,10 @@
 # Prevent infinite recursion in the Variables thread
 
 > <https://github.com/posit-dev/ark/pull/144>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses posit-dev/positron#1690
 

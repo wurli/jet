@@ -1,10 +1,10 @@
 # Use `to_string_lossy()` in `r_str_to_owned_utf8_unchecked()`
 
 > <https://github.com/posit-dev/ark/pull/310>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2698
 

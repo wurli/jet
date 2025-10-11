@@ -1,10 +1,10 @@
 # Implement snippet support in ark
 
 > <https://github.com/posit-dev/ark/pull/183>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Paired with https://github.com/posit-dev/positron/pull/1948
 

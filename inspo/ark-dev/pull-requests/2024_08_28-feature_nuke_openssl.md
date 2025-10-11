@@ -1,10 +1,10 @@
 # Drop reqwest's `default-features`
 
 > <https://github.com/posit-dev/ark/pull/487>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Alternative to the OpenSSL part of https://github.com/posit-dev/ark/pull/486
 

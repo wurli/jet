@@ -1,10 +1,10 @@
 # Fix lengths of tabular objects in variables pane
 
 > <https://github.com/posit-dev/ark/pull/250>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses posit-dev/positron#2153
 

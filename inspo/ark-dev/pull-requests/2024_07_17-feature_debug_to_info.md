@@ -1,10 +1,10 @@
 # Remove usage of `debug!` in favor of `info!` or `trace!`
 
 > <https://github.com/posit-dev/ark/pull/442>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/4023
 

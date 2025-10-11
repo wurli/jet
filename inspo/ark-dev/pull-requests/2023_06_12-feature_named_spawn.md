@@ -1,14 +1,14 @@
 # use `spawn!` to name test threads
 
 > <https://github.com/posit-dev/ark/pull/28>
-> 
+>
 > * Author: @romainfrancois
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 addresses https://github.com/rstudio/positron/issues/92
 
-(this was mostly already done, except for these two test cases). 
+(this was mostly already done, except for these two test cases).
 
 cc @DavisVaughan this has reformatted one the touched files, not sure why https://github.com/posit-dev/amalthea/pull/11 did not. Did it miss the `ark/src/r/` directory ?
 
@@ -16,7 +16,7 @@ cc @DavisVaughan this has reformatted one the touched files, not sure why https:
 
 I think the entire `crates/ark/src/r` folder can be deleted? From what I can tell, this became `harp` and isn't being used at all anymore.
 
-It seems like the formatter looks for `lib.rs`, `main.rs`, and `tests/` and will format those and all their dependencies (like if you use `pub mod` in a lib file) 
+It seems like the formatter looks for `lib.rs`, `main.rs`, and `tests/` and will format those and all their dependencies (like if you use `pub mod` in a lib file)
 
 ```
 davis@daviss-mbp-2 amalthea % cargo +nightly fmt -v

@@ -1,7 +1,7 @@
 # Ark: Panics in dummy kernel threads should be propagated to test harness
 
 > <https://github.com/posit-dev/ark/issues/551>
-> 
+>
 > * Author: @lionel-
 > * State: CLOSED
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABwhpKcQ", name = "infra: tests", description = "", color = "bfdadc")

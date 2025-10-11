@@ -1,10 +1,10 @@
 # RPC: Ark: Switch to blocking requests to avoid concurrent R evaluations
 
 > <https://github.com/posit-dev/ark/issues/689>
-> 
+>
 > * Author: @lionel-
 > * State: OPEN
-> * Labels: 
+> * Labels:
 
 I think we need to be a bit more careful about the timing of evaluation of backend RPCs on the R side. This concerns the `callMethod()` mechanism (which makes a request from typescript via the UI comm) and more generally any requests performed by a comm. These shouldn't run concurrently with the R interpreter because we are running complex functions that have not been designed for reentrancy or preemption (more precisely interrupt-time, which happens at somewhat controlled points, but in practice we should consider it happens at any time).
 

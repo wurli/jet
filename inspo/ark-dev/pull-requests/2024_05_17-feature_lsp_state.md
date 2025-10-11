@@ -1,10 +1,10 @@
 # Extract LSP state in own object
 
 > <https://github.com/posit-dev/ark/pull/358>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Branched from #357.
 

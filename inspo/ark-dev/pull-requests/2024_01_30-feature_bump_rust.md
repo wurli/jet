@@ -1,10 +1,10 @@
 # Bump Rust requirement to 1.75.0
 
 > <https://github.com/posit-dev/ark/pull/225>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Now that we've resolved the warnings that come with it
 

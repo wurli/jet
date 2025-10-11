@@ -1,10 +1,10 @@
 # OpenRPC for cursors/ranges rstudioapi shims
 
 > <https://github.com/posit-dev/ark/pull/275>
-> 
+>
 > * Author: @juliasilge
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1312 and goes along with https://github.com/posit-dev/positron/pull/2519/
 

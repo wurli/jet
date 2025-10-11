@@ -1,16 +1,16 @@
 # Initial round of clippy warnings
 
 > <https://github.com/posit-dev/ark/pull/461>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Closes https://github.com/posit-dev/ark/pull/436
 
 @yutannihilation I've reproduced your workflow over here, just to get comfortable with it and to have it rebased on current main, but thanks a lot for getting it started. This PR fixes the same lints you started with, and I'll add more next week-ish.
 
-As @yutannihilation said over in that other PR, the key to working these out one at a time is 
+As @yutannihilation said over in that other PR, the key to working these out one at a time is
 
 ```
 cargo clippy --fix -- -A clippy::all -W clippy::vec_init_then_push

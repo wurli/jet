@@ -1,10 +1,10 @@
 # Turn on workspace setting to trim trailing whitespace
 
 > <https://github.com/posit-dev/ark/pull/46>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 And turn on the setting to show whitespace differences in the diff viewer.
 

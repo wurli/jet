@@ -1,10 +1,10 @@
 # Avoid dispatching on `names` when listing environment bindings.
 
 > <https://github.com/posit-dev/ark/pull/364>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/3229.
 

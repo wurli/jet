@@ -1,10 +1,10 @@
 # Set amalthea workspace log level to `"trace"`
 
 > <https://github.com/posit-dev/ark/pull/47>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 As follow up to https://github.com/rstudio/positron/pull/752
 

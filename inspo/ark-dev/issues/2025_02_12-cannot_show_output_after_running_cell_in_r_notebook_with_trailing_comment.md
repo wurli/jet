@@ -1,7 +1,7 @@
 # Cannot show output after running cell in R notebook with trailing comment
 
 > <https://github.com/posit-dev/ark/issues/707>
-> 
+>
 > * Author: @williamcplai
 > * State: OPEN
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwBw", name = "bug", description = "Something isn't working", color = "E99695")
@@ -44,7 +44,7 @@ After click the cells , it cannot show the outputs
 
 ## @juliasilge at 2024-07-08T16:17:06Z
 
-Hmmm, we can't reproduce this problem on Windows or other OSes. 
+Hmmm, we can't reproduce this problem on Windows or other OSes.
 
 - Can you share what version of R you are running?
 - Can you go to "Output" and choose the output channel for your notebook, then share the log file you find there? It will look something like this:
@@ -61,10 +61,10 @@ Hmmm, we can't reproduce this problem on Windows or other OSes.
 
 R4.3.2
 
-[R] *** Log started at Sun 14/07/2024 18:07:40.80 
-[R] *** Command line: 
-[R] "c:\Program Files\Positron\resources\app\extensions\positron-r\resources\ark\ark.exe" --connection_file C:\Users\William\AppData\Local\Temp\kernel-AX2jap\connection.json --log C:\Users\William\AppData\Local\Temp\kernel-AX2jap\kernel.log --startup-file "c:\Program Files\Positron\resources\app\extensions\positron-r\resources\scripts\startup.R" --session-mode notebook -- --interactive --no-restore-data 
-[Positron] Sending code to R: # The datasets package needs to be loaded to access our data 
+[R] *** Log started at Sun 14/07/2024 18:07:40.80
+[R] *** Command line:
+[R] "c:\Program Files\Positron\resources\app\extensions\positron-r\resources\ark\ark.exe" --connection_file C:\Users\William\AppData\Local\Temp\kernel-AX2jap\connection.json --log C:\Users\William\AppData\Local\Temp\kernel-AX2jap\kernel.log --startup-file "c:\Program Files\Positron\resources\app\extensions\positron-r\resources\scripts\startup.R" --session-mode notebook -- --interactive --no-restore-data
+[Positron] Sending code to R: # The datasets package needs to be loaded to access our data
 # For a full list of these datasets, type library(help = "datasets")
 library(datasets)
 data(iris)
@@ -157,7 +157,7 @@ If I then shutdown the kernel, I see this backtrace:
 
 ```
 [R] Process exit code 134
-[R] 
+[R]
 [R] Backtrace:
 [R]    0: std::backtrace::Backtrace::create
 [R]    1: ark::main::{{closure}}::{{closure}}
@@ -190,10 +190,10 @@ If I then shutdown the kernel, I see this backtrace:
 [R]   23: std::rt::lang_start::{{closure}}
 [R]   24: std::rt::lang_start_internal
 [R]   25: _main
-[R] 
+[R]
 [R]     at crates/ark/src/main.rs:488
-[R] 
-[R] 
+[R]
+[R]
 ```
 
 #### Details

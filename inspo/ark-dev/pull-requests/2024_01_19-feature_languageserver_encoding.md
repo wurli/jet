@@ -1,10 +1,10 @@
 # Assert `Position` `character` fields as UTF-16 based
 
 > <https://github.com/posit-dev/ark/pull/209>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 A major step towards reviving https://github.com/posit-dev/amalthea/pull/83
 Requires https://github.com/posit-dev/positron/pull/2093 (you have to `yarn` with it)

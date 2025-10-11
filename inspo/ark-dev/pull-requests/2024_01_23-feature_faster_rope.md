@@ -1,10 +1,10 @@
 # Utilize `Rope` to its fullest extent!
 
 > <https://github.com/posit-dev/ark/pull/211>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/505 (both issues brought up there are solved here)
 https://github.com/posit-dev/amalthea/pull/209 was merged into this

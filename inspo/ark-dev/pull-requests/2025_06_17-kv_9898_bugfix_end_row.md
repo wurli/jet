@@ -1,10 +1,10 @@
 # Bugfix: folding ranges within brackets
 
 > <https://github.com/posit-dev/ark/pull/842>
-> 
+>
 > * Author: @kv9898
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This partly addresses https://github.com/posit-dev/positron/issues/8059, where folding ranges within brackets do not work normally.
 

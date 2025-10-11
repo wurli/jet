@@ -1,10 +1,10 @@
 # Avoid evaluating promises during most completions
 
 > <https://github.com/posit-dev/ark/pull/7>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/rstudio/positron/issues/586
 

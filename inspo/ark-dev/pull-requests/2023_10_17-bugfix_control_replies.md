@@ -1,10 +1,10 @@
 # Reply to Shutdown and Interrupt requests
 
 > <https://github.com/posit-dev/ark/pull/115>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1576.
 

@@ -1,10 +1,10 @@
 # Remove `ARK_VDOCS` by sending vdocs over a Kernel -> LSP event
 
 > <https://github.com/posit-dev/ark/pull/666>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Part of https://github.com/posit-dev/ark/issues/661
 

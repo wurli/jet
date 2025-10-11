@@ -1,12 +1,12 @@
 # Extend range of assignment symbols to end of node
 
 > <https://github.com/posit-dev/ark/pull/860>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Branched from #858 
+Branched from #858
 
 This fix is similar to https://github.com/posit-dev/ark/pull/855
 

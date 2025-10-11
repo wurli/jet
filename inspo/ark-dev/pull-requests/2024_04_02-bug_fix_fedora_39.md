@@ -1,10 +1,10 @@
 # Fix compilation on fedora 39 by updating zeromq-src
 
 > <https://github.com/posit-dev/ark/pull/292>
-> 
+>
 > * Author: @wesm
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This was failing for me with zeromq-src 0.2.5 and fixed by the point version update:
 

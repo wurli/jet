@@ -1,10 +1,10 @@
 # Substitute LF for CRLF in code to be parsed or executed
 
 > <https://github.com/posit-dev/ark/pull/112>
-> 
+>
 > * Author: @jennybc
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 To address https://github.com/posit-dev/positron/issues/1520
 

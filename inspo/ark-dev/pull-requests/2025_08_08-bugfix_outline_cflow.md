@@ -1,10 +1,10 @@
 # Recurse into special constructs to find document symbols
 
 > <https://github.com/posit-dev/ark/pull/892>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/8881
 

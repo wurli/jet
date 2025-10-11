@@ -1,12 +1,12 @@
 # Eliminate the snippet source
 
 > <https://github.com/posit-dev/ark/pull/782>
-> 
+>
 > * Author: @jennybc
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Closes #779 
+Closes #779
 Closes #780
 Addresses https://github.com/posit-dev/positron/issues/3108
 

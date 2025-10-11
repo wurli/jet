@@ -1,10 +1,10 @@
 # Implement updated comms and data batching for ark data viewer
 
 > <https://github.com/posit-dev/ark/pull/72>
-> 
+>
 > * Author: @jgutman
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Followup to https://github.com/rstudio/positron/pull/795, needs to be merged together with those changes
 

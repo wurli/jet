@@ -1,10 +1,10 @@
 # Fix `HARP_ENV` garbage collection
 
 > <https://github.com/posit-dev/ark/pull/230>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2188
 

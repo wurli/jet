@@ -1,15 +1,15 @@
 # Switch from `extern "C"` to `extern "C-unwind"`
 
 > <https://github.com/posit-dev/ark/pull/718>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Closes #678 
-Reverts #683 
+Closes #678
+Reverts #683
 
-Joint work with @lionel- 
+Joint work with @lionel-
 
 ---
 

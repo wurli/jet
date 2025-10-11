@@ -1,10 +1,10 @@
 # Update name of command for `rstudioapi::restartSession()`
 
 > <https://github.com/posit-dev/ark/pull/891>
-> 
+>
 > * Author: @juliasilge
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/8794
 

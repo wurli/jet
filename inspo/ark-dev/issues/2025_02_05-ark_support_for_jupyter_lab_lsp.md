@@ -1,10 +1,10 @@
 # Ark: Support for JupyterLab-LSP
 
 > <https://github.com/posit-dev/ark/issues/699>
-> 
+>
 > * Author: @lionel-
 > * State: OPEN
-> * Labels: 
+> * Labels:
 
 I would have loved to show Ark completions running in Jupyter lab in our Posit::conf talk, so I looked into how this could be done in case there's an easy way to set it up. Unfortunately [jupyterlab-lsp](https://github.com/jupyter-lsp/jupyterlab-lsp) currently requires a static spec file describing how to launch the server and an stdio connection instead of TCP (see https://jupyterlab-lsp.readthedocs.io/en/latest/Configuring.html). These requirements make it too tricky to implement in short order.
 

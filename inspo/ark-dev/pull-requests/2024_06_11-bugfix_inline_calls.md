@@ -1,18 +1,18 @@
 # Data explorer: Faster write_delim
 
 > <https://github.com/posit-dev/ark/pull/394>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses: https://github.com/posit-dev/positron/issues/3485
 
-The issue is that our implementation of `write_delim` is terribly slow, as writing to a `textConnection` the way we were doing seems to be a lot slower then just writing to a tempfile and then reading it back to R. And gets exponentially slower as we increase the data.frame size. 
+The issue is that our implementation of `write_delim` is terribly slow, as writing to a `textConnection` the way we were doing seems to be a lot slower then just writing to a tempfile and then reading it back to R. And gets exponentially slower as we increase the data.frame size.
 
 It seems that there's no way to pre-allocate the character buffer when using `textConnection`.
 
-This will be potentially slower on Windows due to tempfiles actually materializing on disk. 
+This will be potentially slower on Windows due to tempfiles actually materializing on disk.
 Another solution could be falling back to `read::format_delim()` which is ~10x faster than this current approach.
 
 Eg:
@@ -26,7 +26,7 @@ library(withr)
 write_delim1 <- function(x, delim, include_header) {
   con <- textConnection("text_val", "w", encoding="UTF-8")
   defer(close(con))
-  
+
   utils::write.table(x, con, sep = delim, row.names = FALSE, col.names = include_header, quote = FALSE, na = "")
   paste0(textConnectionValue(con), collapse = "\n")
 }
@@ -34,7 +34,7 @@ write_delim1 <- function(x, delim, include_header) {
 write_delim2 <- function(x, delim, include_header) {
   tmp <- tempfile()
   defer(unlink(tmp))
-  
+
   utils::write.table(x, tmp, sep = delim, row.names = FALSE, col.names = include_header, quote = FALSE, na = "")
   # We use size - 1 because we don't want to read the last newline character
   # that creates problems when pasting the content in spreadsheets

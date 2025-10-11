@@ -1,7 +1,7 @@
 # Ark: Fail hard on unsupported R versions (i.e. if launched through Jupyter)
 
 > <https://github.com/posit-dev/ark/issues/696>
-> 
+>
 > * Author: @DavisVaughan
 > * State: OPEN
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwBw", name = "bug", description = "Something isn't working", color = "E99695")

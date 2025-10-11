@@ -1,10 +1,10 @@
 # Fix indentation issues with braces
 
 > <https://github.com/posit-dev/ark/pull/393>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/3475
 Addresses https://github.com/posit-dev/positron/issues/3484

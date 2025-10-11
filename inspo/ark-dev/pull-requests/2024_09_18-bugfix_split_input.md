@@ -1,12 +1,12 @@
 # Split inputs by newlines
 
 > <https://github.com/posit-dev/ark/pull/536>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-With @lionel- 
+With @lionel-
 
 Addresses https://github.com/posit-dev/positron/issues/4745
 Addresses https://github.com/posit-dev/positron/issues/4742

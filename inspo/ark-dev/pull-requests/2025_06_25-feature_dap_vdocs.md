@@ -1,10 +1,10 @@
 # Use Ark URIs for fallback sources in the debugger
 
 > <https://github.com/posit-dev/ark/pull/852>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2689.
 

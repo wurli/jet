@@ -1,10 +1,10 @@
 # Collect sections in calls and emit them as document symbols
 
 > <https://github.com/posit-dev/ark/pull/867>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 
 Branched from #866.
@@ -120,7 +120,7 @@ class <- R6::R6Class(
       1
     },
     bar = function() {
-      
+
     }
   )
 )
@@ -143,7 +143,7 @@ The outline we'd build based on that principle would either look like this if we
 -  middle
   - foo
 - inner
-  - bar  
+  - bar
 ```
 
 RStudio doesn't handle this particularly well, again suggesting it is not great as a reference here. It has the "escaping" problem referenced above.
@@ -272,6 +272,6 @@ imagine_a_deep_nesting({
 
 ## @juliasilge at 2025-07-22T14:51:53Z
 
-Thank you for the detailed explanation on this! ❤️  
+Thank you for the detailed explanation on this! ❤️
 
 I agree that the targets use case is the most important one to make sure we get right here, based on how people are talking about using this feature. I'm a little uncomfortable straying from the RStudio behavior given that we (RStudio/Posit) basically made up this feature so if there is any norm to align with, that would be it, but I am happy to defer here as long as we get those targets users supported.

@@ -1,14 +1,14 @@
 # DataViewer handles data frames with no names
 
 > <https://github.com/posit-dev/ark/pull/13>
-> 
+>
 > * Author: @romainfrancois
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 addresses https://github.com/rstudio/positron/issues/640
 
-Considering some cases with data frame and matrix columns: 
+Considering some cases with data frame and matrix columns:
 
 ```r
 .ps.view_data_frame(vctrs::new_data_frame(list(1, 2)))

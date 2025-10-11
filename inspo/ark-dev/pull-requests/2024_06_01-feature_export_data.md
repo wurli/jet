@@ -1,10 +1,10 @@
 # Data explorer: Implement export data RPC method
 
 > <https://github.com/posit-dev/ark/pull/376>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/3336
 This is branched off https://github.com/posit-dev/amalthea/pull/368

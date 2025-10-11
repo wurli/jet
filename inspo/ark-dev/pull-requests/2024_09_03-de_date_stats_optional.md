@@ -1,10 +1,10 @@
 # Data explorer: Allow for optional summary stats for dates
 
 > <https://github.com/posit-dev/ark/pull/501>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/4356
 Pairs with: https://github.com/posit-dev/positron/pull/4564

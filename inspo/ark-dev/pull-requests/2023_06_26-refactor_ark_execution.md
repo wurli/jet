@@ -1,10 +1,10 @@
 # Incorporate `Kernel` methods in the R thread
 
 > <https://github.com/posit-dev/ark/pull/57>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Replaces #54.
 Branched from #52

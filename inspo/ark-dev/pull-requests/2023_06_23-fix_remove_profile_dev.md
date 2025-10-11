@@ -1,10 +1,10 @@
 # Remove apparently unused `profile.dev` config
 
 > <https://github.com/posit-dev/ark/pull/56>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 `cargo build` always throws this warning, and today I figured out why
 

@@ -1,10 +1,10 @@
 # Ignore foreign info, debug, and trace logs
 
 > <https://github.com/posit-dev/ark/pull/41>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Dependency crates (like the selectors crate) can also call `log::debug!()` and friends, and those will show up in _our_ log output, which ends up making it extremely noisy
 

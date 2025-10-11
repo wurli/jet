@@ -1,10 +1,10 @@
 # Write an R error to the buffer when user input is too large
 
 > <https://github.com/posit-dev/ark/pull/377>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Related to https://github.com/posit-dev/positron/issues/2675, I would not say it addresses that issue, but it does prevent R from crashing and returns an informative and actionable error message now, which is our target behavior to fix for beta
 

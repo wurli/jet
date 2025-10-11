@@ -1,7 +1,7 @@
 # Ark: Issues with incomplete inputs in Jupyter apps
 
 > <https://github.com/posit-dev/ark/issues/557>
-> 
+>
 > * Author: @lionel-
 > * State: CLOSED
 > * Labels: list(id = "LA_kwDOJkuGPc8AAAABSPDwBw", name = "bug", description = "Something isn't working", color = "E99695"), list(id = "LA_kwDOJkuGPc8AAAABwXx3RQ", name = "area: jupyter kernel", description = "", color = "C2E0C6")

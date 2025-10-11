@@ -1,10 +1,10 @@
 # Don't return file completions in string if trigger character is set
 
 > <https://github.com/posit-dev/ark/pull/160>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1884
 

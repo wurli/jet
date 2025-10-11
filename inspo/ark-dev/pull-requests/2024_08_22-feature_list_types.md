@@ -1,10 +1,10 @@
 # Add `List` and `ListIter` types
 
 > <https://github.com/posit-dev/ark/pull/481>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Branched from posit-dev/positron#480.
 

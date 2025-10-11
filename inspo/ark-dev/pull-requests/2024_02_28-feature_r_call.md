@@ -1,10 +1,10 @@
 # Extract `RCall` from `RFunction`
 
 > <https://github.com/posit-dev/ark/pull/254>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 - `RFunction` is now built around `RCall`.
 

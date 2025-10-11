@@ -1,10 +1,10 @@
 # Improved matrix representation in variables pane
 
 > <https://github.com/posit-dev/ark/pull/711>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 I agree with @EmilHvitfeldt  in https://github.com/posit-dev/positron/issues/3656 that diisplaying the number of rows and columns is more useful as displaying the actual values for matrices in the variables pane. One can still see the values by inspecting/ or opening in the data explorer.
 

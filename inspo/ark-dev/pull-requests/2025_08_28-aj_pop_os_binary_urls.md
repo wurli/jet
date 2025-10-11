@@ -1,10 +1,10 @@
 # Add support for determining the right Linux binary URL for Pop!_OS
 
 > <https://github.com/posit-dev/ark/pull/915>
-> 
+>
 > * Author: @atheriel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This commit is a simple fix that ensures we can generate the right Linux binary URLs for Pop!_OS users.
 

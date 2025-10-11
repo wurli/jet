@@ -1,10 +1,10 @@
 # Add `LineRange` type
 
 > <https://github.com/posit-dev/ark/pull/528>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 @DavisVaughan I didn't like using `TextRange` for lines in the end. `TextSize` tries hard to make the offset an opaque type and I needed lots of `.into()`. So I created our own type around an `std::ops::Range`. It mirrors (partially) the API of `TextRange` so that we don't need to think about how to use the range as much. If we really need genericity over text ranges and line ranges at some point we can create a trait. WDYT?
 

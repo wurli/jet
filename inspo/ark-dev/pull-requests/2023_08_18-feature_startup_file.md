@@ -1,10 +1,10 @@
 # Add a `--startup-file` ark argument
 
 > <https://github.com/posit-dev/ark/pull/78>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Linked with https://github.com/rstudio/positron/pull/1106
 
@@ -50,9 +50,9 @@ If you just run `yarn` from vs code then it will build the Rust bits too, but it
 
 ## @juliasilge at 2023-08-18T21:17:01Z
 
-This works great now! 🎉 
+This works great now! 🎉
 
-- Running snapshot tests works ✅ 
+- Running snapshot tests works ✅
 - `devtools::build_readme()` only generates nice output
 - I can use reprex -- this reprex was generated from inside Positron:
 

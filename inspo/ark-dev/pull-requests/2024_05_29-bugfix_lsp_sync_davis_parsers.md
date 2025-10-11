@@ -1,10 +1,10 @@
 # Extract out `ParserState` only used by exclusive ref handlers
 
 > <https://github.com/posit-dev/ark/pull/372>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 To get rid of `Arc<Mutex<Parser>>` and our SAFETY note about this
 

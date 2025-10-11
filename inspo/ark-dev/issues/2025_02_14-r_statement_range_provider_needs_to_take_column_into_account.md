@@ -1,10 +1,10 @@
 # R: Statement range provider needs to take `column` into account
 
 > <https://github.com/posit-dev/ark/issues/714>
-> 
+>
 > * Author: @DavisVaughan
 > * State: OPEN
-> * Labels: 
+> * Labels:
 
 From https://github.com/posit-dev/positron/issues/1464#issuecomment-1787666141
 
@@ -21,7 +21,7 @@ RStudio will run _both_ expressions in 1 `CMD + Enter` press. I'm not sure we wa
 Another probably related bug:
 
 ```r
-if (TRUE) 
+if (TRUE)
   1 + 1 else 2 + 2 # place your cursor on the `2 + 2` and hit CMD+Enter, it will run `1 + 1`
 ```
 

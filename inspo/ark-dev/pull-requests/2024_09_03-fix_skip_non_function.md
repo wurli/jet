@@ -1,10 +1,10 @@
 # Recognize non-function pages in `RHtmlHelp` and split it into topic vs function
 
 > <https://github.com/posit-dev/ark/pull/500>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Closes https://github.com/posit-dev/ark/pull/431 - alternate approach
 

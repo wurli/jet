@@ -1,10 +1,10 @@
 # Rerun ark's `build.rs` on changes to `src/` or `resources/`
 
 > <https://github.com/posit-dev/ark/pull/777>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 cargo is conservative by default and generally will always rerun the build script if any file in the project changes.
 

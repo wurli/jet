@@ -1,10 +1,10 @@
 # Consistently reset vmax stack after translation
 
 > <https://github.com/posit-dev/ark/pull/105>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This is a follow-up to the discussion in #99.
 

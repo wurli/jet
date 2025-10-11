@@ -1,10 +1,10 @@
 # Teach extractor completion source about `identifier`s
 
 > <https://github.com/posit-dev/ark/pull/326>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2300
 

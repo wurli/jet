@@ -1,10 +1,10 @@
 # Add `r_try_catch_any()` to return generic values
 
 > <https://github.com/posit-dev/ark/pull/74>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 New `r_try_catch_any()` variant that returns a generic `Result<R>` value instead of `Result<Robject>`.
 

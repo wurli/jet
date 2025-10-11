@@ -1,10 +1,10 @@
 # Remove static mut in `graphics_device.rs`
 
 > <https://github.com/posit-dev/ark/pull/674>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Progress towards #661.
 

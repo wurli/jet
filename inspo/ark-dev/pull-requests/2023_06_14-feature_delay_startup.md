@@ -1,10 +1,10 @@
 # Add `--delay-startup` argument to Ark
 
 > <https://github.com/posit-dev/ark/pull/35>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Progress towards rstudio/positron#740
 

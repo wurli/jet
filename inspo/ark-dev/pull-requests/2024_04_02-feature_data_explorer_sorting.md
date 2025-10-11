@@ -1,10 +1,10 @@
 # Live updates and sorting for R data explorer
 
 > <https://github.com/posit-dev/ark/pull/287>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This change adds live updates and sorting for the data explorer backend for R.
 
@@ -12,13 +12,13 @@ Addresses https://github.com/posit-dev/positron/issues/2159 (sorting portion)
 Addresses https://github.com/posit-dev/positron/issues/2386
 Addresses https://github.com/posit-dev/positron/issues/2333
 
-Most of this is accomplished by having the data explorer's backend maintain knowledge of the object it's looking at (in the form of a name/environment binding), and the current sorting state (in the form of a set of sorting keys and sorted row indices). 
+Most of this is accomplished by having the data explorer's backend maintain knowledge of the object it's looking at (in the form of a name/environment binding), and the current sorting state (in the form of a set of sorting keys and sorted row indices).
 
-Includes integration tests for the new functionality. 
+Includes integration tests for the new functionality.
 
 ## @jmcphers at 2024-04-02T23:24:22Z
 
-@lionel- thanks for the detailed review! I think I've addressed all your comments, LMK if anything still looks off. 
+@lionel- thanks for the detailed review! I think I've addressed all your comments, LMK if anything still looks off.
 
 ## @DavisVaughan at 2024-04-02T23:52:45Z
 
@@ -61,4 +61,4 @@ pub unsafe extern "C" fn ps_view_data_frame(x: SEXP, title: SEXP) -> anyhow::Res
 
 > Oh, the env isn't passed through in the View() case. I think that will be important to do. I know that's the primary way my wife pulls up the data viewer in rstudio.
 
-@DavisVaughan Not hard to do! Implemented now. 
+@DavisVaughan Not hard to do! Implemented now.

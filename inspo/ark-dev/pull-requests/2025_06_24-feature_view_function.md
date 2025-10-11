@@ -1,10 +1,10 @@
 # Support functions in `View()`
 
 > <https://github.com/posit-dev/ark/pull/848>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses posit-dev/positron#2945.
 
@@ -112,9 +112,9 @@ I have looked over the source changes, but I'm going to focus on reporting my ex
 
 ```
 > .ps.ark.version()
-                                 branch                                  commit                                    date 
-                "feature/view-function"                              "df8a918f"               "2025-06-24 17:01:56 PDT" 
-                                 flavor                                    path                                 version 
+                                 branch                                  commit                                    date
+                "feature/view-function"                              "df8a918f"               "2025-06-24 17:01:56 PDT"
+                                 flavor                                    path                                 version
                                 "debug" "/Users/jenny/rrr/ark/target/debug/ark"                               "0.1.192"
 ```
 
@@ -130,7 +130,7 @@ data.frame()
 undebug(data.frame)
 ```
 
-I can walk through `data.frame()` in the virtual namespace document and "continue" to exit the function. When I do `undebug()`, I find myself back in the debugger 🤔 
+I can walk through `data.frame()` in the virtual namespace document and "continue" to exit the function. When I do `undebug()`, I find myself back in the debugger 🤔
 
 ```
 ...
@@ -161,7 +161,7 @@ foo <- function() 1
 View(foo)
 ```
 
-The virtual document with deparsed source is created with the expected content and URI. 
+The virtual document with deparsed source is created with the expected content and URI.
 
 Likewise when `View()` is called with an expression.
 
@@ -180,7 +180,7 @@ The `local({})` example works as promised.
 
 ## @lionel- at 2025-06-25T06:49:34Z
 
-> I can walk through data.frame() in the virtual namespace document and "continue" to exit the function. When I do undebug(), I find myself back in the debugger 
+> I can walk through data.frame() in the virtual namespace document and "continue" to exit the function. When I do undebug(), I find myself back in the debugger
 
 I got in this state from time to time, from what I can tell something in Ark is calling `data.frame()` and triggering the debugger, getting us in a bad state. It doesn't happen all the time for me though.
 

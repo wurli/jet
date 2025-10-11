@@ -1,10 +1,10 @@
 # Use `completion_item()` for keyword completions
 
 > <https://github.com/posit-dev/ark/pull/308>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/2405
 

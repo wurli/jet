@@ -1,10 +1,10 @@
 # Run tasks inside top-level context
 
 > <https://github.com/posit-dev/ark/pull/136>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This PR increases safety and failure reporting of R tasks.
 
@@ -55,15 +55,15 @@ This is currently a panic on the main R thread. We could instead panic on the ba
 modified   crates/ark/src/r_task.rs
 @@ -84,7 +84,7 @@ where
          let closure: Box<dyn FnOnce() + Send + 'static> = unsafe { std::mem::transmute(closure) };
- 
+
          // Channel to communicate completion status of the task/closure
 -        let (status_tx, status_rx) = bounded::<RTaskStatus>(0);
 +        let (status_tx, status_rx) = bounded::<harp::error::Result<()>>(0);
- 
+
          // Send the task to the R thread
          let task = RTaskMain {
 @@ -98,12 +98,13 @@ where
- 
+
          // If the task failed send a backtrace of the current thread to the
          // main thread
 -        if let RTaskStatus::Failure(trace_tx) = status {
@@ -81,9 +81,9 @@ modified   crates/ark/src/r_task.rs
 +            );
          }
      }
- 
+
 @@ -164,12 +165,7 @@ where
- 
+
  pub struct RTaskMain {
      pub closure: Option<Box<dyn FnOnce() + Send + 'static>>,
 -    pub status_tx: Option<Sender<RTaskStatus>>,
@@ -94,12 +94,12 @@ modified   crates/ark/src/r_task.rs
 -    Failure(Sender<std::backtrace::Backtrace>),
 +    pub status_tx: Option<Sender<harp::error::Result<()>>>,
  }
- 
+
  impl RTaskMain {
 @@ -178,33 +174,19 @@ impl RTaskMain {
          let closure = self.closure.take().unwrap();
          let result = r_sandbox(closure);
- 
+
 -        // Retrieve notification channel of blocking task
 -        let status_tx = match &self.status_tx {
 -            Some(status_tx) => status_tx,

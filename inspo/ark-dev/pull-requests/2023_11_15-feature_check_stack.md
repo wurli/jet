@@ -1,10 +1,10 @@
 # Add `r_check_stack()` and use it to postpone R tasks
 
 > <https://github.com/posit-dev/ark/pull/148>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses posit-dev/positron#1817
 

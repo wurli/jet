@@ -1,10 +1,10 @@
 # Clear index on `did_close`
 
 > <https://github.com/posit-dev/ark/pull/881>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/8668
 

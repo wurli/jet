@@ -1,10 +1,10 @@
 # Disable the LSP on crash
 
 > <https://github.com/posit-dev/ark/pull/679>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Part of https://github.com/posit-dev/positron/issues/5507
 

@@ -1,10 +1,10 @@
 # Fix bug when formatting dates containing `NA`s for the data explorer
 
 > <https://github.com/posit-dev/ark/pull/421>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/3734
 

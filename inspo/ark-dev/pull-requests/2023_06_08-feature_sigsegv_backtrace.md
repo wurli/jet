@@ -1,10 +1,10 @@
 # Log backtrace on sigsegv and sigbus signals
 
 > <https://github.com/posit-dev/ark/pull/22>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Requires https://github.com/rstudio/positron/pull/708 otherwise the backtrace doesn't show up.
 

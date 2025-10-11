@@ -1,10 +1,10 @@
 # Windows GHA workflow
 
 > <https://github.com/posit-dev/ark/pull/175>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 - [x] Delete temporary 0.1.32 Release before merging
 

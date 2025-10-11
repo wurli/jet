@@ -1,10 +1,10 @@
 # Regenerate comms with strum support
 
 > <https://github.com/posit-dev/ark/pull/434>
-> 
+>
 > * Author: @timtmok
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Address https://github.com/posit-dev/positron/issues/3852
 

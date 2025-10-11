@@ -1,10 +1,10 @@
 # Fix various missing `r_lock!`s
 
 > <https://github.com/posit-dev/ark/pull/102>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/1317
 Addresses https://github.com/posit-dev/positron/issues/1045 (I think, see https://github.com/posit-dev/positron/issues/1045#issuecomment-1738094344)

@@ -1,12 +1,12 @@
 # Move LSP's `tokio::Runtime` and `Client` to `RMain`
 
 > <https://github.com/posit-dev/ark/pull/193>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Joint work with @lionel- 
+Joint work with @lionel-
 
 Addresses https://github.com/posit-dev/positron/issues/1885
 Addresses https://github.com/posit-dev/positron/issues/1956

@@ -1,10 +1,10 @@
 # Add other formats for plot save
 
 > <https://github.com/posit-dev/ark/pull/311>
-> 
+>
 > * Author: @timtmok
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Address https://github.com/posit-dev/positron/issues/2657
 

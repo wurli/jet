@@ -1,12 +1,12 @@
 # Fix segfault in variables tests
 
 > <https://github.com/posit-dev/ark/pull/641>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-With current main, running:  
+With current main, running:
 
 ```
 cargo test -p ark --lib variables::variable::tests::test_truncation

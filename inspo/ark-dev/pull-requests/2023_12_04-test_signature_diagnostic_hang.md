@@ -1,10 +1,10 @@
 # Fix diagnostic / completion hang
 
 > <https://github.com/posit-dev/ark/pull/173>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 I can recreate a Windows hang I see by adding in a delay in `signature_help` after it has completed on the R side, but before it has sent off the result to the frontend. This completely freezes up the LSP, strangely in `publish_diagnostics()`, which now never ends.
 

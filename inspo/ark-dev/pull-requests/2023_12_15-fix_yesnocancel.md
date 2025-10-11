@@ -1,10 +1,10 @@
 # Provide a stub for `YesNoCancel` for now, just to avoid a crash
 
 > <https://github.com/posit-dev/ark/pull/186>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Shutting down on Windows was causing a crash because it asked `Save workspace image?` through `R_YesNoCancel()`, but I hadn't provided a hook for that yet.
 

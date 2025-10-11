@@ -1,10 +1,10 @@
 # Add compatibility with EC2 runner
 
 > <https://github.com/posit-dev/ark/pull/348>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This change makes it possible to compile Ark in the EC2 environment.
 

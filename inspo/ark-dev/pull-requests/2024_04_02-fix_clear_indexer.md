@@ -1,10 +1,10 @@
 # Clear the document `index` on each document `update()`
 
 > <https://github.com/posit-dev/ark/pull/291>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Just appending to it results in many outdated symbols
 

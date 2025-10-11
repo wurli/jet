@@ -1,10 +1,10 @@
 # Hot patch `indent_edit()` for tree-sitter-r bug
 
 > <https://github.com/posit-dev/ark/pull/413>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/3598
 

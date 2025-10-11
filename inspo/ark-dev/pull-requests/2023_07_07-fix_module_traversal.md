@@ -1,10 +1,10 @@
 # Only traverse `public/` and `private/` module folders
 
 > <https://github.com/posit-dev/ark/pull/63>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Followup to https://github.com/rstudio/positron/pull/821#issuecomment-1622556493
 

@@ -1,10 +1,10 @@
 # Ark: Argument completions should evaluate R code with a short timeout
 
 > <https://github.com/posit-dev/ark/issues/688>
-> 
+>
 > * Author: @lionel-
 > * State: CLOSED
-> * Labels: 
+> * Labels:
 
 - Wrap `ParseEval()` with a variant that quickly and orderly times out to avoid freezing R and the LSP.
 

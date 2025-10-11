@@ -1,10 +1,10 @@
 # Only use `get_mut()` when we absolutely have to
 
 > <https://github.com/posit-dev/ark/pull/338>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 In theory this frees up the LSP so it can run some of these requests more concurrently (as long as they don't require R, which will also block).
 

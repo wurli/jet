@@ -1,10 +1,10 @@
 # Send UI status from async task to avoid kernel deadlock
 
 > <https://github.com/posit-dev/ark/pull/236>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Extracted from #235, see discussion in #234.
 

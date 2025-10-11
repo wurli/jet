@@ -1,10 +1,10 @@
 # Data explorer - basic support for list columns
 
 > <https://github.com/posit-dev/ark/pull/356>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This PR adds basic support for list columns in the data explorer.
 Addresses https://github.com/posit-dev/positron/issues/1432
@@ -25,7 +25,7 @@ View(list_cols)
 
 ![image](https://github.com/posit-dev/amalthea/assets/4706822/005fddb5-3460-463d-9a4f-000d6032dee2)
 
-We currently intentionally do not support classed list columns (such as data.frame cols) as `length(col)` wouldn't necessarily match the number of rows in the data.frame. 
+We currently intentionally do not support classed list columns (such as data.frame cols) as `length(col)` wouldn't necessarily match the number of rows in the data.frame.
 
 
 ## @dfalbel at 2024-05-28T22:09:16Z
@@ -54,5 +54,5 @@ In general I'm typically a fan of `SEXP` in, `SEXP` out, for functions that live
 
 ## @dfalbel at 2024-05-31T12:15:05Z
 
-Thanks! It makes sense to keep `utils.rs` as flexible as possible. 
+Thanks! It makes sense to keep `utils.rs` as flexible as possible.
 I've updated it to return a SEXP and also using it in the FormattedVector context too.

@@ -1,10 +1,10 @@
 # New help proxy server
 
 > <https://github.com/posit-dev/ark/pull/107>
-> 
+>
 > * Author: @softwarenerd
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This PR addresses the lack of theming for R help by replacing the `help_proxy` server with a new one that provides themed replacements for `R.css` and `prism.css`.
 

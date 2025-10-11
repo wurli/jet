@@ -1,10 +1,10 @@
 # Include R-level backtrace in failing `RFunction` calls
 
 > <https://github.com/posit-dev/ark/pull/257>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This implements a new `r_safe_eval()` utility that combines `r_top_level_exec()` and an error + backtrace capture with `withCallingHandlers()`. This is now used for `RFunction::call()` to provide R-level backtraces for unexpected errors.
 

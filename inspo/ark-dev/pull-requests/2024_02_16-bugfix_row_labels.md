@@ -1,10 +1,10 @@
 # Fix row labels of data explorer
 
 > <https://github.com/posit-dev/ark/pull/247>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 - Addresses https://github.com/posit-dev/positron/issues/2273
 - Fixes performance with large data

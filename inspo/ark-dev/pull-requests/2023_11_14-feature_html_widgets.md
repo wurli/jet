@@ -1,10 +1,10 @@
 # Add support for R HTML widgets
 
 > <https://github.com/posit-dev/ark/pull/146>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This change adds support for R HTML Widgets to ARK:
 

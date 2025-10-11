@@ -1,10 +1,10 @@
 # Add folding ranges
 
 > <https://github.com/posit-dev/ark/pull/815>
-> 
+>
 > * Author: @kv9898
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Moving back from https://github.com/posit-dev/air/pull/146.
 

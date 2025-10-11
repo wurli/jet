@@ -1,10 +1,10 @@
 # Buffer stdout/stderr `'stream'` messages
 
 > <https://github.com/posit-dev/ark/pull/131>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 
 

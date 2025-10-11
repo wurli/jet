@@ -1,12 +1,12 @@
 # Rebuild LSP service, socket, and client on reconnect
 
 > <https://github.com/posit-dev/ark/pull/201>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
-Follow up to #193 
+Follow up to #193
 
 I accidentally introduced a bug related to UI refreshes with `CMD + R`. If you run that with an active R session, then you should get a panic related to the LSP (something about unwrapping a `None`).
 

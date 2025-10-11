@@ -1,10 +1,10 @@
 # `DataViewer::execution_thread()` protect from panics
 
 > <https://github.com/posit-dev/ark/pull/24>
-> 
+>
 > * Author: @romainfrancois
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Follow up from https://github.com/posit-dev/amalthea/pull/13#discussion_r1210693300
 

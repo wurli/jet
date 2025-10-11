@@ -1,10 +1,10 @@
 # Expose helpers for C/C++/Rust debuggers
 
 > <https://github.com/posit-dev/ark/pull/769>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Closes posit-dev/positron#7174
 Progress towards posit-dev/positron#7171

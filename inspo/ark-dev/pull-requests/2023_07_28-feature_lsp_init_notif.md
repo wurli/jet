@@ -1,10 +1,10 @@
 # Send LSP server init notification to frontend
 
 > <https://github.com/posit-dev/ark/pull/71>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 - Move responsibility of sending LSP start notification from `LspComm` to `Shell::open_comm()`.
 

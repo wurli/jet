@@ -1,10 +1,10 @@
 # Only force ALTREP compact row names (i.e. from duckplyr) if requested
 
 > <https://github.com/posit-dev/ark/pull/745>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/4158 at the request of @hadley (but not the part about errors during materialization crashing the kernel, that is a much deeper and harder to fix problem that requires us to adjust our assumptions about what a simple `INTEGER_ELT()` call can do - i.e. in an ALTREP world that can run arbitrary code that can error 😢)
 

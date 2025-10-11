@@ -1,16 +1,16 @@
 # Add NOTICE file and generator
 
 > <https://github.com/posit-dev/ark/pull/392>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 This change does three things:
 
 1. Adds a NOTICE file to Ark
 2. Includes the `LICENSE` and `NOTICE` files in the Ark zipfile
-3. Adds an R script that can be used to automatically regenerate the NOTICE file based on the contents of Ark's `Cargo.toml` file. 
+3. Adds an R script that can be used to automatically regenerate the NOTICE file based on the contents of Ark's `Cargo.toml` file.
 
 ## @jmcphers at 2024-06-11T17:27:21Z
 

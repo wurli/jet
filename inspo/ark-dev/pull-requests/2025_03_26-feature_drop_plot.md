@@ -1,10 +1,10 @@
 # Clean up state when plot is closed on the frontend
 
 > <https://github.com/posit-dev/ark/pull/758>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Closes https://github.com/posit-dev/positron/issues/6738
 Addresses https://github.com/posit-dev/positron/issues/6702

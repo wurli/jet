@@ -1,10 +1,10 @@
 # data explorer: set edges to value of single bin
 
 > <https://github.com/posit-dev/ark/pull/884>
-> 
+>
 > * Author: @isabelizimm
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 R half of https://github.com/posit-dev/positron/pull/8611
 Addressing https://github.com/posit-dev/positron/issues/8095

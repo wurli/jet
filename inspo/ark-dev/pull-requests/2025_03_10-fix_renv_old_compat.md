@@ -1,10 +1,10 @@
 # Expand patch renv support to renv 1.0.1 and earlier
 
 > <https://github.com/posit-dev/ark/pull/736>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/6681
 

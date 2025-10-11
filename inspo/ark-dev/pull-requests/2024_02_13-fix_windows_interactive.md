@@ -1,10 +1,10 @@
 # `R_Interactive` is not Unix specific after all
 
 > <https://github.com/posit-dev/ark/pull/240>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 See https://github.com/posit-dev/amalthea/pull/238#issuecomment-1941596025
 

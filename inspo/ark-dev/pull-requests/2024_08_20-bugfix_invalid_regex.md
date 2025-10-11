@@ -1,10 +1,10 @@
 # Avoid warning with invalid regex filter in Data Explorer
 
 > <https://github.com/posit-dev/ark/pull/477>
-> 
+>
 > * Author: @dfalbel
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses: https://github.com/posit-dev/positron/issues/4392
 The error was caused because `grepl` in R will show a warning and an error when an invalid regex appears.

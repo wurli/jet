@@ -1,10 +1,10 @@
 # Add recency information to the Variables comm
 
 > <https://github.com/posit-dev/ark/pull/363>
-> 
+>
 > * Author: @jmcphers
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 R side of https://github.com/posit-dev/positron/pull/3199 (see that PR for notes and limitations); adds an `updated_time` value and a set of `unevaluated` vars to the update messages. The latter is only used for Python.
 

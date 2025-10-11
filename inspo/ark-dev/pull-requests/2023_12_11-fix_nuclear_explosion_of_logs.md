@@ -1,10 +1,10 @@
 # Only loop in `execution_thread()`
 
 > <https://github.com/posit-dev/ark/pull/176>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Should fix the nuclear explosion of logs
 

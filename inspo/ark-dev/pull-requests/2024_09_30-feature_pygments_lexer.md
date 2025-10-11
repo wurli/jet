@@ -1,10 +1,10 @@
 # Make optional parts of `LanguageInfo` actually optional!
 
 > <https://github.com/posit-dev/ark/pull/553>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 I noticed in https://github.com/posit-dev/positron/issues/2098#issuecomment-2384064069 that in a jupyter console we get this pygment error:
 

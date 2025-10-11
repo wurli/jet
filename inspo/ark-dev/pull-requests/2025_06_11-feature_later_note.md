@@ -1,10 +1,10 @@
 # Add a note about polled events and the later package
 
 > <https://github.com/posit-dev/ark/pull/836>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Documenting that switching from 200ms to 50ms helped with https://github.com/posit-dev/positron/issues/7235
 

@@ -1,10 +1,10 @@
 # ark: Support a session init hook
 
 > <https://github.com/posit-dev/ark/issues/697>
-> 
+>
 > * Author: @jennybc
 > * State: OPEN
-> * Labels: 
+> * Labels:
 
 Follow-up work related to posit-dev/positron#2070 and renv support.
 

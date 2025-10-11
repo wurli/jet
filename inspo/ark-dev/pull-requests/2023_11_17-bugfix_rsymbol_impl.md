@@ -1,10 +1,10 @@
 # Don't derive `Ord` and `PartialOrd` for `RSymbol`
 
 > <https://github.com/posit-dev/ark/pull/154>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Compare the string data instead of the addresses.
 

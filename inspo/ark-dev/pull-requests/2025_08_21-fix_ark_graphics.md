@@ -1,10 +1,10 @@
 # Set as interactive on startup, set `options(device =)` to a string
 
 > <https://github.com/posit-dev/ark/pull/905>
-> 
+>
 > * Author: @DavisVaughan
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 Addresses https://github.com/posit-dev/positron/issues/7681
 

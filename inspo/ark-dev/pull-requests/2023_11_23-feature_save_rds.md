@@ -1,10 +1,10 @@
 # Add `push_rds!()` macro for inspection of R objects in debugging sessions
 
 > <https://github.com/posit-dev/ark/pull/157>
-> 
+>
 > * Author: @lionel-
 > * State: MERGED
-> * Labels: 
+> * Labels:
 
 The Rust debugging experience is currently quite limited. I haven't been able to make library calls into the R API, which prevents inspecting R objects while stepping through code. To work around this limitation, this PR adds a `push_rds!()` macro that makes it easy to collect objects during a debugging session. To use it, add `push_rds!` calls just like you'd use printf statement:
 
@@ -16,9 +16,9 @@ This pushes the object to the RDS file stored in the `RUST_PUSH_RDS_PATH` enviro
 
 ```
 # A tibble: 2 × 3
-  date                context                                   x    
+  date                context                                   x
   <dttm>              <chr>                                     <lis>
-1 2023-11-22 14:46:42 crates/ark/src/lsp/completions/sources/c… <fn> 
+1 2023-11-22 14:46:42 crates/ark/src/lsp/completions/sources/c… <fn>
 2 2023-11-22 12:00:09 doing this                                <dbl>
 ```
 
