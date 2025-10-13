@@ -2,6 +2,7 @@ pub mod kernel;
 pub mod msg;
 
 use kernel::discover;
+use kernel::kernel_spec;
 // use msg::frontend;
 use msg::error;
 
@@ -14,12 +15,23 @@ fn main() {
     // let connection = frontend::Connection::new();
     // let (connection_file, registration_file) = connection.get_connection_files();
 
-    let mut found = String::from("");
+    let kernels = discover::discover_kernels();
 
-    for k in discover::discover_kernels() {
-        found.push_str("\n");
-        found.push_str(&k);
+    let mut paths = String::from("");
+
+    for k in &kernels {
+        paths.push_str("\n");
+        paths.push_str(&k.to_string_lossy());
     }
 
-    println!("Kernels: {}", found)
+
+    println!("Kernels: {}", paths);
+    for k in kernels {
+        match kernel_spec::KernelSpec::from_file(k) {
+            Ok(spec) => println!("Spec: {:#?}", spec),
+            Err(e) => eprintln!("Error reading kernel spec: {}", e),
+        }
+    }
 }
+
+

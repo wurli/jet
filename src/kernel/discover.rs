@@ -12,20 +12,23 @@
 //!   ~/.local/share/jupyter/kernels (Linux)
 //!   ~/Library/Jupyter/kernels (Mac)
 //!
+//! Other locations may also be searched if the JUPYTER_PATH environment variable is set.
+//!
 //! Windows exists too but I'm not supporting it yet.
 //!
 //! docs: https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn path_exists(path: &Path) -> bool {
     fs::metadata(path).is_ok()
 }
 
-pub fn discover_kernels() -> Vec<String> {
-    let mut kernels = Vec::new();
-
+/// Discover Jupyter kernels by searching known directories.
+///
+/// Returns a vector of paths to the discovered kernel.json files.
+pub fn discover_kernels() -> Vec<PathBuf> {
     let mut dirs = vec![
         "/usr/share/jupyter/kernels".to_string(),
         "/usr/local/share/jupyter/kernels".to_string(),
@@ -43,20 +46,16 @@ pub fn discover_kernels() -> Vec<String> {
         dirs.push(format!("{}/Library/Jupyter/kernels", var.to_string_lossy()));
     }
 
-    for dir in dirs {
-        let path = Path::new(&dir);
-        if path_exists(path) {
-            if let Ok(entries) = fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    if entry.path().is_dir() {
-                        if let Some(name) = entry.path().to_str() {
-                            kernels.push(name.to_string());
-                        }
-                    }
-                }
-            }
-        }
+    // TODO: split this variable up on `:` and recurse
+    if let Some(var) = std::env::var_os("JUPYTER_PATH") {
+        dirs.push(format!("{}", var.to_string_lossy()));
     }
 
-    kernels
+    dirs.into_iter()
+        .filter(|dir| path_exists(Path::new(dir)))
+        .filter_map(|dir| fs::read_dir(dir).ok())
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path().join("kernel.json"))
+        .filter(|path| path.exists())
+        .collect()
 }
