@@ -1,10 +1,10 @@
-use std::error::Error;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::{error::Error, path::PathBuf};
 use tempfile::Builder;
-use serde::{ Serialize, Deserialize };
 
 use crate::msg::port::RandomUserPort;
 
@@ -41,7 +41,6 @@ pub struct ConnectionFile {
     pub key: String,
 }
 
-
 impl ConnectionFile {
     pub fn new() -> Self {
         Self {
@@ -68,32 +67,11 @@ impl ConnectionFile {
     }
 
     /// Write to an actual file
-    pub fn to_file<P>(&self, file: Option<P>) -> String
-    where
-        P: AsRef<Path> + Into<String>,
-    {
-        let json = serde_json::to_string_pretty(&self).unwrap();
+    pub fn to_file(&self, file: PathBuf) -> Result<(), Box<dyn Error>> {
+        let json = serde_json::to_string_pretty(&self)?;
         log::info!("Connection file contents: {json}");
-
-        if let Some(path) = file {
-            fs::write(&path, json).expect("Unable to write connection file");
-            return path.into();
-        };
-
-        // Generate a temp file if no path supplied
-        let path = Builder::new()
-            .prefix("ark_connection_file")
-            .suffix(".json")
-            .tempfile()
-            .expect("Unable to generate a temporary file");
-
-        fs::write(&path, json).expect("Unable to write connection file");
-
-        path.path()
-            .to_owned()
-            .to_str()
-            .expect("Unable to get connection file path")
-            .to_string()
+        fs::write(&file, &json)?;
+        Ok(())
     }
 
     /// Given a port, return a URI-like string that can be used to connect to

@@ -6,16 +6,17 @@
  */
 
 use std::error::Error;
+use std::{fs, path::Path};
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 
 use crate::msg::connection_file::ConnectionFile;
 
 /// The contents of the Registration File as implied in JEP 66.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RegistrationFile {
     /// The transport type to use for ZeroMQ; generally "tcp"
     pub transport: String,
@@ -44,6 +45,14 @@ impl RegistrationFile {
         let control = serde_json::from_reader(reader)?;
 
         Ok(control)
+    }
+
+    /// Write to an actual file
+    pub fn to_file(&self, file: PathBuf) -> Result<(), Box<dyn Error>> {
+        let json = serde_json::to_string_pretty(&self)?;
+        log::info!("Registration file contents: {json}");
+        fs::write(&file, &json)?;
+        Ok(())
     }
 
     pub fn as_connection_file(&self) -> ConnectionFile {

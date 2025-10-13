@@ -1,17 +1,25 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::error::Error;
-use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use std::collections::HashMap;
-use tempfile::Builder;
+
+use crate::kernel::discover::discover_kernels;
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum InterruptMode {
+    Signal,
+    Message
+}
 
 /// docs: https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs
+/// spec: https://github.com/jupyter/enhancement-proposals/blob/master/105-kernelspec-spec/kernelspec.schema.json
 #[derive(Serialize, Deserialize, Debug)]
 pub struct KernelSpec {
-    /// A list of command line arguments used to start the kernel. The text `{connection_file}` in
+    /// A list of command line arguments used to start the kernel. The text {connection_file} in
     /// any argument will be replaced with the path to the connection file.
     pub argv: Vec<String>,
 
@@ -31,7 +39,7 @@ pub struct KernelSpec {
     /// operating system’s signalling facilities (e.g. `SIGINT` on POSIX systems), or by sending an
     /// `interrupt_request` message on the control channel (see Kernel interrupt). If this is not
     /// specified the client will default to `signal` mode.
-    pub interrupt_mode: Option<String>,
+    pub interrupt_mode: Option<InterruptMode>,
 
     /// (optional) A dictionary of environment variables to set for the kernel. These will be added
     /// to the current environment variables before the kernel is started. Existing environment
@@ -44,11 +52,27 @@ pub struct KernelSpec {
     /// in kernel selection. Metadata added here should be namespaced for the tool reading and
     /// writing that metadata.
     pub metadata: Option<HashMap<String, Value>>,
+
+    /// (optional) The version of protocol this kernel implements. If not specified, the client
+    /// will assume the version is <5.5 until it can get it via the kernel_info request. The kernel
+    /// protocol uses semantic versioning (SemVer).
+    ///
+    /// docs: <https://jupyter.org/enhancement-proposals/66-jupyter-handshaking/jupyter-handshaking.html#proposed-enhancement>
+    pub kernel_protocol_version: Option<String>,
 }
 
 impl KernelSpec {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
         let file = File::open(path)?;
         Ok(serde_json::from_reader(BufReader::new(file))?)
+    }
+
+    pub fn get_all() -> Vec<Self> {
+        discover_kernels()
+            .iter()
+            // TODO: here we just discard any specs which couldn't be parsed. Better to somehow
+            // signal that these are being dropped.
+            .filter_map(|path| Self::from_file(path).ok())
+            .collect()
     }
 }
