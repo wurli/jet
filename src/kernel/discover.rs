@@ -27,15 +27,14 @@ fn path_exists(path: &Path) -> bool {
 
 /// Discover Jupyter kernels by searching known directories.
 ///
-/// Returns a vector of paths to the discovered kernel.json files.
+/// Returns a vector of paths to the discovered kernel.json files, ordered by precedence (env,
+/// user, system).
 pub fn discover_kernels() -> Vec<PathBuf> {
-    let mut dirs = vec![
-        "/usr/share/jupyter/kernels".to_string(),
-        "/usr/local/share/jupyter/kernels".to_string(),
-    ];
+    let mut dirs: Vec<String> = Vec::new();
 
-    if let Some(var) = std::env::var_os("CONDA_PREFIX") {
-        dirs.push(format!("{}/share/jupyter/kernels", var.to_string_lossy()));
+    // TODO: split this variable up on `:` and recurse
+    if let Some(var) = std::env::var_os("JUPYTER_PATH") {
+        dirs.push(format!("{}", var.to_string_lossy()));
     }
 
     if let Some(var) = std::env::var_os("HOME") {
@@ -46,10 +45,14 @@ pub fn discover_kernels() -> Vec<PathBuf> {
         dirs.push(format!("{}/Library/Jupyter/kernels", var.to_string_lossy()));
     }
 
-    // TODO: split this variable up on `:` and recurse
-    if let Some(var) = std::env::var_os("JUPYTER_PATH") {
-        dirs.push(format!("{}", var.to_string_lossy()));
+    dirs.push("/usr/share/jupyter/kernels".to_string());
+    dirs.push("/usr/local/share/jupyter/kernels".to_string());
+
+    // TODO: Are there any other prefix env vars we should check?
+    if let Some(var) = std::env::var_os("CONDA_PREFIX") {
+        dirs.push(format!("{}/share/jupyter/kernels", var.to_string_lossy()));
     }
+
 
     dirs.into_iter()
         .filter(|dir| path_exists(Path::new(dir)))
