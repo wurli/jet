@@ -57,6 +57,9 @@ pub struct KernelSpec {
     /// will assume the version is <5.5 until it can get it via the kernel_info request. The kernel
     /// protocol uses semantic versioning (SemVer).
     ///
+    /// If >=5.5, the kernel supports the 'handshake' connection method, i.e. using a registration
+    /// file.
+    ///
     /// docs: <https://jupyter.org/enhancement-proposals/66-jupyter-handshaking/jupyter-handshaking.html#proposed-enhancement>
     pub kernel_protocol_version: Option<String>,
 }

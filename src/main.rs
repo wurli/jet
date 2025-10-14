@@ -119,7 +119,7 @@ fn main() {
     // println!("{:#?}\n", input)
 
 
-    let code = "42";
+    let code = "cli::bg_yellow('hi')";
     frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.recv_iopub_busy();
 
