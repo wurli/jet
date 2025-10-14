@@ -119,14 +119,16 @@ fn main() {
     // println!("{:#?}\n", input)
 
 
-    let code = "cli::bg_yellow('hi')";
+    let code = "dplyr::tibble(x = 1:3, y = letters[1:3])";
     frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.recv_iopub_busy();
 
     let input = frontend.recv_iopub_execute_input();
     let reply = frontend.recv_iopub_execute_result();
-    println!("Input code: `{}`", input.code);
-    println!("Result    : `{}`", reply);
+    println!("-------------------------------------------------------------");
+    println!("> {}", input.code);
+    println!("{}", reply);
+    println!("-------------------------------------------------------------");
 
     frontend.recv_iopub_idle();
     frontend.recv_shell_execute_reply();
