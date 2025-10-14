@@ -6,6 +6,9 @@ use std::{
     vec::IntoIter
 };
 
+/// The range of ports defined by IANA as "User Ports"
+///
+/// docs: https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml
 static IANA_USER_PORT_RANGE: RangeInclusive<u16> = 1024..=49151;
 
 pub struct RandomUserPort(RangeInclusive<u16>);

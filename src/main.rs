@@ -59,6 +59,8 @@ fn main() {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     let selected_kernel_name = String::from("Ark R Kernel");
+    // TODO: I think python isn't working because the current frontend implementation only
+    // supports the handshake method of connecting (i.e. using registration file)
     // let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelSpec::get_all()
@@ -89,7 +91,15 @@ fn main() {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Start the kernel
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let _ = Command::new(args.remove(0)).args(args).spawn();
+    let mut cmd = Command::new(args.remove(0));
+    cmd.args(args);
+
+    if let Some(env_vars) = spec.env {
+        println!("Setting vars {:#?}", env_vars);
+        cmd.envs(env_vars);
+    }
+
+    let _ = cmd.spawn();
 
     println!("Successfully started kernel '{}'", spec.display_name);
 
@@ -103,9 +113,33 @@ fn main() {
     // let res = frontend.recv_shell();
     // println!("{:#?}\n", res);
 
+    // frontend.send_execute_request("42", frontend::ExecuteRequestOptions::default());
+    // frontend.recv_iopub_busy();
+    // let input = frontend.recv_iopub_execute_input();
+    // println!("{:#?}\n", input)
 
-    frontend.send_execute_request("42", frontend::ExecuteRequestOptions::default());
+
+    let code = "42";
+    frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.recv_iopub_busy();
+
     let input = frontend.recv_iopub_execute_input();
-    println!("{:#?}\n", input)
+    let reply = frontend.recv_iopub_execute_result();
+    println!("Input code: `{}`", input.code);
+    println!("Result    : `{}`", reply);
+
+    frontend.recv_iopub_idle();
+    frontend.recv_shell_execute_reply();
+
+    // let code = "dplyr::tibble(x = 1)";
+    // frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
+    // frontend.recv_iopub_busy();
+    //
+    // let input = frontend.recv_iopub_execute_input();
+    // let reply = frontend.recv_iopub_execute_result();
+    // println!("Input code: {}", input.code);
+    // println!("Result    : {}", reply);
+
+    // frontend.recv_iopub_idle();
+    // assert_eq!(frontend.recv_shell_execute_reply(), input.execution_count);
 }
