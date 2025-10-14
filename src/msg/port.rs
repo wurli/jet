@@ -18,10 +18,11 @@ impl RandomUserPort {
         RandomUserPort(IANA_USER_PORT_RANGE.clone())
     }
 
+    /// Attempts to bind to 10 ports. If this doesn't work, something else is probably wrong
     pub fn find() -> Result<u16> {
-        // Try binding to 10 ports. If this doesn't work, something else is
-        // probably wrong
         for _ in 0..10 {
+            // TODO: we can ask the OS to pick a port instead by using, e.g.
+            // TcpListener::bind("127.0.0.1:0")
             if let Ok(res) = TcpListener::bind(Self::new()) {
                 return Ok(res.local_addr()?.port());
             }
@@ -34,7 +35,7 @@ impl ToSocketAddrs for RandomUserPort {
     type Iter = IntoIter<SocketAddr>;
 
     fn to_socket_addrs(&self) -> Result<Self::Iter> {
-        // You might want to use localhost (127.0.0.1) as default IP
+        // TODO: don't hardcode the IP as localhost
         let ip = IpAddr::from([127, 0, 0, 1]);
 
         // Convert the range into a vector of SocketAddr
