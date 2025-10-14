@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::{error::Error, path::PathBuf};
-use tempfile::Builder;
 
 use crate::msg::port::RandomUserPort;
 
@@ -44,11 +43,11 @@ pub struct ConnectionFile {
 impl ConnectionFile {
     pub fn new() -> Self {
         Self {
-            control_port: RandomUserPort::find().expect("Failed to open control port"),
-            shell_port: RandomUserPort::find().expect("Failed to open shell port"),
-            stdin_port: RandomUserPort::find().expect("Failed to open stdin port"),
-            iopub_port: RandomUserPort::find().expect("Failed to open iopub port"),
-            hb_port: RandomUserPort::find().expect("Failed to open hb port"),
+            control_port: RandomUserPort::new().expect("Failed to open control port").0,
+            shell_port: RandomUserPort::new().expect("Failed to open shell port").0,
+            stdin_port: RandomUserPort::new().expect("Failed to open stdin port").0,
+            iopub_port: RandomUserPort::new().expect("Failed to open iopub port").0,
+            hb_port: RandomUserPort::new().expect("Failed to open hb port").0,
             transport: String::from("tcp"),
             signature_scheme: String::from("hmac-sha256"),
             ip: String::from("127.0.0.1"),
