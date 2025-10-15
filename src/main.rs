@@ -40,8 +40,8 @@ fn main() {
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    let selected_kernel_name = String::from("Ark R Kernel");
-    // let selected_kernel_name = String::from("Python 3 (ipykernel)");
+    // let selected_kernel_name = String::from("Ark R Kernel");
+    let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelSpec::get_all()
         .into_iter()
@@ -70,6 +70,17 @@ fn main() {
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Start the kernel
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    let mut cmd = Command::new(args.remove(0));
+    cmd.args(args);
+
+    if let Some(env_vars) = spec.env {
+        println!("Setting vars {:#?}", env_vars);
+        cmd.envs(env_vars);
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Start the frontend
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     let frontend_opts = frontend::FrontendOptions::init();
@@ -92,22 +103,7 @@ fn main() {
     if use_registration_file {
         let sockets = frontend::RegistrationSockets::from(&frontend_opts);
         sockets.to_file(&frontend_opts, connection_file_path.into());
-
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // Start the kernel
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        let mut cmd = Command::new(args.remove(0));
-        cmd.args(args);
-
-        if let Some(env_vars) = spec.env {
-            println!("Setting vars {:#?}", env_vars);
-            cmd.envs(env_vars);
-        }
-
         let _ = cmd.spawn();
-
-        println!("Successfully started kernel '{}'", spec.display_name);
-
         frontend = frontend::Frontend::from_registration_socket(frontend_opts, sockets);
     } else {
         // For connection file method: create connection file with ports first,
@@ -115,17 +111,6 @@ fn main() {
         let mut connection_file = ConnectionFile::new();
         connection_file.key = frontend_opts.key.clone();
         connection_file.to_file(connection_file_path.into()).unwrap();
-
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // Start the kernel
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        let mut cmd = Command::new(args.remove(0));
-        cmd.args(args);
-
-        if let Some(env_vars) = spec.env {
-            println!("Setting vars {:#?}", env_vars);
-            cmd.envs(env_vars);
-        }
 
         let _ = cmd.spawn();
 
@@ -144,11 +129,11 @@ fn main() {
             connection_file.endpoint(connection_file.hb_port),
         );
         frontend = frontend::Frontend::from_connection_sockets(frontend_opts, sockets);
-        
+
         // For connection file method, first check if there's a Welcome message from XPUB kernels like Ark
         // Give it a brief moment for any Welcome messages to arrive
         std::thread::sleep(std::time::Duration::from_millis(200));
-        
+
         //Check for and consume Welcome message if present (from kernels using XPUB like Ark)
         if frontend.iopub_socket.poll_incoming(100).unwrap() {
             let msg = frontend.recv_iopub();
@@ -170,23 +155,23 @@ fn main() {
                 panic!("Expected Welcome or no message, got: {:?}", msg);
             }
         }
-        
+
         // Now send a kernel_info_request to ensure the kernel is ready
         println!("Sending kernel_info_request to initialize kernel connection...");
         frontend.send_shell(crate::msg::wire::kernel_info_request::KernelInfoRequest {});
-        
+
         // Consume the Busy status from kernel_info_request
         frontend.recv_iopub_busy();
-        
+
         // Consume the Idle status
         frontend.recv_iopub_idle();
-        
+
         // Drain the shell socket to consume the kernel_info_reply
         // (we don't parse it as it might have version-specific fields)
         if frontend.shell_socket.poll_incoming(10000).unwrap() {
             let _ = frontend.shell_socket.recv_multipart();
         }
-        
+
         println!("Kernel connection initialized and ready!");
     }
 
@@ -203,7 +188,7 @@ fn main() {
     // let input = frontend.recv_iopub_execute_input();
     // println!("{:#?}\n", input)
 
-    let code = "dplyr::tibble(x = 1:3, y = letters[1:3])";  // R code
+    let code = "1 + 1";  // R code
     // let code = "{'x': [1, 2, 3], 'y': ['a', 'b', 'c']}";  // Python code
 
     frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
