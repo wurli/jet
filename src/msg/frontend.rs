@@ -80,7 +80,7 @@ pub struct ConnectionSockets {
 }
 
 impl ConnectionSockets {
-    pub fn from(opts: FrontendOptions) -> Self {
+    pub fn from(opts: &FrontendOptions) -> Self {
         Self::from_endpoints(
             &opts,
             opts.endpoint(0),
@@ -160,20 +160,20 @@ impl ConnectionSockets {
         }
     }
 
-    pub fn to_file(&self, opts: FrontendOptions, path: PathBuf) {
+    pub fn to_file(&self, opts: &FrontendOptions, path: PathBuf) {
         let connection_file = ConnectionFile {
             control_port: self.control.get_port().unwrap(),
             shell_port: self.shell.get_port().unwrap(),
             stdin_port: self.stdin.get_port().unwrap(),
             iopub_port: self.iopub.get_port().unwrap(),
             hb_port: self.heartbeat.get_port().unwrap(),
-            signature_scheme: opts.signature_scheme,
-            transport: opts.transport,
-            ip: opts.ip,
-            key: opts.key,
+            signature_scheme: opts.signature_scheme.clone(),
+            transport: opts.transport.clone(),
+            ip: opts.ip.clone(),
+            key: opts.key.clone(),
         };
 
-        connection_file.to_file(path);
+        connection_file.to_file(path).unwrap();
     }
 }
 
@@ -182,7 +182,7 @@ pub struct RegistrationSockets {
 }
 
 impl RegistrationSockets {
-    pub fn from(opts: FrontendOptions) -> Self {
+    pub fn from(opts: &FrontendOptions) -> Self {
         RegistrationSockets {
             registration: Socket::new(
                 opts.session.clone(),
@@ -196,16 +196,16 @@ impl RegistrationSockets {
         }
     }
 
-    pub fn to_file(&self, opts: FrontendOptions, path: PathBuf) {
+    pub fn to_file(&self, opts: &FrontendOptions, path: PathBuf) {
         let registration_file = RegistrationFile {
-            transport: opts.transport,
-            signature_scheme: opts.signature_scheme,
-            ip: opts.ip,
-            key: opts.key,
+            transport: opts.transport.clone(),
+            signature_scheme: opts.signature_scheme.clone(),
+            ip: opts.ip.clone(),
+            key: opts.key.clone(),
             registration_port: self.registration.get_port().unwrap(),
         };
 
-        registration_file.to_file(path);
+        registration_file.to_file(path).unwrap();
     }
 }
 

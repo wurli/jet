@@ -1,7 +1,6 @@
 pub mod kernel;
 pub mod msg;
 
-use std::path::PathBuf;
 use std::process::Command;
 
 use kernel::kernel_spec::KernelSpec;
@@ -36,31 +35,11 @@ fn main() {
         }
     }
 
-    let connection = frontend::Connection::new();
-
-    let (connection_file, registration_file) = connection.get_connection_files();
-
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // Create connection/registration files
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let connection_file_path = "carpo_connection_file.json";
-    let registration_file_path = "carpo_registration_file.json";
-
-    connection_file
-        .to_file(PathBuf::from(connection_file_path))
-        .expect("Could not write connection file");
-
-    registration_file
-        .to_file(PathBuf::from(registration_file_path))
-        .expect("Could not write registration file");
-
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     let selected_kernel_name = String::from("Ark R Kernel");
-    // TODO: I think python isn't working because the current frontend implementation only
-    // supports the handshake method of connecting (i.e. using registration file)
     // let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelSpec::get_all()
@@ -81,11 +60,41 @@ fn main() {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     let mut args = spec.argv;
 
+    let connection_file_path = "carpo_connection_file.json";
+
     for arg in args.iter_mut() {
         if *arg == "{connection_file}" {
-            *arg = registration_file_path.to_string()
-            // *arg = connection_file_path.to_string()
+            *arg = connection_file_path.to_string()
         }
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Start the frontend
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    let frontend_opts = frontend::FrontendOptions::init();
+
+    let mut use_registration_file = false;
+
+    if selected_kernel_name == String::from("Ark R Kernel") {
+        use_registration_file = true;
+    }
+
+    if let Some(version) = spec.kernel_protocol_version {
+        if version >= String::from("5.5") {
+            use_registration_file = true;
+        }
+    }
+
+    let frontend: Frontend;
+
+    if use_registration_file {
+        let sockets = frontend::RegistrationSockets::from(&frontend_opts);
+        sockets.to_file(&frontend_opts, connection_file_path.into());
+        frontend = frontend::Frontend::from_registration_socket(frontend_opts, sockets);
+    } else {
+        let sockets = frontend::ConnectionSockets::from(&frontend_opts);
+        sockets.to_file(&frontend_opts, connection_file_path.into());
+        frontend = frontend::Frontend::from_connection_sockets(frontend_opts, sockets);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -106,8 +115,6 @@ fn main() {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Try receiving some info
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let frontend = Frontend::from_connection(connection);
-
     // This works fine
     // frontend.send_shell(crate::msg::wire::kernel_info_request::KernelInfoRequest {});
     // let res = frontend.recv_shell();
@@ -118,8 +125,8 @@ fn main() {
     // let input = frontend.recv_iopub_execute_input();
     // println!("{:#?}\n", input)
 
-
     let code = "dplyr::tibble(x = 1:3, y = letters[1:3])";
+
     frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.recv_iopub_busy();
 
