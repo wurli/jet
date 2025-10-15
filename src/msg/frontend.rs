@@ -5,6 +5,8 @@
  *
  */
 
+use std::path::PathBuf;
+
 use assert_matches::assert_matches;
 use rand::Rng;
 use serde_json::Value;
@@ -25,8 +27,7 @@ use crate::msg::wire::status::ExecutionState;
 use crate::msg::wire::stream::Stream;
 use crate::msg::wire::wire_message::WireMessage;
 
-pub struct Connection {
-    pub registration_socket: Socket,
+pub struct FrontendOptions {
     pub ctx: zmq::Context,
     pub session: Session,
     pub key: String,
@@ -35,21 +36,12 @@ pub struct Connection {
     pub signature_scheme: String,
 }
 
-pub struct Frontend {
-    pub _control_socket: Socket,
-    pub shell_socket: Socket,
-    pub iopub_socket: Socket,
-    pub stdin_socket: Socket,
-    pub heartbeat_socket: Socket,
-    session: Session,
-}
-
 pub struct ExecuteRequestOptions {
     pub allow_stdin: bool,
 }
 
-impl Connection {
-    pub fn new() -> Self {
+impl FrontendOptions {
+    pub fn init() -> Self {
         // Create a random HMAC key for signing messages.
         let key_bytes = rand::rng().random::<[u8; 16]>();
         let key = hex::encode(key_bytes);
@@ -64,19 +56,7 @@ impl Connection {
         let transport = String::from("tcp");
         let signature_scheme = String::from("hmac-sha256");
 
-        // Bind to a random port using `0`
-        let registration_socket = Socket::new(
-            session.clone(),
-            ctx.clone(),
-            String::from("Registration"),
-            zmq::REP,
-            None,
-            Self::endpoint_from_parts(&transport, &ip, 0),
-        )
-        .unwrap();
-
         Self {
-            registration_socket,
             ctx,
             session,
             key,
@@ -86,124 +66,219 @@ impl Connection {
         }
     }
 
-    /// Gets a connection file for the Amalthea kernel that will connect it to
-    /// this synthetic frontend. Uses a handshake through a registration
-    /// file to avoid race conditions related to port binding.
-    pub fn get_connection_files(&self) -> (ConnectionFile, RegistrationFile) {
-        let registration_file = RegistrationFile {
-            ip: self.ip.clone(),
-            transport: self.transport.clone(),
-            signature_scheme: self.signature_scheme.clone(),
-            key: self.key.clone(),
-            registration_port: self.registration_socket.get_port().unwrap(),
-        };
-
-        let connection_file = registration_file.as_connection_file();
-
-        (connection_file, registration_file)
-    }
-
     fn endpoint(&self, port: u16) -> String {
-        Self::endpoint_from_parts(&self.transport, &self.ip, port)
-    }
-
-    fn endpoint_from_parts(transport: &str, ip: &str, port: u16) -> String {
-        format!("{transport}://{ip}:{port}")
+        format!("{}://{}:{}", &self.transport, &self.ip, port)
     }
 }
 
+pub struct ConnectionSockets {
+    pub control: Socket,
+    pub shell: Socket,
+    pub iopub: Socket,
+    pub stdin: Socket,
+    pub heartbeat: Socket,
+}
+
+impl ConnectionSockets {
+    pub fn from(opts: FrontendOptions) -> Self {
+        Self::from_endpoints(
+            &opts,
+            opts.endpoint(0),
+            opts.endpoint(0),
+            opts.endpoint(0),
+            opts.endpoint(0),
+            opts.endpoint(0),
+        )
+    }
+
+    pub fn from_endpoints(
+        opts: &FrontendOptions,
+        control_endpoint: String,
+        shell_endpoint: String,
+        iopub_endpoint: String,
+        stdin_endpoint: String,
+        heartbeat_endpoint: String,
+    ) -> Self {
+        let shell_id = rand::rng().random::<[u8; 16]>();
+
+        let control = Socket::new(
+            opts.session.clone(),
+            opts.ctx.clone(),
+            String::from("Control"),
+            zmq::DEALER,
+            None,
+            control_endpoint,
+        )
+        .unwrap();
+
+        let shell = Socket::new(
+            opts.session.clone(),
+            opts.ctx.clone(),
+            String::from("Shell"),
+            zmq::DEALER,
+            Some(&shell_id),
+            shell_endpoint,
+        )
+        .unwrap();
+
+        let iopub = Socket::new(
+            opts.session.clone(),
+            opts.ctx.clone(),
+            String::from("IOPub"),
+            zmq::SUB,
+            None,
+            iopub_endpoint,
+        )
+        .unwrap();
+
+        let stdin = Socket::new(
+            opts.session.clone(),
+            opts.ctx.clone(),
+            String::from("Stdin"),
+            zmq::DEALER,
+            Some(&shell_id),
+            stdin_endpoint,
+        )
+        .unwrap();
+
+        let heartbeat = Socket::new(
+            opts.session.clone(),
+            opts.ctx.clone(),
+            String::from("Heartbeat"),
+            zmq::REQ,
+            None,
+            heartbeat_endpoint,
+        )
+        .unwrap();
+
+        Self {
+            control,
+            shell,
+            iopub,
+            stdin,
+            heartbeat,
+        }
+    }
+
+    pub fn to_file(&self, opts: FrontendOptions, path: PathBuf) {
+        let connection_file = ConnectionFile {
+            control_port: self.control.get_port().unwrap(),
+            shell_port: self.shell.get_port().unwrap(),
+            stdin_port: self.stdin.get_port().unwrap(),
+            iopub_port: self.iopub.get_port().unwrap(),
+            hb_port: self.heartbeat.get_port().unwrap(),
+            signature_scheme: opts.signature_scheme,
+            transport: opts.transport,
+            ip: opts.ip,
+            key: opts.key,
+        };
+
+        connection_file.to_file(path);
+    }
+}
+
+pub struct RegistrationSockets {
+    pub registration: Socket,
+}
+
+impl RegistrationSockets {
+    pub fn from(opts: FrontendOptions) -> Self {
+        RegistrationSockets {
+            registration: Socket::new(
+                opts.session.clone(),
+                opts.ctx.clone(),
+                String::from("Registration"),
+                zmq::REP,
+                None,
+                opts.endpoint(0),
+            )
+            .unwrap(),
+        }
+    }
+
+    pub fn to_file(&self, opts: FrontendOptions, path: PathBuf) {
+        let registration_file = RegistrationFile {
+            transport: opts.transport,
+            signature_scheme: opts.signature_scheme,
+            ip: opts.ip,
+            key: opts.key,
+            registration_port: self.registration.get_port().unwrap(),
+        };
+
+        registration_file.to_file(path);
+    }
+}
+
+pub struct Frontend {
+    pub _control_socket: Socket,
+    pub shell_socket: Socket,
+    pub iopub_socket: Socket,
+    pub stdin_socket: Socket,
+    pub heartbeat_socket: Socket,
+    session: Session,
+}
+
 impl Frontend {
-    pub fn from_connection(connection: Connection) -> Self {
+    pub fn from_connection_sockets(opts: FrontendOptions, sockets: ConnectionSockets) -> Self {
+        Self {
+            _control_socket: sockets.control,
+            shell_socket: sockets.shell,
+            iopub_socket: sockets.iopub,
+            stdin_socket: sockets.stdin,
+            heartbeat_socket: sockets.heartbeat,
+            session: opts.session,
+        }
+    }
+
+    pub fn from_registration_socket(
+        opts: FrontendOptions,
+        sockets: RegistrationSockets,
+    ) -> Self {
         // Wait to receive the handshake request so we know what ports to connect on.
         // Note that `recv()` times out.
-        let message = Self::recv(&connection.registration_socket);
+        let message = Self::recv(&sockets.registration);
         let handshake = assert_matches!(message, Message::HandshakeRequest(message) => {
             message.content
         });
 
         // Immediately send back a handshake reply so the kernel can start up
         Self::send(
-            &connection.registration_socket,
-            &connection.session,
+            &sockets.registration,
+            &opts.session,
             HandshakeReply { status: Status::Ok },
         );
 
-        // Create a random socket identity for the shell and stdin sockets. Per
-        // the Jupyter specification, these must share a ZeroMQ identity.
-        let shell_id = rand::rng().random::<[u8; 16]>();
-
-        let _control_socket = Socket::new(
-            connection.session.clone(),
-            connection.ctx.clone(),
-            String::from("Control"),
-            zmq::DEALER,
-            None,
-            connection.endpoint(handshake.control_port),
-        )
-        .unwrap();
-
-        let shell_socket = Socket::new(
-            connection.session.clone(),
-            connection.ctx.clone(),
-            String::from("Shell"),
-            zmq::DEALER,
-            Some(&shell_id),
-            connection.endpoint(handshake.shell_port),
-        )
-        .unwrap();
-
-        let iopub_socket = Socket::new(
-            connection.session.clone(),
-            connection.ctx.clone(),
-            String::from("IOPub"),
-            zmq::SUB,
-            None,
-            connection.endpoint(handshake.iopub_port),
-        )
-        .unwrap();
-
-        let stdin_socket = Socket::new(
-            connection.session.clone(),
-            connection.ctx.clone(),
-            String::from("Stdin"),
-            zmq::DEALER,
-            Some(&shell_id),
-            connection.endpoint(handshake.stdin_port),
-        )
-        .unwrap();
-
-        let heartbeat_socket = Socket::new(
-            connection.session.clone(),
-            connection.ctx.clone(),
-            String::from("Heartbeat"),
-            zmq::REQ,
-            None,
-            connection.endpoint(handshake.hb_port),
-        )
-        .unwrap();
+        let sockets = ConnectionSockets::from_endpoints(
+            &opts,
+            opts.endpoint(handshake.control_port),
+            opts.endpoint(handshake.shell_port),
+            opts.endpoint(handshake.iopub_port),
+            opts.endpoint(handshake.stdin_port),
+            opts.endpoint(handshake.hb_port),
+        );
 
         // Immediately block until we've received the IOPub welcome message from the XPUB
         // server side socket. This confirms that we've fully subscribed and avoids
         // dropping any of the initial IOPub messages that a server may send if we start
         // to perform requests immediately (in particular, busy/idle messages).
         // https://github.com/posit-dev/ark/pull/577
-        assert_matches!(Self::recv(&iopub_socket), Message::Welcome(data) => {
+        assert_matches!(Self::recv(&sockets.iopub), Message::Welcome(data) => {
             assert_eq!(data.content.subscription, String::from(""));
         });
         // We also go ahead and handle the `ExecutionState::Starting` status that we know
         // is coming from the kernel right after the `Welcome` message, so tests don't
         // have to care about this.
-        assert_matches!(Self::recv(&iopub_socket), Message::Status(data) => {
+        assert_matches!(Self::recv(&sockets.iopub), Message::Status(data) => {
             assert_eq!(data.content.execution_state, ExecutionState::Starting);
         });
 
         Self {
-            _control_socket,
-            shell_socket,
-            iopub_socket,
-            stdin_socket,
-            heartbeat_socket,
-            session: connection.session,
+            _control_socket: sockets.control,
+            shell_socket: sockets.shell,
+            iopub_socket: sockets.iopub,
+            stdin_socket: sockets.stdin,
+            heartbeat_socket: sockets.heartbeat,
+            session: opts.session,
         }
     }
 
