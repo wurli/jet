@@ -193,8 +193,8 @@ pub struct Frontend {
 
 impl Frontend {
     pub fn start_with_connection_file(
-        path: PathBuf,
         mut kernel_cmd: std::process::Command,
+        path: PathBuf,
     ) -> Self {
         let opts = FrontendOptions::init();
 
@@ -242,8 +242,8 @@ impl Frontend {
     }
 
     pub fn start_with_registration_file(
-        path: PathBuf,
         mut kernel_cmd: std::process::Command,
+        path: PathBuf,
     ) -> Self {
         let opts = FrontendOptions::init();
 

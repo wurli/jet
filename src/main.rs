@@ -96,9 +96,9 @@ fn main() {
     }
 
     let frontend = if use_registration_file {
-        frontend::Frontend::start_with_registration_file(connection_file_path.into(), kernel_cmd)
+        frontend::Frontend::start_with_registration_file(kernel_cmd, connection_file_path.into())
     } else {
-        frontend::Frontend::start_with_connection_file(connection_file_path.into(), kernel_cmd)
+        frontend::Frontend::start_with_connection_file(kernel_cmd, connection_file_path.into())
     };
 
     // Give it a brief moment for any Welcome messages to arrive
