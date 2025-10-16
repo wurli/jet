@@ -80,16 +80,16 @@ pub struct ConnectionSockets {
 }
 
 impl ConnectionSockets {
-    pub fn from(opts: &FrontendOptions) -> Self {
-        Self::from_endpoints(
-            &opts,
-            opts.endpoint(0),
-            opts.endpoint(0),
-            opts.endpoint(0),
-            opts.endpoint(0),
-            opts.endpoint(0),
-        )
-    }
+    // pub fn from(opts: &FrontendOptions) -> Self {
+    //     Self::from_endpoints(
+    //         &opts,
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //     )
+    // }
 
     pub fn from_endpoints(
         opts: &FrontendOptions,
@@ -220,6 +220,9 @@ pub struct Frontend {
 
 impl Frontend {
     pub fn from_connection_sockets(opts: FrontendOptions, sockets: ConnectionSockets) -> Self {
+        // For connection file method, simply return the frontend.
+        // Don't wait for messages here as they might get lost due to ZeroMQ slow joiner.
+        // The calling code should handle initial handshake messages if needed.
         Self {
             _control_socket: sockets.control,
             shell_socket: sockets.shell,

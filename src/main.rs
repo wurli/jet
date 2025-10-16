@@ -4,6 +4,7 @@ pub mod msg;
 use std::process::Command;
 
 use kernel::kernel_spec::KernelSpec;
+use msg::connection_file::ConnectionFile;
 use msg::error;
 use msg::frontend;
 
@@ -69,15 +70,27 @@ fn main() {
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Start the kernel
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    let mut cmd = Command::new(args.remove(0));
+    cmd.args(args);
+
+    if let Some(env_vars) = spec.env {
+        println!("Setting vars {:#?}", env_vars);
+        cmd.envs(env_vars);
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Start the frontend
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     let frontend_opts = frontend::FrontendOptions::init();
 
     let mut use_registration_file = false;
 
-    if selected_kernel_name == String::from("Ark R Kernel") {
-        use_registration_file = true;
-    }
+    // Temporarily commented out to test connection file method with Ark
+    // if selected_kernel_name == String::from("Ark R Kernel") {
+    //     use_registration_file = true;
+    // }
 
     if let Some(version) = spec.kernel_protocol_version {
         if version >= String::from("5.5") {
@@ -90,27 +103,83 @@ fn main() {
     if use_registration_file {
         let sockets = frontend::RegistrationSockets::from(&frontend_opts);
         sockets.to_file(&frontend_opts, connection_file_path.into());
+        let _ = cmd.spawn();
         frontend = frontend::Frontend::from_registration_socket(frontend_opts, sockets);
     } else {
-        let sockets = frontend::ConnectionSockets::from(&frontend_opts);
-        sockets.to_file(&frontend_opts, connection_file_path.into());
+
+        // ----- Method 1 ----------------------------------------------------------------
+        let mut connection_file = ConnectionFile::new();
+        connection_file.key = frontend_opts.key.clone();
+        connection_file.to_file(connection_file_path.into()).unwrap();
+        let _ = cmd.spawn();
+
+        let sockets = frontend::ConnectionSockets::from_endpoints(
+            &frontend_opts,
+            connection_file.endpoint(connection_file.control_port),
+            connection_file.endpoint(connection_file.shell_port),
+            connection_file.endpoint(connection_file.iopub_port),
+            connection_file.endpoint(connection_file.stdin_port),
+            connection_file.endpoint(connection_file.hb_port),
+        );
+        // -------------------------------------------------------------------------------
+
+
+        // // ------ Method 2 ----------------------------------------------------------------
+        // let sockets = frontend::ConnectionSockets::from(&frontend_opts);
+        // sockets.to_file(&frontend_opts, connection_file_path.into());
+        //
+        // let _ = cmd.spawn();
+        //
+        // // Give the kernel a moment to bind to the ports and fully initialize
+        // std::thread::sleep(std::time::Duration::from_millis(2000));
+        // // -------------------------------------------------------------------------------
+
         frontend = frontend::Frontend::from_connection_sockets(frontend_opts, sockets);
+
+        // For connection file method, first check if there's a Welcome message from XPUB kernels like Ark
+        // Give it a brief moment for any Welcome messages to arrive
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        //Check for and consume Welcome message if present (from kernels using XPUB like Ark)
+        if frontend.iopub_socket.poll_incoming(100).unwrap() {
+            let msg = frontend.recv_iopub();
+            if let crate::msg::wire::jupyter_message::Message::Welcome(_) = msg {
+                println!("Received Welcome message from XPUB kernel");
+                // After Welcome, Ark kernels send a Starting status
+                let starting_msg = frontend.recv_iopub();
+                if let crate::msg::wire::jupyter_message::Message::Status(ref data) = starting_msg {
+                    if data.content.execution_state == crate::msg::wire::status::ExecutionState::Starting {
+                        println!("Received Starting status after Welcome");
+                    } else {
+                        panic!("Expected Starting status after Welcome, got: {:?}", starting_msg);
+                    }
+                } else {
+                    panic!("Expected Status message after Welcome, got: {:?}", starting_msg);
+                }
+            } else {
+                // If it's not Welcome, we'll need to handle it below
+                panic!("Expected Welcome or no message, got: {:?}", msg);
+            }
+        }
+
+        // Now send a kernel_info_request to ensure the kernel is ready
+        println!("Sending kernel_info_request to initialize kernel connection...");
+        frontend.send_shell(crate::msg::wire::kernel_info_request::KernelInfoRequest {});
+
+        // Consume the Busy status from kernel_info_request
+        frontend.recv_iopub_busy();
+
+        // Consume the Idle status
+        frontend.recv_iopub_idle();
+
+        // Drain the shell socket to consume the kernel_info_reply
+        // (we don't parse it as it might have version-specific fields)
+        if frontend.shell_socket.poll_incoming(10000).unwrap() {
+            let _ = frontend.shell_socket.recv_multipart();
+        }
+
+        println!("Kernel connection initialized and ready!");
     }
-
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // Start the kernel
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let mut cmd = Command::new(args.remove(0));
-    cmd.args(args);
-
-    if let Some(env_vars) = spec.env {
-        println!("Setting vars {:#?}", env_vars);
-        cmd.envs(env_vars);
-    }
-
-    let _ = cmd.spawn();
-
-    println!("Successfully started kernel '{}'", spec.display_name);
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Try receiving some info
@@ -125,7 +194,8 @@ fn main() {
     // let input = frontend.recv_iopub_execute_input();
     // println!("{:#?}\n", input)
 
-    let code = "dplyr::tibble(x = 1:3, y = letters[1:3])";
+    let code = "1 + 1";  // R code
+    // let code = "{'x': [1, 2, 3], 'y': ['a', 'b', 'c']}";  // Python code
 
     frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.recv_iopub_busy();
