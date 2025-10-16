@@ -40,8 +40,8 @@ fn main() {
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    let selected_kernel_name = String::from("Ark R Kernel");
-    // let selected_kernel_name = String::from("Python 3 (ipykernel)");
+    // let selected_kernel_name = String::from("Ark R Kernel");
+    let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelSpec::get_all()
         .into_iter()
@@ -87,7 +87,6 @@ fn main() {
 
     let mut use_registration_file = false;
 
-    // Temporarily commented out to test connection file method with Ark
     // if selected_kernel_name == String::from("Ark R Kernel") {
     //     use_registration_file = true;
     // }
@@ -101,42 +100,18 @@ fn main() {
     let frontend: Frontend;
 
     if use_registration_file {
-        let sockets = frontend::RegistrationSockets::from(&frontend_opts);
-        sockets.to_file(&frontend_opts, connection_file_path.into());
-        let _ = cmd.spawn();
-        frontend = frontend::Frontend::from_registration_socket(frontend_opts, sockets);
-    } else {
-
-        // ----- Method 1 ----------------------------------------------------------------
-        let mut connection_file = ConnectionFile::new();
-        connection_file.key = frontend_opts.key.clone();
-        connection_file.to_file(connection_file_path.into()).unwrap();
-        let _ = cmd.spawn();
-
-        let sockets = frontend::ConnectionSockets::from_endpoints(
-            &frontend_opts,
-            connection_file.endpoint(connection_file.control_port),
-            connection_file.endpoint(connection_file.shell_port),
-            connection_file.endpoint(connection_file.iopub_port),
-            connection_file.endpoint(connection_file.stdin_port),
-            connection_file.endpoint(connection_file.hb_port),
+        frontend = frontend::Frontend::start_with_registration_file(
+            frontend_opts,
+            connection_file_path.into(),
+            cmd
         );
-        // -------------------------------------------------------------------------------
+    } else {
+        frontend = frontend::Frontend::start_with_connection_file(
+            frontend_opts,
+            connection_file_path.into(),
+            cmd
+        );
 
-
-        // // ------ Method 2 ----------------------------------------------------------------
-        // let sockets = frontend::ConnectionSockets::from(&frontend_opts);
-        // sockets.to_file(&frontend_opts, connection_file_path.into());
-        //
-        // let _ = cmd.spawn();
-        //
-        // // Give the kernel a moment to bind to the ports and fully initialize
-        // std::thread::sleep(std::time::Duration::from_millis(2000));
-        // // -------------------------------------------------------------------------------
-
-        frontend = frontend::Frontend::from_connection_sockets(frontend_opts, sockets);
-
-        // For connection file method, first check if there's a Welcome message from XPUB kernels like Ark
         // Give it a brief moment for any Welcome messages to arrive
         std::thread::sleep(std::time::Duration::from_millis(200));
 

@@ -71,7 +71,7 @@ impl FrontendOptions {
     }
 }
 
-pub struct ConnectionSockets {
+pub struct FrontEndSockets {
     pub control: Socket,
     pub shell: Socket,
     pub iopub: Socket,
@@ -79,18 +79,7 @@ pub struct ConnectionSockets {
     pub heartbeat: Socket,
 }
 
-impl ConnectionSockets {
-    // pub fn from(opts: &FrontendOptions) -> Self {
-    //     Self::from_endpoints(
-    //         &opts,
-    //         opts.endpoint(0),
-    //         opts.endpoint(0),
-    //         opts.endpoint(0),
-    //         opts.endpoint(0),
-    //         opts.endpoint(0),
-    //     )
-    // }
-
+impl FrontEndSockets {
     pub fn from_endpoints(
         opts: &FrontendOptions,
         control_endpoint: String,
@@ -159,22 +148,6 @@ impl ConnectionSockets {
             heartbeat,
         }
     }
-
-    pub fn to_file(&self, opts: &FrontendOptions, path: PathBuf) {
-        let connection_file = ConnectionFile {
-            control_port: self.control.get_port().unwrap(),
-            shell_port: self.shell.get_port().unwrap(),
-            stdin_port: self.stdin.get_port().unwrap(),
-            iopub_port: self.iopub.get_port().unwrap(),
-            hb_port: self.heartbeat.get_port().unwrap(),
-            signature_scheme: opts.signature_scheme.clone(),
-            transport: opts.transport.clone(),
-            ip: opts.ip.clone(),
-            key: opts.key.clone(),
-        };
-
-        connection_file.to_file(path).unwrap();
-    }
 }
 
 pub struct RegistrationSockets {
@@ -219,10 +192,44 @@ pub struct Frontend {
 }
 
 impl Frontend {
-    pub fn from_connection_sockets(opts: FrontendOptions, sockets: ConnectionSockets) -> Self {
-        // For connection file method, simply return the frontend.
-        // Don't wait for messages here as they might get lost due to ZeroMQ slow joiner.
-        // The calling code should handle initial handshake messages if needed.
+    pub fn start_with_connection_file(
+        opts: FrontendOptions,
+        path: PathBuf,
+        mut kernel_cmd: std::process::Command,
+    ) -> Self {
+        let mut connection_file = ConnectionFile::new();
+        connection_file.key = opts.key.clone();
+        connection_file.to_file(path).unwrap();
+
+        let _ = kernel_cmd.spawn();
+
+        // We need to give the kernel a chance to start up and read the connection file
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+
+        let sockets = FrontEndSockets::from_endpoints(
+            &opts,
+            connection_file.endpoint(connection_file.control_port),
+            connection_file.endpoint(connection_file.shell_port),
+            connection_file.endpoint(connection_file.iopub_port),
+            connection_file.endpoint(connection_file.stdin_port),
+            connection_file.endpoint(connection_file.hb_port),
+        );
+
+        // // Immediately block until we've received the IOPub welcome message from the XPUB
+        // // server side socket. This confirms that we've fully subscribed and avoids
+        // // dropping any of the initial IOPub messages that a server may send if we start
+        // // to perform requests immediately (in particular, busy/idle messages).
+        // // https://github.com/posit-dev/ark/pull/577
+        // assert_matches!(Self::recv(&sockets.iopub), Message::Welcome(data) => {
+        //     assert_eq!(data.content.subscription, String::from(""));
+        // });
+        // // We also go ahead and handle the `ExecutionState::Starting` status that we know
+        // // is coming from the kernel right after the `Welcome` message, so tests don't
+        // // have to care about this.
+        // assert_matches!(Self::recv(&sockets.iopub), Message::Status(data) => {
+        //     assert_eq!(data.content.execution_state, ExecutionState::Starting);
+        // });
+
         Self {
             _control_socket: sockets.control,
             shell_socket: sockets.shell,
@@ -233,10 +240,17 @@ impl Frontend {
         }
     }
 
-    pub fn from_registration_socket(
+    pub fn start_with_registration_file(
         opts: FrontendOptions,
-        sockets: RegistrationSockets,
+        path: PathBuf,
+        mut kernel_cmd: std::process::Command,
     ) -> Self {
+
+        let sockets = RegistrationSockets::from(&opts);
+        sockets.to_file(&opts, path.into());
+
+        let _ = kernel_cmd.spawn();
+
         // Wait to receive the handshake request so we know what ports to connect on.
         // Note that `recv()` times out.
         let message = Self::recv(&sockets.registration);
@@ -251,7 +265,7 @@ impl Frontend {
             HandshakeReply { status: Status::Ok },
         );
 
-        let sockets = ConnectionSockets::from_endpoints(
+        let sockets = FrontEndSockets::from_endpoints(
             &opts,
             opts.endpoint(handshake.control_port),
             opts.endpoint(handshake.shell_port),
@@ -260,20 +274,20 @@ impl Frontend {
             opts.endpoint(handshake.hb_port),
         );
 
-        // Immediately block until we've received the IOPub welcome message from the XPUB
-        // server side socket. This confirms that we've fully subscribed and avoids
-        // dropping any of the initial IOPub messages that a server may send if we start
-        // to perform requests immediately (in particular, busy/idle messages).
-        // https://github.com/posit-dev/ark/pull/577
-        assert_matches!(Self::recv(&sockets.iopub), Message::Welcome(data) => {
-            assert_eq!(data.content.subscription, String::from(""));
-        });
-        // We also go ahead and handle the `ExecutionState::Starting` status that we know
-        // is coming from the kernel right after the `Welcome` message, so tests don't
-        // have to care about this.
-        assert_matches!(Self::recv(&sockets.iopub), Message::Status(data) => {
-            assert_eq!(data.content.execution_state, ExecutionState::Starting);
-        });
+        // // Immediately block until we've received the IOPub welcome message from the XPUB
+        // // server side socket. This confirms that we've fully subscribed and avoids
+        // // dropping any of the initial IOPub messages that a server may send if we start
+        // // to perform requests immediately (in particular, busy/idle messages).
+        // // https://github.com/posit-dev/ark/pull/577
+        // assert_matches!(Self::recv(&sockets.iopub), Message::Welcome(data) => {
+        //     assert_eq!(data.content.subscription, String::from(""));
+        // });
+        // // We also go ahead and handle the `ExecutionState::Starting` status that we know
+        // // is coming from the kernel right after the `Welcome` message, so tests don't
+        // // have to care about this.
+        // assert_matches!(Self::recv(&sockets.iopub), Message::Status(data) => {
+        //     assert_eq!(data.content.execution_state, ExecutionState::Starting);
+        // });
 
         Self {
             _control_socket: sockets.control,
