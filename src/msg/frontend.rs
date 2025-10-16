@@ -80,16 +80,16 @@ pub struct ConnectionSockets {
 }
 
 impl ConnectionSockets {
-    pub fn from(opts: &FrontendOptions) -> Self {
-        Self::from_endpoints(
-            &opts,
-            opts.endpoint(0),
-            opts.endpoint(0),
-            opts.endpoint(0),
-            opts.endpoint(0),
-            opts.endpoint(0),
-        )
-    }
+    // pub fn from(opts: &FrontendOptions) -> Self {
+    //     Self::from_endpoints(
+    //         &opts,
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //         opts.endpoint(0),
+    //     )
+    // }
 
     pub fn from_endpoints(
         opts: &FrontendOptions,
