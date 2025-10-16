@@ -193,10 +193,11 @@ pub struct Frontend {
 
 impl Frontend {
     pub fn start_with_connection_file(
-        opts: FrontendOptions,
         path: PathBuf,
         mut kernel_cmd: std::process::Command,
     ) -> Self {
+        let opts = FrontendOptions::init();
+
         let mut connection_file = ConnectionFile::new();
         connection_file.key = opts.key.clone();
         connection_file.to_file(path).unwrap();
@@ -241,10 +242,10 @@ impl Frontend {
     }
 
     pub fn start_with_registration_file(
-        opts: FrontendOptions,
         path: PathBuf,
         mut kernel_cmd: std::process::Command,
     ) -> Self {
+        let opts = FrontendOptions::init();
 
         let sockets = RegistrationSockets::from(&opts);
         sockets.to_file(&opts, path.into());
