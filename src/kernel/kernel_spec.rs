@@ -7,8 +7,8 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::kernel::discover::discover_kernels;
 use crate::kernel::connection_method::ConnectionMethod;
+use crate::kernel::discover::discover_kernels;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -92,7 +92,6 @@ impl KernelSpec {
     }
 
     pub fn get_connection_method(&self) -> ConnectionMethod {
-
         let mut use_registration_file = false;
 
         // Ark _does_ support connection through registration files, but doesn't (yet) advertise
@@ -102,15 +101,13 @@ impl KernelSpec {
         }
 
         if let Some(version) = &self.kernel_protocol_version {
-            if version >= &String::from("5.5") {
-                use_registration_file = true;
-            }
+            use_registration_file = version >= &String::from("5.5");
         }
 
         if use_registration_file {
-            return ConnectionMethod::RegistrationFile
+            return ConnectionMethod::RegistrationFile;
         } else {
-            return ConnectionMethod::ConnectionFile
+            return ConnectionMethod::ConnectionFile;
         }
     }
 }
