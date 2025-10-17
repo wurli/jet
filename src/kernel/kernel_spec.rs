@@ -91,7 +91,7 @@ impl KernelSpec {
         command
     }
 
-    pub fn get_connection_method(&self) -> ConnectionMethod {
+    pub fn get_startup_method(&self) -> StartupMethod {
         let mut use_registration_file = false;
 
         // Ark _does_ support connection through registration files, but doesn't (yet) advertise
@@ -105,9 +105,9 @@ impl KernelSpec {
         }
 
         if use_registration_file {
-            return ConnectionMethod::RegistrationFile;
+            return StartupMethod::RegistrationFile;
         } else {
-            return ConnectionMethod::ConnectionFile;
+            return StartupMethod::ConnectionFile;
         }
     }
 }
