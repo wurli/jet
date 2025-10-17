@@ -21,6 +21,12 @@ pub struct KernelInfoReply {
     /// The execution status ("ok" or "error")
     pub status: Status,
 
+    /// Version of messaging protocol.
+    pub protocol_version: Option<String>,
+
+    /// The kernel implementation name
+    pub implementation: Option<String>,
+
     /// Information about the language the kernel supports
     pub language_info: LanguageInfo,
 
@@ -32,4 +38,10 @@ pub struct KernelInfoReply {
 
     /// A list of help links
     pub help_links: Vec<HelpLink>,
+
+    /// Optional: A list of optional features such as 'debugger' and 'kernel subshells'. Introduced
+    /// by Jupyter Enhancement Proposal 92
+    ///
+    /// docs: <https://github.com/jupyter/enhancement-proposals/pull/92>
+    pub supported_features: Option<Vec<String>>,
 }

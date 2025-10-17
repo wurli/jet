@@ -4,15 +4,17 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
+use crate::kernel::startup_method::StartupMethod;
 use crate::kernel::discover::discover_kernels;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum InterruptMode {
     Signal,
-    Message
+    Message,
 }
 
 /// docs: https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs
@@ -70,12 +72,59 @@ impl KernelSpec {
         Ok(serde_json::from_reader(BufReader::new(file))?)
     }
 
+    pub fn build_command(&self, connection_file_path: &String) -> Command {
+        let mut args = self.argv.clone();
+
+        for arg in args.iter_mut() {
+            if *arg == "{connection_file}" {
+                *arg = connection_file_path.clone()
+            }
+        }
+
+        let mut command = Command::new(args.remove(0));
+        command.args(args);
+
+        if let Some(env_vars) = &self.env {
+            command.envs(env_vars);
+        }
+
+        command
+    }
+
+    pub fn get_startup_method(&self) -> StartupMethod {
+        let mut use_registration_file = false;
+
+        // Ark _does_ support connection through registration files, but doesn't (yet) advertise
+        // this in the kernel spec
+        if self.display_name == String::from("Ark R Kernel") {
+            use_registration_file = true;
+        }
+
+        if let Some(version) = &self.kernel_protocol_version {
+            use_registration_file = version >= &String::from("5.5");
+        }
+
+        if use_registration_file {
+            return StartupMethod::RegistrationFile;
+        } else {
+            return StartupMethod::ConnectionFile;
+        }
+    }
+}
+
+pub struct KernelInfo {
+    pub path: PathBuf,
+    pub spec: Option<KernelSpec>,
+}
+
+impl KernelInfo {
     pub fn get_all() -> Vec<Self> {
         discover_kernels()
             .iter()
-            // TODO: here we just discard any specs which couldn't be parsed. Better to somehow
-            // signal that these are being dropped.
-            .filter_map(|path| Self::from_file(path).ok())
+            .map(|path| Self {
+                path: path.to_path_buf(),
+                spec: KernelSpec::from_file(path).ok(),
+            })
             .collect()
     }
 }
