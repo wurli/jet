@@ -1,7 +1,7 @@
 pub mod kernel;
 pub mod msg;
 
-use kernel::connection_method::ConnectionMethod;
+use kernel::startup_method::StartupMethod;
 use kernel::kernel_spec::KernelInfo;
 use msg::error;
 use msg::frontend;

@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::kernel::connection_method::ConnectionMethod;
+use crate::kernel::startup_method::StartupMethod;
 use crate::kernel::discover::discover_kernels;
 
 #[derive(Serialize, Deserialize, Debug)]
