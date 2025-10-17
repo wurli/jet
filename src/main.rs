@@ -1,11 +1,13 @@
 pub mod kernel;
 pub mod msg;
 
-use kernel::startup_method::StartupMethod;
+use assert_matches::assert_matches;
 use kernel::kernel_spec::KernelInfo;
+use kernel::startup_method::StartupMethod;
 use msg::error;
 use msg::frontend;
 use msg::frontend::Frontend;
+use msg::wire;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
@@ -56,9 +58,9 @@ fn main() -> anyhow::Result<()> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let selected_kernel_name = String::from("Ark R Kernel");
+    // let selected_kernel_name = String::from("Ark R Kernel");
     // let selected_kernel_name = String::from("Ark R Kernel (connection file method)");
-    // let selected_kernel_name = String::from("Python 3 (ipykernel)");
+    let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelInfo::get_all()
         .into_iter()
@@ -94,6 +96,39 @@ fn main() -> anyhow::Result<()> {
     // Give it a brief moment for any Welcome messages to arrive
     std::thread::sleep(std::time::Duration::from_millis(200));
 
+    // Not all kernels implement the XPUB socket which provides the welcome message which confirms
+    // the connection is established. PEP 65 recommends dealing with this by:
+    // 1. Sending a kernel info request
+    // 2. Checking the protocol version in the reply
+    // 3. Waiting for the welcome message if the protocol supports it
+    //
+    // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
+    frontend.send_shell(msg::wire::kernel_info_request::KernelInfoRequest {});
+    frontend.recv_iopub_busy();
+    assert_matches!(
+        frontend.recv_iopub(),
+        wire::jupyter_message::Message::KernelInfoReply(reply) => {
+            println!("Protocol version: {}", reply.content.protocol_version);
+        }
+    );
+
+    println!("Got to here 0");
+
+    // // Immediately block until we've received the IOPub welcome message from the XPUB server side
+    // // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
+    // // IOPub messages that a server may send if we start to perform requests immediately (in
+    // // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
+    // assert_matches!(frontend.recv_iopub(), Message::Welcome(data) => {
+    //     assert_eq!(data.content.subscription, String::from(""));
+    // });
+    // // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
+    // // from the kernel right after the `Welcome` message, so tests don't have to care about this.
+    // assert_matches!(frontend.recv_iopub(), Message::Status(data) => {
+    //     assert_eq!(data.content.execution_state, msg::wire::status::ExecutionState::Starting);
+    // });
+
+    println!("Got to here 1");
+
     // Check for and consume Welcome message if present (from kernels using XPUB like Ark)
     if frontend.iopub_socket.poll_incoming(100).unwrap() {
         let msg = frontend.recv_iopub();
@@ -122,6 +157,8 @@ fn main() -> anyhow::Result<()> {
             // If it's not Welcome, we'll need to handle it below
             panic!("Expected Welcome or no message, got: {:?}", msg);
         }
+    } else {
+        println!("Didn't receive anything on iopub");
     }
 
     // Now send a kernel_info_request to ensure the kernel is ready
