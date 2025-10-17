@@ -5,8 +5,10 @@ use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::kernel::discover::discover_kernels;
+use crate::kernel::connection_method::ConnectionMethod;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -68,6 +70,48 @@ impl KernelSpec {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
         let file = File::open(path)?;
         Ok(serde_json::from_reader(BufReader::new(file))?)
+    }
+
+    pub fn build_command(&self, connection_file_path: &String) -> Command {
+        let mut args = self.argv.clone();
+
+        for arg in args.iter_mut() {
+            if *arg == "{connection_file}" {
+                *arg = connection_file_path.clone()
+            }
+        }
+
+        let mut command = Command::new(args.remove(0));
+        command.args(args);
+
+        if let Some(env_vars) = &self.env {
+            command.envs(env_vars);
+        }
+
+        command
+    }
+
+    pub fn get_connection_method(&self) -> ConnectionMethod {
+
+        let mut use_registration_file = false;
+
+        // Ark _does_ support connection through registration files, but doesn't (yet) advertise
+        // this in the kernel spec
+        if self.display_name == String::from("Ark R Kernel") {
+            use_registration_file = true;
+        }
+
+        if let Some(version) = &self.kernel_protocol_version {
+            if version >= &String::from("5.5") {
+                use_registration_file = true;
+            }
+        }
+
+        if use_registration_file {
+            return ConnectionMethod::RegistrationFile
+        } else {
+            return ConnectionMethod::ConnectionFile
+        }
     }
 }
 

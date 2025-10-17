@@ -1,10 +1,10 @@
 pub mod kernel;
 pub mod msg;
 
-use std::process::Command;
-
+use kernel::connection_method::ConnectionMethod;
 use kernel::kernel_spec::KernelInfo;
 use msg::error;
+use msg::frontend::Frontend;
 use msg::frontend;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
@@ -38,48 +38,21 @@ fn main() {
     };
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // Get the args to start the kernel
+    // Get the startup command
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let mut args = spec.argv;
-
-    let connection_file_path = "carpo_connection_file.json";
-
-    for arg in args.iter_mut() {
-        if *arg == "{connection_file}" {
-            *arg = connection_file_path.to_string()
-        }
-    }
-
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // Start the kernel
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let mut kernel_cmd = Command::new(args.remove(0));
-    kernel_cmd.args(args);
-
-    if let Some(env_vars) = spec.env {
-        println!("Setting vars {:#?}", env_vars);
-        kernel_cmd.envs(env_vars);
-    }
+    let connection_file_path = String::from("carpo_connection_file.json");
+    let kernel_cmd = spec.build_command(&connection_file_path);
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Start the frontend
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let mut use_registration_file = false;
-
-    if selected_kernel_name == String::from("Ark R Kernel") {
-        use_registration_file = true;
-    }
-
-    if let Some(version) = spec.kernel_protocol_version {
-        if version >= String::from("5.5") {
-            use_registration_file = true;
+    let frontend = match spec.get_connection_method() {
+        ConnectionMethod::RegistrationFile => {
+            Frontend::start_with_registration_file(kernel_cmd, connection_file_path.into())
         }
-    }
-
-    let frontend = if use_registration_file {
-        frontend::Frontend::start_with_registration_file(kernel_cmd, connection_file_path.into())
-    } else {
-        frontend::Frontend::start_with_connection_file(kernel_cmd, connection_file_path.into())
+        ConnectionMethod::ConnectionFile => {
+            Frontend::start_with_connection_file(kernel_cmd, connection_file_path.into())
+        }
     };
 
     // Give it a brief moment for any Welcome messages to arrive
