@@ -80,11 +80,11 @@ fn main() -> anyhow::Result<()> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Start the frontend
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let frontend = match spec.get_connection_method() {
-        ConnectionMethod::RegistrationFile => {
+    let frontend = match spec.get_startup_method() {
+        StartupMethod::RegistrationFile => {
             Frontend::start_with_registration_file(kernel_cmd, connection_file_path.into())
         }
-        ConnectionMethod::ConnectionFile => {
+        StartupMethod::ConnectionFile => {
             Frontend::start_with_connection_file(kernel_cmd, connection_file_path.into())
         }
     };
