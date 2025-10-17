@@ -9,9 +9,49 @@ use msg::frontend::Frontend;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Parse command line options
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    let mut argv = std::env::args();
+
+    // Skip the first "argument" as it's the path/name to this executable
+    argv.next();
+
+    let mut log_file: Option<String> = None;
+
+    while let Some(arg) = argv.next() {
+        match arg.as_str() {
+            "--log" => {
+                if let Some(file) = argv.next() {
+                    log_file = Some(file);
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "A log file must be specified when using the `--log` argument."
+                    ));
+                }
+            }
+            other => {
+                return Err(anyhow::anyhow!("Argument '{other}' unknown."));
+            }
+        }
+    }
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Initialise the logger
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialize logging system; you can configure levels with the RUST_LOG env var
-    env_logger::init();
+    if let Some(log_path) = log_file {
+        let target = Box::new(
+            std::fs::File::create(&log_path)
+                .expect(&format!("Can't create log file at {log_path}")),
+        );
+        env_logger::Builder::from_default_env()
+            .target(env_logger::Target::Pipe(target))
+            .init();
+    } else {
+        env_logger::init();
+    }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
@@ -140,4 +180,6 @@ fn main() {
 
     // frontend.recv_iopub_idle();
     // assert_eq!(frontend.recv_shell_execute_reply(), input.execution_count);
+
+    Ok(())
 }
