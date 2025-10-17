@@ -4,11 +4,8 @@ pub mod msg;
 use std::process::Command;
 
 use kernel::kernel_spec::KernelSpec;
-use msg::connection_file::ConnectionFile;
 use msg::error;
 use msg::frontend;
-
-use crate::msg::frontend::Frontend;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
