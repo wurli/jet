@@ -4,8 +4,8 @@ pub mod msg;
 use kernel::connection_method::ConnectionMethod;
 use kernel::kernel_spec::KernelInfo;
 use msg::error;
-use msg::frontend::Frontend;
 use msg::frontend;
+use msg::frontend::Frontend;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
@@ -13,14 +13,11 @@ fn main() {
     // Initialize logging system; you can configure levels with the RUST_LOG env var
     env_logger::init();
 
-    // let connection = frontend::Connection::new();
-    // let (connection_file, registration_file) = connection.get_connection_files();
-
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    let selected_kernel_name = String::from("Ark R Kernel");
+    // let selected_kernel_name = String::from("Ark R Kernel");
+    let selected_kernel_name = String::from("Ark R Kernel (connection file method)");
     // let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelInfo::get_all()
@@ -31,10 +28,7 @@ fn main() {
 
     let spec = match selected_kernel {
         Some(kernel) => kernel,
-        None => {
-            println!("No kernel found with name '{}'", selected_kernel_name);
-            return;
-        }
+        None => panic!("No kernel found with name '{}'", selected_kernel_name),
     };
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
