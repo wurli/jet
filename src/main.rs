@@ -56,8 +56,8 @@ fn main() -> anyhow::Result<()> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // let selected_kernel_name = String::from("Ark R Kernel");
-    let selected_kernel_name = String::from("Ark R Kernel (connection file method)");
+    let selected_kernel_name = String::from("Ark R Kernel");
+    // let selected_kernel_name = String::from("Ark R Kernel (connection file method)");
     // let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelInfo::get_all()
@@ -70,6 +70,8 @@ fn main() -> anyhow::Result<()> {
         Some(kernel) => kernel,
         None => panic!("No kernel found with name '{}'", selected_kernel_name),
     };
+
+    log::info!("Using kernel '{}'", spec.display_name);
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the startup command
