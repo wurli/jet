@@ -28,7 +28,7 @@ pub struct LanguageInfo {
     pub pygments_lexer: Option<String>,
 
     /// Codemirror mode (for editing), if different than `name`
-    pub codemirror_mode: Option<String>,
+    pub codemirror_mode: Option<serde_json::Value>,
 
     /// Nbconvert exporter, if not the default 'script' exporter
     pub nbconvert_exporter: Option<String>,

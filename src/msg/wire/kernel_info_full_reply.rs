@@ -26,7 +26,7 @@ pub struct KernelInfoReply {
     pub protocol_version: String,
 
     /// List of feature flags supported by the kernel. See JEP 92.
-    pub supported_features: Vec<String>,
+    pub supported_features: Option<Vec<String>>,
 
     /// The execution status ("ok" or "error")
     pub status: Status,
@@ -38,7 +38,7 @@ pub struct KernelInfoReply {
     pub banner: String,
 
     /// Whether debugging is supported
-    pub debugger: bool,
+    pub debugger: Option<bool>,
 
     /// A list of help links
     pub help_links: Vec<HelpLink>,
@@ -56,13 +56,13 @@ impl From<kernel_info_reply::KernelInfoReply> for KernelInfoReply {
         Self {
             // These fields are set by Amalthea
             protocol_version: String::from("5.4"),
-            supported_features: vec![String::from("iopub_welcome")],
+            supported_features: Some(vec![String::from("iopub_welcome")]),
 
             // These fields are set by the Amalthea user
             status: value.status,
             language_info: value.language_info,
             banner: value.banner,
-            debugger: value.debugger,
+            debugger: Some(value.debugger),
             help_links: value.help_links,
         }
     }
