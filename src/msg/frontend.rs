@@ -275,20 +275,20 @@ impl Frontend {
             opts.endpoint(handshake.hb_port),
         );
 
-        // // Immediately block until we've received the IOPub welcome message from the XPUB
-        // // server side socket. This confirms that we've fully subscribed and avoids
-        // // dropping any of the initial IOPub messages that a server may send if we start
-        // // to perform requests immediately (in particular, busy/idle messages).
-        // // https://github.com/posit-dev/ark/pull/577
-        // assert_matches!(Self::recv(&sockets.iopub), Message::Welcome(data) => {
-        //     assert_eq!(data.content.subscription, String::from(""));
-        // });
-        // // We also go ahead and handle the `ExecutionState::Starting` status that we know
-        // // is coming from the kernel right after the `Welcome` message, so tests don't
-        // // have to care about this.
-        // assert_matches!(Self::recv(&sockets.iopub), Message::Status(data) => {
-        //     assert_eq!(data.content.execution_state, ExecutionState::Starting);
-        // });
+        // Immediately block until we've received the IOPub welcome message from the XPUB
+        // server side socket. This confirms that we've fully subscribed and avoids
+        // dropping any of the initial IOPub messages that a server may send if we start
+        // to perform requests immediately (in particular, busy/idle messages).
+        // https://github.com/posit-dev/ark/pull/577
+        assert_matches!(Self::recv(&sockets.iopub), Message::Welcome(data) => {
+            assert_eq!(data.content.subscription, String::from(""));
+        });
+        // We also go ahead and handle the `ExecutionState::Starting` status that we know
+        // is coming from the kernel right after the `Welcome` message, so tests don't
+        // have to care about this.
+        assert_matches!(Self::recv(&sockets.iopub), Message::Status(data) => {
+            assert_eq!(data.content.execution_state, ExecutionState::Starting);
+        });
 
         Self {
             _control_socket: sockets.control,
