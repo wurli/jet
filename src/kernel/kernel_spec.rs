@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::kernel::discover::discover_kernels;
 
@@ -12,7 +12,7 @@ use crate::kernel::discover::discover_kernels;
 #[serde(rename_all = "lowercase")]
 pub enum InterruptMode {
     Signal,
-    Message
+    Message,
 }
 
 /// docs: https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs
@@ -69,13 +69,21 @@ impl KernelSpec {
         let file = File::open(path)?;
         Ok(serde_json::from_reader(BufReader::new(file))?)
     }
+}
 
+pub struct KernelInfo {
+    pub path: PathBuf,
+    pub spec: Option<KernelSpec>,
+}
+
+impl KernelInfo {
     pub fn get_all() -> Vec<Self> {
         discover_kernels()
             .iter()
-            // TODO: here we just discard any specs which couldn't be parsed. Better to somehow
-            // signal that these are being dropped.
-            .filter_map(|path| Self::from_file(path).ok())
+            .map(|path| Self {
+                path: path.to_path_buf(),
+                spec: KernelSpec::from_file(path).ok(),
+            })
             .collect()
     }
 }

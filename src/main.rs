@@ -3,7 +3,7 @@ pub mod msg;
 
 use std::process::Command;
 
-use kernel::kernel_spec::KernelSpec;
+use kernel::kernel_spec::KernelInfo;
 use msg::error;
 use msg::frontend;
 
@@ -16,23 +16,6 @@ fn main() {
     // let connection = frontend::Connection::new();
     // let (connection_file, registration_file) = connection.get_connection_files();
 
-    let kernels = kernel::discover::discover_kernels();
-
-    let mut paths = String::from("");
-
-    for k in &kernels {
-        paths.push_str("\n");
-        paths.push_str(&k.to_string_lossy());
-    }
-
-    println!("Kernels: {}", paths);
-    for k in kernels {
-        match KernelSpec::from_file(k) {
-            Ok(spec) => println!("{:#?}\n", spec),
-            Err(e) => eprintln!("Error reading kernel spec: {}", e),
-        }
-    }
-
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -40,9 +23,10 @@ fn main() {
     let selected_kernel_name = String::from("Ark R Kernel");
     // let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
-    let selected_kernel = KernelSpec::get_all()
+    let selected_kernel = KernelInfo::get_all()
         .into_iter()
-        .filter(|spec| spec.display_name == selected_kernel_name)
+        .filter_map(|x| x.spec)
+        .filter(|x| x.display_name == selected_kernel_name)
         .nth(0);
 
     let spec = match selected_kernel {
