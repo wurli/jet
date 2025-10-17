@@ -26,6 +26,7 @@ use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::status::ExecutionState;
 use crate::msg::wire::stream::Stream;
 use crate::msg::wire::wire_message::WireMessage;
+use crate::wire::kernel_info_full_reply::KernelInfoReply;
 
 pub struct FrontendOptions {
     pub ctx: zmq::Context,
@@ -218,21 +219,6 @@ impl Frontend {
             connection_file.endpoint(connection_file.hb_port),
         );
 
-        // // Immediately block until we've received the IOPub welcome message from the XPUB
-        // // server side socket. This confirms that we've fully subscribed and avoids
-        // // dropping any of the initial IOPub messages that a server may send if we start
-        // // to perform requests immediately (in particular, busy/idle messages).
-        // // https://github.com/posit-dev/ark/pull/577
-        // assert_matches!(Self::recv(&sockets.iopub), Message::Welcome(data) => {
-        //     assert_eq!(data.content.subscription, String::from(""));
-        // });
-        // // We also go ahead and handle the `ExecutionState::Starting` status that we know
-        // // is coming from the kernel right after the `Welcome` message, so tests don't
-        // // have to care about this.
-        // assert_matches!(Self::recv(&sockets.iopub), Message::Status(data) => {
-        //     assert_eq!(data.content.execution_state, ExecutionState::Starting);
-        // });
-
         Self {
             _control_socket: sockets.control,
             shell_socket: sockets.shell,
@@ -241,6 +227,44 @@ impl Frontend {
             heartbeat_socket: sockets.heartbeat,
             session: opts.session,
         }
+    }
+
+    pub fn subscribe(&self) -> KernelInfoReply {
+        // Not all kernels implement the XPUB socket which provides the welcome message which confirms
+        // the connection is established. PEP 65 recommends dealing with this by:
+        // 1. Sending a kernel info request
+        // 2. Checking the protocol version in the reply
+        // 3. Waiting for the welcome message if the protocol supports it
+        //
+        // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
+        let kernel_info = self.get_kernel_info().unwrap();
+
+        log::info!(
+            "Kernel is using protocol version: {}",
+            kernel_info.protocol_version
+        );
+
+        // Unfortunately, although JEP 65 is accepted, I can't find the version of the jupyter protocol
+        // in which it becomes effective. Ark _does_ support it and is 5.4, ipython doesn't and is 5.3.
+        if kernel_info.protocol_version >= String::from("5.4") {
+            // Immediately block until we've received the IOPub welcome message from the XPUB server side
+            // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
+            // IOPub messages that a server may send if we start to perform requests immediately (in
+            // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
+            assert_matches!(self.recv_iopub(), Message::Welcome(data) => {
+                assert_eq!(data.content.subscription, String::from(""));
+            });
+            // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
+            // from the kernel right after the `Welcome` message.
+            assert_matches!(self.recv_iopub(), Message::Status(data) => {
+                assert_eq!(data.content.execution_state, crate::wire::status::ExecutionState::Starting);
+            });
+        }
+
+        // Consume the Idle status
+        self.recv_iopub_idle();
+
+        kernel_info
     }
 
     pub fn start_with_registration_file(
@@ -302,6 +326,22 @@ impl Frontend {
             heartbeat_socket: sockets.heartbeat,
             session: opts.session,
         }
+    }
+
+    pub fn get_kernel_info(&self) -> Result<KernelInfoReply, anyhow::Error> {
+        self.send_shell(crate::wire::kernel_info_request::KernelInfoRequest {});
+        self.recv_iopub_busy();
+        let reply = self.recv_shell();
+
+        return match reply {
+            Message::KernelInfoReply(reply) => Ok(reply.content),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Expected kernel_info_reply, but got {:#?}",
+                    reply
+                ));
+            }
+        };
     }
 
     /// Sends a Jupyter message on the Shell socket; returns the ID of the newly

@@ -57,8 +57,8 @@ fn main() -> anyhow::Result<()> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // let selected_kernel_name = String::from("Ark R Kernel");
-    let selected_kernel_name = String::from("Ark R Kernel (connection file method)");
+    let selected_kernel_name = String::from("Ark R Kernel");
+    // let selected_kernel_name = String::from("Ark R Kernel (connection file method)");
     // let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelInfo::get_all()
@@ -92,51 +92,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Give it a brief moment for any Welcome messages to arrive
-    // std::thread::sleep(std::time::Duration::from_millis(200));
-
-    // Not all kernels implement the XPUB socket which provides the welcome message which confirms
-    // the connection is established. PEP 65 recommends dealing with this by:
-    // 1. Sending a kernel info request
-    // 2. Checking the protocol version in the reply
-    // 3. Waiting for the welcome message if the protocol supports it
-    //
-    // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
-    frontend.send_shell(wire::kernel_info_request::KernelInfoRequest {});
-    frontend.recv_iopub_busy();
-    let reply = frontend.recv_shell();
-
-    let kernel_info = match reply {
-        wire::jupyter_message::Message::KernelInfoReply(reply) => reply,
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Expected kernel_info_reply, but got {:#?}",
-                reply
-            ));
-        }
-    };
-
-    println!("Protocol version: {}", kernel_info.content.protocol_version);
-
-    // Unfortunately, although JEP 65 is accepted, I can't find the version of the jupyter protocol
-    // in which it becomes effective. Ark _does_ support it and is 5.4, ipython doesn't and is 5.3.
-    if kernel_info.content.protocol_version >= String::from("5.4") {
-        // Immediately block until we've received the IOPub welcome message from the XPUB server side
-        // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
-        // IOPub messages that a server may send if we start to perform requests immediately (in
-        // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
-        assert_matches!(frontend.recv_iopub(), wire::jupyter_message::Message::Welcome(data) => {
-            assert_eq!(data.content.subscription, String::from(""));
-        });
-        // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
-        // from the kernel right after the `Welcome` message, so tests don't have to care about this.
-        assert_matches!(frontend.recv_iopub(), wire::jupyter_message::Message::Status(data) => {
-            assert_eq!(data.content.execution_state, wire::status::ExecutionState::Starting);
-        });
-    }
-
-    // Consume the Idle status
-    frontend.recv_iopub_idle();
+    let _kernel_info = frontend.subscribe();
 
     let code = "1 + 1"; // R code
     // let code = "{'x': [1, 2, 3], 'y': ['a', 'b', 'c']}";  // Python code
