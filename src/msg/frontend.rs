@@ -196,6 +196,8 @@ impl Frontend {
         mut kernel_cmd: std::process::Command,
         path: PathBuf,
     ) -> Self {
+        log::info!("Starting kernel using connection file");
+
         let opts = FrontendOptions::init();
 
         let mut connection_file = ConnectionFile::new();
@@ -245,6 +247,8 @@ impl Frontend {
         mut kernel_cmd: std::process::Command,
         path: PathBuf,
     ) -> Self {
+        log::info!("Starting kernel using registration file");
+
         let opts = FrontendOptions::init();
 
         let sockets = RegistrationSockets::from(&opts);

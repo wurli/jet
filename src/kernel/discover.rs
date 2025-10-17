@@ -30,6 +30,7 @@ fn path_exists(path: &Path) -> bool {
 /// Returns a vector of paths to the discovered kernel.json files, ordered by precedence (env,
 /// user, system).
 pub fn discover_kernels() -> Vec<PathBuf> {
+    log::info!("Discovering installed kernels");
     let mut dirs: Vec<String> = Vec::new();
 
     // TODO: split this variable up on `:` and recurse
