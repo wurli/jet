@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.100"
 assert_matches = "1.5.0"
 chrono = "0.4.42"
-crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
+# crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 crypto-common = "0.1.6"
 env_logger = "0.11.8"
 fs = "0.0.5"

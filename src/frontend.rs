@@ -477,7 +477,6 @@ impl Frontend {
         let msg = self.recv_iopub();
 
         assert_matches!(msg, Message::ExecuteResult(data) => {
-            println!("ExecuteResult data: {:?}", data.content);
             assert_matches!(data.content.data["text/plain"], Value::String(ref string) => {
                 string.clone()
             })
