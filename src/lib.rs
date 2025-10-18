@@ -10,7 +10,7 @@ use frontend::Frontend;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
-fn main() -> anyhow::Result<()> {
+pub fn carpo() -> anyhow::Result<()> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Parse command line options
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
