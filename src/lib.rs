@@ -1,12 +1,12 @@
 pub mod kernel;
 pub mod msg;
+pub mod frontend;
+// pub mod frontend;
 
-use assert_matches::assert_matches;
 use kernel::kernel_spec::KernelInfo;
 use kernel::startup_method::StartupMethod;
 use msg::error;
-use msg::frontend::Frontend;
-use msg::wire;
+use frontend::Frontend;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
@@ -94,10 +94,7 @@ fn main() -> anyhow::Result<()> {
 
     let _kernel_info = frontend.subscribe();
 
-    let code = "1 + 1"; // R code
-    // let code = "{'x': [1, 2, 3], 'y': ['a', 'b', 'c']}";  // Python code
-
-    frontend.send_execute_request(code, msg::frontend::ExecuteRequestOptions::default());
+    frontend.send_execute_request("1 + 1", frontend::ExecuteRequestOptions::default());
     frontend.recv_iopub_busy();
 
     let input = frontend.recv_iopub_execute_input();

@@ -26,7 +26,8 @@ use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::status::ExecutionState;
 use crate::msg::wire::stream::Stream;
 use crate::msg::wire::wire_message::WireMessage;
-use crate::wire::kernel_info_full_reply::KernelInfoReply;
+use crate::msg::wire::kernel_info_full_reply::KernelInfoReply;
+use crate::msg::wire::kernel_info_request::KernelInfoRequest;
 
 pub struct FrontendOptions {
     pub ctx: zmq::Context,
@@ -257,7 +258,7 @@ impl Frontend {
             // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
             // from the kernel right after the `Welcome` message.
             assert_matches!(self.recv_iopub(), Message::Status(data) => {
-                assert_eq!(data.content.execution_state, crate::wire::status::ExecutionState::Starting);
+                assert_eq!(data.content.execution_state, ExecutionState::Starting);
             });
         }
 
@@ -329,7 +330,7 @@ impl Frontend {
     }
 
     pub fn get_kernel_info(&self) -> Result<KernelInfoReply, anyhow::Error> {
-        self.send_shell(crate::wire::kernel_info_request::KernelInfoRequest {});
+        self.send_shell(KernelInfoRequest {});
         self.recv_iopub_busy();
         let reply = self.recv_shell();
 
@@ -344,7 +345,7 @@ impl Frontend {
         };
     }
 
-    /// Sends a Jupyter message on the Shell socket; returns the ID of the newly
+    /// Sends a Jupyter message on the Shell socket; returns of the newly
     /// created message
     pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> String {
         Self::send(&self.shell_socket, &self.session, msg)
@@ -460,6 +461,7 @@ impl Frontend {
         let msg = self.recv_iopub();
 
         assert_matches!(msg, Message::ExecuteResult(data) => {
+            println!("ExecuteResult data: {:?}", data.content);
             assert_matches!(data.content.data, Value::Object(map) => {
                 assert_matches!(map["text/plain"], Value::String(ref string) => {
                     string.clone()
