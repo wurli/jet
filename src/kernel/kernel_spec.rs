@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::kernel::startup_method::StartupMethod;
 use crate::kernel::discover::discover_kernels;
@@ -83,6 +83,9 @@ impl KernelSpec {
 
         let mut command = Command::new(args.remove(0));
         command.args(args);
+        // TODO: output from the process should probably be logged somehow rather than dropped
+        // silently.
+        command.stdout(Stdio::null());
 
         if let Some(env_vars) = &self.env {
             command.envs(env_vars);
