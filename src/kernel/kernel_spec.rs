@@ -7,8 +7,8 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::kernel::startup_method::StartupMethod;
 use crate::kernel::discover::discover_kernels;
+use crate::kernel::startup_method::StartupMethod;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -86,6 +86,10 @@ impl KernelSpec {
         // TODO: output from the process should probably be logged somehow rather than dropped
         // silently.
         command.stdout(Stdio::null());
+
+        // TODO: should these be set? Kernels seem to send ANSI codes anyway so maybe not?
+        // command.env("COLORTERM", "truecolor");
+        // command.env("TERM", "xterm-256color");
 
         if let Some(env_vars) = &self.env {
             command.envs(env_vars);

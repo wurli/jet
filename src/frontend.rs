@@ -19,6 +19,8 @@ use crate::msg::wire::execute_input::ExecuteInput;
 use crate::msg::wire::execute_request::ExecuteRequest;
 use crate::msg::wire::handshake_reply::HandshakeReply;
 use crate::msg::wire::input_reply::InputReply;
+use crate::msg::wire::is_complete_reply::IsCompleteReply;
+use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::JupyterMessage;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::jupyter_message::ProtocolMessage;
@@ -362,6 +364,12 @@ impl Frontend {
         })
     }
 
+    pub fn send_is_complete_request(&self, code: &str) -> String {
+        self.send_shell(IsCompleteRequest {
+            code: String::from(code),
+        })
+    }
+
     /// Sends a Jupyter message on the Stdin socket
     pub fn send_stdin<T: ProtocolMessage>(&self, msg: T) {
         Self::send(&self.stdin_socket, &self.session, msg);
@@ -425,6 +433,14 @@ impl Frontend {
         assert_matches!(msg, Message::ExecuteReplyException(data) => {
             assert_eq!(data.content.status, Status::Error);
             data.content.execution_count
+        })
+    }
+
+    pub fn recv_shell_is_complete_reply(&self) -> IsCompleteReply {
+        let msg = self.recv_shell();
+
+        assert_matches!(msg, Message::IsCompleteReply(data) => {
+            data.content
         })
     }
 
