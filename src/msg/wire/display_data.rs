@@ -5,6 +5,8 @@
  *
  */
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -14,13 +16,13 @@ use crate::msg::wire::jupyter_message::MessageType;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DisplayData {
     /// The data giving the MIME key/value pairs to display
-    pub data: Value,
+    pub data: HashMap<String, Value>,
 
     /// Optional additional metadata
-    pub metadata: Value,
+    pub metadata: HashMap<String, Value>,
 
     /// Optional transient data
-    pub transient: Value,
+    pub transient: HashMap<String, Value>,
 }
 
 impl MessageType for DisplayData {

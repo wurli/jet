@@ -23,11 +23,11 @@ use crate::msg::wire::jupyter_message::JupyterMessage;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::jupyter_message::ProtocolMessage;
 use crate::msg::wire::jupyter_message::Status;
+use crate::msg::wire::kernel_info_full_reply::KernelInfoReply;
+use crate::msg::wire::kernel_info_request::KernelInfoRequest;
 use crate::msg::wire::status::ExecutionState;
 use crate::msg::wire::stream::Stream;
 use crate::msg::wire::wire_message::WireMessage;
-use crate::msg::wire::kernel_info_full_reply::KernelInfoReply;
-use crate::msg::wire::kernel_info_request::KernelInfoRequest;
 
 pub struct FrontendOptions {
     pub ctx: zmq::Context,
@@ -462,10 +462,8 @@ impl Frontend {
 
         assert_matches!(msg, Message::ExecuteResult(data) => {
             println!("ExecuteResult data: {:?}", data.content);
-            assert_matches!(data.content.data, Value::Object(map) => {
-                assert_matches!(map["text/plain"], Value::String(ref string) => {
-                    string.clone()
-                })
+            assert_matches!(data.content.data["text/plain"], Value::String(ref string) => {
+                string.clone()
             })
         })
     }
