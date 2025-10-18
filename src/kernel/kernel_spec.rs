@@ -11,7 +11,7 @@ use crate::kernel::startup_method::StartupMethod;
 use crate::kernel::discover::discover_kernels;
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum InterruptMode {
     Signal,
     Message,
