@@ -22,14 +22,14 @@ impl Heartbeat {
         Self { socket }
     }
 
-    fn flush_incoming(&self, name: &str) {
-        eprintln!("{name} has incoming data:");
-
-        while self.socket.has_incoming_data().unwrap() {
-            dbg!(WireMessage::read_from_socket(&self.socket).unwrap());
-            eprintln!("---");
-        }
-    }
+    // fn flush_incoming(&self, name: &str) {
+    //     eprintln!("{name} has incoming data:");
+    //
+    //     while self.socket.has_incoming_data().unwrap() {
+    //         dbg!(WireMessage::read_from_socket(&self.socket).unwrap());
+    //         eprintln!("---");
+    //     }
+    // }
 
     /// Receives a (raw) message from the heartbeat socket
     pub fn recv(&self) -> zmq::Message {
