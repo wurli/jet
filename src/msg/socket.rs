@@ -207,6 +207,9 @@ impl Socket {
         }
     }
 
+    /// Poll the socket with a timeout
+    ///
+    /// Set `timeout_ms` to `-1` to wait indefinitely
     pub fn poll_incoming(&self, timeout_ms: i64) -> zmq::Result<bool> {
         Ok(self.socket.poll(zmq::PollEvents::POLLIN, timeout_ms)? != 0)
     }

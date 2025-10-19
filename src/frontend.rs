@@ -382,7 +382,7 @@ impl Frontend {
         id
     }
 
-    pub fn recv(socket: &Socket) -> Message {
+    pub fn recv_with_timeout(socket: &Socket) -> Message {
         // It's important to wait with a timeout because the kernel thread might have
         // panicked, preventing it from sending the expected message. The tests would then
         // hang indefinitely. We wait a decently long time (10s), as test processes are
@@ -397,6 +397,10 @@ impl Frontend {
         }
 
         panic!("Timeout while expecting message on socket {}", socket.name);
+    }
+
+    pub fn recv(socket: &Socket) -> Message {
+        return Message::read_from_socket(socket).unwrap();
     }
 
     /// Receives a Jupyter message from the Shell socket
