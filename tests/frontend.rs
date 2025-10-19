@@ -1,8 +1,11 @@
-use carpo::frontend::frontend::Frontend;
+use carpo::frontend::frontend::{ExecuteRequestOptions, Frontend};
 use carpo::kernel::kernel_spec::KernelInfo;
 use carpo::kernel::startup_method::StartupMethod;
 
 use carpo::frontend::frontend;
+use carpo::msg::wire::jupyter_message::{Message, Status};
+use carpo::msg::wire::status::ExecutionState;
+use carpo::msg::wire::stream::StreamOutput;
 
 fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
     let selected_kernel = KernelInfo::get_all()
@@ -47,20 +50,53 @@ fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
 fn test_ark_with_registration_file() {
     let frontend = get_frontend(String::from("Ark R Kernel")).unwrap();
 
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        loop {
+            match frontend.iopub.recv() {
+                Message::Stream(msg) => {
+                    println!("Stream ({:#?}): {}", msg.content.name, msg.content.text)
+                }
+                msg @ Message::Status(_) => tx.send(msg).unwrap(),
+                msg @ Message::ExecuteInput(_) => tx.send(msg).unwrap(),
+                msg @ Message::ExecuteResult(_) => tx.send(msg).unwrap(),
+                msg @ Message::ExecuteReply(_) => tx.send(msg).unwrap(),
+                _ => todo!(),
+            };
+        }
+    });
+
     let code = "1 + 1";
+    frontend
+        .shell
+        .send_execute_request(code, ExecuteRequestOptions::default());
 
-    frontend.shell.send_execute_request(code, frontend::ExecuteRequestOptions::default());
-    frontend.iopub.recv_busy();
+    let mut received_input = false;
+    let mut received_result = false;
 
-    let input = frontend.iopub.recv_execute_input();
-    let reply = frontend.iopub.recv_execute_result();
+    loop {
+        match rx.recv().unwrap() {
+            Message::ExecuteInput(msg) => {
+                assert_eq!(code, msg.content.code);
+                received_input = true;
+            }
+            Message::ExecuteResult(msg) => {
+                assert_eq!("[1] 2", msg.content.data["text/plain"]);
+                received_result = true;
+            }
+            Message::Status(msg) => match msg.content.execution_state {
+                ExecutionState::Idle => break,
+                other => println!("Received execution status {:#?}", other),
+            },
+            other => panic!("Received unexpected message {:#?}", other),
+        };
+    }
 
-    assert_eq!(code, input.code);
-    assert_eq!("[1] 2", reply);
+    assert!(received_input);
+    assert!(received_result);
 
-    frontend.iopub.recv_idle();
     frontend.shell.recv_execute_reply();
-
 }
 
 #[test]
