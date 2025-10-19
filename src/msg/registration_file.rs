@@ -61,7 +61,7 @@ impl RegistrationFile {
         let shell_port = 0;
         let stdin_port = 0;
         let iopub_port = 0;
-        let hb_port = 0;
+        let heartbeat_port = 0;
 
         // Build a `ConnectionFile`
         let connection = ConnectionFile {
@@ -69,7 +69,7 @@ impl RegistrationFile {
             shell_port,
             stdin_port,
             iopub_port,
-            hb_port,
+            heartbeat_port,
             transport: self.transport.clone(),
             signature_scheme: self.signature_scheme.clone(),
             ip: self.ip.clone(),

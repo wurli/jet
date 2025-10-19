@@ -1,12 +1,11 @@
 pub mod kernel;
 pub mod msg;
 pub mod frontend;
-// pub mod frontend;
 
 use kernel::kernel_spec::KernelInfo;
 use kernel::startup_method::StartupMethod;
 use msg::error;
-use frontend::Frontend;
+use frontend::frontend::Frontend;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
@@ -94,18 +93,6 @@ pub fn carpo() -> anyhow::Result<()> {
 
     let _kernel_info = frontend.subscribe();
 
-    frontend.send_execute_request("1 + 1", frontend::ExecuteRequestOptions::default());
-    frontend.recv_iopub_busy();
-
-    let input = frontend.recv_iopub_execute_input();
-    let reply = frontend.recv_iopub_execute_result();
-    println!("-------------------------------------------------------------");
-    println!("> {}", input.code);
-    println!("{}", reply);
-    println!("-------------------------------------------------------------");
-
-    frontend.recv_iopub_idle();
-    frontend.recv_shell_execute_reply();
 
     Ok(())
 }

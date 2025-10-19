@@ -1,8 +1,8 @@
-use carpo::frontend::Frontend;
+use carpo::frontend::frontend::Frontend;
 use carpo::kernel::kernel_spec::KernelInfo;
 use carpo::kernel::startup_method::StartupMethod;
 
-use carpo::frontend;
+use carpo::frontend::frontend;
 
 fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
     let selected_kernel = KernelInfo::get_all()
@@ -47,22 +47,43 @@ fn test_ark_with_registration_file() {
 
     let code = "1 + 1";
 
-    frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
-    frontend.recv_iopub_busy();
+    frontend.shell.send_execute_request(code, frontend::ExecuteRequestOptions::default());
+    frontend.iopub.recv_busy();
 
-    let input = frontend.recv_iopub_execute_input();
-    let reply = frontend.recv_iopub_execute_result();
+    let input = frontend.iopub.recv_execute_input();
+    let reply = frontend.iopub.recv_execute_result();
 
     assert_eq!(code, input.code);
     assert_eq!("[1] 2", reply);
 
-    frontend.recv_iopub_idle();
-    frontend.recv_shell_execute_reply();
+    frontend.iopub.recv_idle();
+    frontend.shell.recv_execute_reply();
+
+    // std::thread::spawn(move || {
+    //     loop {
+    //         let msg = frontend.recv_iopub();
+    //     }
+    // });
+
 }
 
 #[test]
 fn test_ark_with_connection_file() {
-    get_frontend(String::from("Ark R Kernel (connection file method)")).unwrap();
+    let frontend = get_frontend(String::from("Ark R Kernel (connection file method)")).unwrap();
+
+    let code = "1 + 1";
+
+    frontend.shell.send_execute_request(code, frontend::ExecuteRequestOptions::default());
+    frontend.iopub.recv_busy();
+
+    let input = frontend.iopub.recv_execute_input();
+    let reply = frontend.iopub.recv_execute_result();
+
+    assert_eq!(code, input.code);
+    assert_eq!("[1] 2", reply);
+
+    frontend.iopub.recv_idle();
+    frontend.shell.recv_execute_reply();
 }
 
 #[test]
@@ -71,15 +92,15 @@ fn test_ipykernel() {
 
     let code = "1 + 1";
 
-    frontend.send_execute_request(code, frontend::ExecuteRequestOptions::default());
-    frontend.recv_iopub_busy();
+    frontend.shell.send_execute_request(code, frontend::ExecuteRequestOptions::default());
+    frontend.iopub.recv_busy();
 
-    let input = frontend.recv_iopub_execute_input();
-    let reply = frontend.recv_iopub_execute_result();
+    let input = frontend.iopub.recv_execute_input();
+    let reply = frontend.iopub.recv_execute_result();
 
     assert_eq!(code, input.code);
     assert_eq!("2", reply);
 
-    frontend.recv_iopub_idle();
-    frontend.recv_shell_execute_reply();
+    frontend.iopub.recv_idle();
+    frontend.shell.recv_execute_reply();
 }
