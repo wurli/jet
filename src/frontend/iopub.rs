@@ -2,7 +2,6 @@ use crate::msg::wire::execute_input::ExecuteInput;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::status::ExecutionState;
 use crate::msg::wire::stream::Stream;
-use crate::msg::wire::wire_message::WireMessage;
 use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 use serde_json::Value;
@@ -26,14 +25,14 @@ impl Iopub {
         Self { socket }
     }
 
-    fn flush_incoming(&self, name: &str) {
-        eprintln!("{name} has incoming data:");
-
-        while self.socket.has_incoming_data().unwrap() {
-            dbg!(WireMessage::read_from_socket(&self.socket).unwrap());
-            eprintln!("---");
-        }
-    }
+    // fn flush_incoming(&self, name: &str) {
+    //     eprintln!("{name} has incoming data:");
+    //
+    //     while self.socket.has_incoming_data().unwrap() {
+    //         dbg!(WireMessage::read_from_socket(&self.socket).unwrap());
+    //         eprintln!("---");
+    //     }
+    // }
 
     pub fn recv(&self) -> Message {
         Message::read_from_socket(&self.socket).unwrap()

@@ -3,9 +3,8 @@ use carpo::kernel::kernel_spec::KernelInfo;
 use carpo::kernel::startup_method::StartupMethod;
 
 use carpo::frontend::frontend;
-use carpo::msg::wire::jupyter_message::{Message, Status};
+use carpo::msg::wire::jupyter_message::Message;
 use carpo::msg::wire::status::ExecutionState;
-use carpo::msg::wire::stream::StreamOutput;
 
 fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
     let selected_kernel = KernelInfo::get_all()
@@ -105,7 +104,9 @@ fn test_ark_with_connection_file() {
 
     let code = "1 + 1";
 
-    frontend.shell.send_execute_request(code, frontend::ExecuteRequestOptions::default());
+    frontend
+        .shell
+        .send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.iopub.recv_busy();
 
     let input = frontend.iopub.recv_execute_input();
@@ -124,7 +125,9 @@ fn test_ipykernel() {
 
     let code = "1 + 1";
 
-    frontend.shell.send_execute_request(code, frontend::ExecuteRequestOptions::default());
+    frontend
+        .shell
+        .send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.iopub.recv_busy();
 
     let input = frontend.iopub.recv_execute_input();
