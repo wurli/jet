@@ -29,9 +29,11 @@ fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     let frontend = match spec.get_startup_method() {
         StartupMethod::RegistrationFile => {
+            println!("Starting with registration file");
             Frontend::start_with_registration_file(kernel_cmd, connection_file_path.into())
         }
         StartupMethod::ConnectionFile => {
+            println!("Starting with connection file");
             Frontend::start_with_connection_file(kernel_cmd, connection_file_path.into())
         }
     };
@@ -58,12 +60,6 @@ fn test_ark_with_registration_file() {
 
     frontend.iopub.recv_idle();
     frontend.shell.recv_execute_reply();
-
-    // std::thread::spawn(move || {
-    //     loop {
-    //         let msg = frontend.recv_iopub();
-    //     }
-    // });
 
 }
 

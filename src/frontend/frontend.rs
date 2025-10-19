@@ -134,7 +134,7 @@ impl Frontend {
         let shell_endpoint = connection_file.endpoint(connection_file.shell_port);
         let iopub_endpoint = connection_file.endpoint(connection_file.iopub_port);
         let stdin_endpoint = connection_file.endpoint(connection_file.stdin_port);
-        let heartbeat_endpoint = connection_file.endpoint(connection_file.heartbeat_port);
+        let heartbeat_endpoint = connection_file.endpoint(connection_file.hb_port);
 
         Self {
             _control: Control::init(&opts, control_endpoint),

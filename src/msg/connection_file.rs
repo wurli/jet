@@ -24,7 +24,7 @@ pub struct ConnectionFile {
     pub iopub_port: u16,
 
     /// ZeroMQ port: Heartbeat messages (echo)
-    pub heartbeat_port: u16,
+    pub hb_port: u16,
 
     /// The transport type to use for ZeroMQ; generally "tcp"
     pub transport: String,
@@ -47,7 +47,7 @@ impl ConnectionFile {
             shell_port: RandomUserPort::new().expect("Failed to open shell port").0,
             stdin_port: RandomUserPort::new().expect("Failed to open stdin port").0,
             iopub_port: RandomUserPort::new().expect("Failed to open iopub port").0,
-            heartbeat_port: RandomUserPort::new().expect("Failed to open hb port").0,
+            hb_port: RandomUserPort::new().expect("Failed to open hb port").0,
             transport: String::from("tcp"),
             signature_scheme: String::from("hmac-sha256"),
             ip: String::from("127.0.0.1"),

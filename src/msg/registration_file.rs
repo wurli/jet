@@ -69,7 +69,7 @@ impl RegistrationFile {
             shell_port,
             stdin_port,
             iopub_port,
-            heartbeat_port,
+            hb_port: heartbeat_port,
             transport: self.transport.clone(),
             signature_scheme: self.signature_scheme.clone(),
             ip: self.ip.clone(),
