@@ -38,6 +38,18 @@ impl Heartbeat {
         msg
     }
 
+    /// Receives a (raw) message from the heartbeat socket
+    ///
+    /// Returns an error if no message is received within 1 second.
+    pub fn recv_with_timeout(&self) -> Result<zmq::Message, anyhow::Error> {
+        let timeout_ms = 1000;
+        if self.socket.poll_incoming(timeout_ms).unwrap() {
+            Ok(self.recv())
+        } else {
+            Err(anyhow::anyhow!("Heartbeat timeout after {timeout_ms} ms"))
+        }
+    }
+
     /// Sends a (raw) message to the heartbeat socket
     pub fn send(&self, msg: zmq::Message) {
         self.socket.send(msg).unwrap();

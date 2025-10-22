@@ -1,11 +1,14 @@
+pub mod frontend;
 pub mod kernel;
 pub mod msg;
-pub mod frontend;
 
+use frontend::frontend::Frontend;
 use kernel::kernel_spec::KernelInfo;
 use kernel::startup_method::StartupMethod;
 use msg::error;
-use frontend::frontend::Frontend;
+use rand::Rng;
+
+use crate::msg::wire::jupyter_message::Message;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
@@ -93,6 +96,56 @@ pub fn carpo() -> anyhow::Result<()> {
 
     let _kernel_info = frontend.subscribe();
 
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Heartbeat thread
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    let heartbeat = frontend.heartbeat;
+
+    std::thread::spawn(move || {
+        loop {
+            let mut rng = rand::rng();
+            let bytes: Vec<u8> = (0..32).map(|_| rng.random_range(0..10)).collect();
+
+            heartbeat.send(zmq::Message::from(bytes));
+            heartbeat.recv_with_timeout().expect("Heartbeat timed out");
+
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    });
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Iopub thread
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    let (execute_tx, execute_rx) = std::sync::mpsc::channel();
+    let (stream_tx, stream_rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        loop {
+            match frontend.iopub.recv() {
+                msg @ Message::Stream(_) => stream_tx.send(msg).unwrap(),
+                msg @ Message::Status(_) => execute_tx.send(msg).unwrap(),
+                msg @ Message::ExecuteInput(_) => execute_tx.send(msg).unwrap(),
+                msg @ Message::ExecuteResult(_) => execute_tx.send(msg).unwrap(),
+                msg @ Message::ExecuteReply(_) => execute_tx.send(msg).unwrap(),
+                _ => todo!(),
+            };
+        }
+    });
+
+    fn execute_code() {
+
+    }
+
+    fn flush_streams() {
+    }
+
+    fn poll_stdin() {
+
+    }
+
+    // fn provide_stdin() {
+    //     let x = frontend.stdin
+    // }
 
     Ok(())
 }
