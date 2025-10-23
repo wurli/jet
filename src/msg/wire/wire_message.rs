@@ -5,6 +5,7 @@
  *
  */
 
+#[allow(deprecated)]
 use crypto_common::generic_array::GenericArray;
 use hmac::Hmac;
 use log::trace;
@@ -163,6 +164,7 @@ impl WireMessage {
             hmac_validator.update(&buf);
         }
         // Verify the signature
+        #[allow(deprecated)]
         if let Err(err) = hmac_validator.verify(GenericArray::from_slice(&decoded)) {
             return Err(Error::BadSignature(decoded, err));
         }
@@ -223,6 +225,7 @@ impl WireMessage {
                 for part in &parts {
                     sig.update(&part);
                 }
+                #[allow(deprecated)]
                 hex::encode(sig.finalize().into_bytes().as_slice())
             },
             None => String::new(),
