@@ -3,7 +3,7 @@ use mlua::prelude::*;
 
 use crate::api;
 
-pub fn execute_code(_: &Lua, code: String) -> LuaResult<String> {
+pub fn execute_code(_lua: &Lua, code: String) -> LuaResult<String> {
     match api::execute_code(code) {
         Ok(result) => Ok(result.to_string()),
         Err(e) => Err(LuaError::external(e)),
@@ -25,4 +25,11 @@ pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
     }
 
     Ok(kernels_table)
+}
+
+pub fn start_kernel(_lua: &Lua, spec_path: String) -> LuaResult<()> {
+    match api::start_kernel(spec_path) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(LuaError::external(e)),
+    }
 }

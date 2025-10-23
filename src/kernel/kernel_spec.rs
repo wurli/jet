@@ -118,12 +118,12 @@ impl KernelSpec {
     }
 }
 
-pub struct KernelInfo {
+pub struct KernelSpecFull {
     pub path: PathBuf,
     pub spec: anyhow::Result<KernelSpec>,
 }
 
-impl KernelInfo {
+impl KernelSpecFull {
     pub fn get_all() -> Vec<Self> {
         discover_kernels()
             .iter()

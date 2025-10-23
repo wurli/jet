@@ -1,5 +1,5 @@
 use carpo::frontend::frontend::{ExecuteRequestOptions, Frontend};
-use carpo::kernel::kernel_spec::KernelInfo;
+use carpo::kernel::kernel_spec::KernelSpecFull;
 use carpo::kernel::startup_method::StartupMethod;
 
 use carpo::frontend::frontend;
@@ -7,7 +7,7 @@ use carpo::msg::wire::jupyter_message::Message;
 use carpo::msg::wire::status::ExecutionState;
 
 fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
-    let selected_kernel = KernelInfo::get_all()
+    let selected_kernel = KernelSpecFull::get_all()
         .into_iter()
         .filter_map(|x| x.spec)
         .filter(|x| x.display_name == kernel)
