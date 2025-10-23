@@ -7,8 +7,8 @@
  */
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex, RwLock};
-use std::sync::mpsc::{channel, Sender, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use crate::msg::wire::jupyter_message::Message;
@@ -80,7 +80,7 @@ impl IopubBroker {
     }
 
     /// Create a new IOPub broker with custom configuration
-    pub fn with_config(config: BrokerConfig) -> Self {
+    pub fn wjth_config(config: BrokerConfig) -> Self {
         Self {
             active_requests: Arc::new(RwLock::new(HashMap::new())),
             global_subscribers: Arc::new(RwLock::new(Vec::new())),
@@ -128,24 +128,6 @@ impl IopubBroker {
         }
     }
 
-    /// Get the message type as a string for logging
-    fn message_type(&self, msg: &Message) -> &str {
-        match msg {
-            Message::Status(_) => "Status",
-            Message::ExecuteResult(_) => "ExecuteResult",
-            Message::ExecuteError(_) => "ExecuteError",
-            Message::ExecuteInput(_) => "ExecuteInput",
-            Message::Stream(_) => "Stream",
-            Message::DisplayData(_) => "DisplayData",
-            Message::UpdateDisplayData(_) => "UpdateDisplayData",
-            Message::CommOpen(_) => "CommOpen",
-            Message::CommMsg(_) => "CommMsg",
-            Message::CommClose(_) => "CommClose",
-            Message::Welcome(_) => "Welcome",
-            _ => "Other",
-        }
-    }
-
     /// Route a message to a specific request's channels
     /// Returns whether the message was successfully routed (and consumed)
     /// If routing fails, the message is buffered as an orphan
@@ -155,12 +137,8 @@ impl IopubBroker {
         if let Some(ctx) = active.get(parent_id) {
             // Route based on message type
             let result = match &msg {
-                Message::Status(_) => {
-                    ctx.channels.status_tx.send(msg)
-                }
-                Message::Stream(_) => {
-                    ctx.channels.stream_tx.send(msg)
-                }
+                Message::Status(_) => ctx.channels.status_tx.send(msg),
+                Message::Stream(_) => ctx.channels.stream_tx.send(msg),
                 Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::ExecuteInput(_) => {
                     ctx.channels.execution_tx.send(msg)
                 }
@@ -171,7 +149,7 @@ impl IopubBroker {
                     ctx.channels.comm_tx.send(msg)
                 }
                 _ => {
-                    log::warn!("Unhandled message type for routing: {}", self.message_type(&msg));
+                    log::warn!("Unhandled message type for routing: {:#?}", msg);
                     // Drop msg by moving it into orphan buffer
                     drop(active); // Release lock before calling handle_orphan
                     self.handle_orphan(msg);
@@ -206,10 +184,7 @@ impl IopubBroker {
 
     /// Handle a message that doesn't match any active request
     fn handle_orphan(&self, msg: Message) {
-        log::debug!(
-            "Orphan message (type: {}): no matching request found",
-            self.message_type(&msg)
-        );
+        log::debug!("Orphan message {:#?}: no matching request found", &msg);
 
         let mut buffer = self.orphan_buffer.lock().unwrap();
         buffer.push_back((msg, Instant::now()));
@@ -218,8 +193,8 @@ impl IopubBroker {
         while buffer.len() > self.config.orphan_buffer_max {
             if let Some((dropped_msg, _)) = buffer.pop_front() {
                 log::trace!(
-                    "Dropped old orphan message (type: {}) due to buffer limit",
-                    self.message_type(&dropped_msg)
+                    "Dropped old orphan message {:#?} due to buffer limit",
+                    &dropped_msg
                 );
             }
         }
@@ -235,7 +210,9 @@ impl IopubBroker {
             channels,
         };
 
-        self.active_requests.write().unwrap()
+        self.active_requests
+            .write()
+            .unwrap()
             .insert(request_id, ctx);
     }
 
@@ -243,8 +220,7 @@ impl IopubBroker {
     pub fn unregister_request(&self, request_id: &RequestId) {
         log::trace!("Unregistering request: {}", request_id);
 
-        self.active_requests.write().unwrap()
-            .remove(request_id);
+        self.active_requests.write().unwrap().remove(request_id);
     }
 
     /// Clean up stale requests that have exceeded the timeout
@@ -258,11 +234,7 @@ impl IopubBroker {
         active.retain(|id, ctx| {
             let age = now.duration_since(ctx.started_at);
             if age >= timeout {
-                log::warn!(
-                    "Removing stale request {} (age: {:?})",
-                    id,
-                    age
-                );
+                log::warn!("Removing stale request {} (age: {:?})", id, age);
                 false
             } else {
                 true
@@ -283,9 +255,7 @@ impl IopubBroker {
         let mut buffer = self.orphan_buffer.lock().unwrap();
         let before_count = buffer.len();
 
-        buffer.retain(|(_, timestamp)| {
-            now.duration_since(*timestamp) < max_age
-        });
+        buffer.retain(|(_, timestamp)| now.duration_since(*timestamp) < max_age);
 
         let removed = before_count - buffer.len();
         if removed > 0 {

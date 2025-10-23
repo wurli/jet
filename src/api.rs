@@ -2,19 +2,17 @@ use rand::Rng;
 
 use crate::{
     frontend::{
-        frontend::{self, Frontend},
+        frontend::{ExecuteRequestOptions, Frontend},
+        iopub_broker::{ExecutionResult, IopubBroker},
+        iopub_listener,
         shell::Shell,
-        iopub_thread,
     },
     kernel::{
         kernel_spec::{KernelSpec, KernelSpecFull},
         startup_method::StartupMethod,
     },
-    msg::{
-        broker::{IopubBroker, ExecutionResult},
-        wire::{
-            jupyter_message::Message, kernel_info_full_reply::KernelInfoReply, status::ExecutionState,
-        },
+    msg::wire::{
+        jupyter_message::Message, kernel_info_full_reply::KernelInfoReply, status::ExecutionState,
     },
 };
 use std::sync::mpsc::Receiver;
@@ -104,8 +102,7 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     broker.add_global_subscriber(stream_tx);
 
     // Start the IOPub processing thread
-    let broker_clone = Arc::clone(&broker);
-    iopub_thread::start_iopub_thread(frontend.iopub, broker_clone);
+    iopub_listener::start_iopub_thread(frontend.iopub, Arc::clone(&broker));
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialise global state
@@ -132,7 +129,7 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
     let (channels, collector) = ExecutionResult::create_channels();
 
     // Send the execute request and get its message ID
-    let request_id = shell.send_execute_request(&code, frontend::ExecuteRequestOptions::default());
+    let request_id = shell.send_execute_request(&code, ExecuteRequestOptions::default());
 
     // Register this request with the broker
     broker.register_request(request_id.clone(), channels);
@@ -175,14 +172,20 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
     // Collect results until we see Idle status
     loop {
         // Try execution channel first (for results)
-        match collector.execution_rx.recv_timeout(Duration::from_millis(100)) {
+        match collector
+            .execution_rx
+            .recv_timeout(Duration::from_millis(100))
+        {
             Ok(Message::ExecuteResult(msg)) => {
                 result = msg.content.data["text/plain"].clone().to_string();
                 continue;
             }
             Ok(Message::ExecuteError(msg)) => {
                 broker.unregister_request(&request_id);
-                return Err(anyhow::anyhow!("Execution error: {}", msg.content.exception.evalue));
+                return Err(anyhow::anyhow!(
+                    "Execution error: {}",
+                    msg.content.exception.evalue
+                ));
             }
             Ok(other) => {
                 log::warn!("Unexpected execution message: {:#?}", other);

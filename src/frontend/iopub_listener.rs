@@ -7,16 +7,13 @@
 
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::frontend::iopub::Iopub;
-use crate::msg::broker::IopubBroker;
+use crate::frontend::iopub_broker::IopubBroker;
 
 /// Spawn a thread that continuously receives IOPub messages and routes them through the broker
-pub fn start_iopub_thread(
-    iopub: Iopub,
-    broker: Arc<IopubBroker>,
-) -> JoinHandle<()> {
+pub fn start_iopub_thread(iopub: Iopub, broker: Arc<IopubBroker>) -> JoinHandle<()> {
     thread::spawn(move || {
         log::info!("IOPub thread started");
 
@@ -25,7 +22,7 @@ pub fn start_iopub_thread(
 
         loop {
             // Receive with a short timeout to allow periodic cleanup
-            match iopub.recv_timeout(Duration::from_millis(100)) {
+            match iopub.recv_with_timeout(100) {
                 Some(msg) => {
                     log::trace!("IOPub received: {:#?}", msg);
                     broker.route_message(msg);
