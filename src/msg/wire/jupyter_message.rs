@@ -311,43 +311,6 @@ impl Message {
         msg.send(socket)?;
         Ok(())
     }
-
-    /// Get a string representation of the message type
-    pub fn message_type(&self) -> &str {
-        match self {
-            Message::KernelInfoReply(_) => "kernel_info_reply",
-            Message::KernelInfoRequest(_) => "kernel_info_request",
-            Message::CompleteReply(_) => "complete_reply",
-            Message::CompleteRequest(_) => "complete_request",
-            Message::ExecuteReply(_) => "execute_reply",
-            Message::ExecuteReplyException(_) => "execute_reply",
-            Message::ExecuteRequest(_) => "execute_request",
-            Message::InspectReply(_) => "inspect_reply",
-            Message::InspectRequest(_) => "inspect_request",
-            Message::IsCompleteReply(_) => "is_complete_reply",
-            Message::IsCompleteRequest(_) => "is_complete_request",
-            Message::CommInfoReply(_) => "comm_info_reply",
-            Message::CommInfoRequest(_) => "comm_info_request",
-            Message::InputReply(_) => "input_reply",
-            Message::InputRequest(_) => "input_request",
-            Message::InterruptReply(_) => "interrupt_reply",
-            Message::InterruptRequest(_) => "interrupt_request",
-            Message::ShutdownRequest(_) => "shutdown_request",
-            Message::HandshakeRequest(_) => "handshake_request",
-            Message::HandshakeReply(_) => "handshake_reply",
-            Message::Status(_) => "status",
-            Message::ExecuteResult(_) => "execute_result",
-            Message::ExecuteError(_) => "error",
-            Message::ExecuteInput(_) => "execute_input",
-            Message::Stream(_) => "stream",
-            Message::DisplayData(_) => "display_data",
-            Message::UpdateDisplayData(_) => "update_display_data",
-            Message::Welcome(_) => "iopub_welcome",
-            Message::CommMsg(_) => "comm_msg",
-            Message::CommOpen(_) => "comm_open",
-            Message::CommClose(_) => "comm_close",
-        }
-    }
 }
 
 impl<T> JupyterMessage<T>

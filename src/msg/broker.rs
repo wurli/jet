@@ -62,13 +62,13 @@ impl Default for BrokerConfig {
 pub struct IopubBroker {
     /// Active requests waiting for messages
     active_requests: Arc<RwLock<HashMap<RequestId, RequestContext>>>,
-    
+
     /// Global subscribers that receive all messages regardless of correlation
     global_subscribers: Arc<RwLock<Vec<Sender<Message>>>>,
-    
+
     /// Buffer for "orphan" messages (no matching request)
     orphan_buffer: Arc<Mutex<VecDeque<(Message, Instant)>>>,
-    
+
     /// Configuration
     pub config: BrokerConfig,
 }
@@ -91,14 +91,14 @@ impl IopubBroker {
 
     /// Route an incoming IOPub message to the appropriate handler(s)
     pub fn route_message(&self, msg: Message) {
-        log::trace!("Routing message: {}", msg.message_type());
+        log::trace!("Routing message: {:#?}", msg);
 
         // First, send to all global subscribers
         self.send_to_global_subscribers(&msg);
 
         // Extract parent header to correlate with request
         let parent_id = self.extract_parent_id(&msg);
-        
+
         // Try to route to specific request
         if let Some(parent_id) = parent_id {
             self.route_to_request(&parent_id, msg);
@@ -151,7 +151,7 @@ impl IopubBroker {
     /// If routing fails, the message is buffered as an orphan
     fn route_to_request(&self, parent_id: &str, msg: Message) -> bool {
         let active = self.active_requests.read().unwrap();
-        
+
         if let Some(ctx) = active.get(parent_id) {
             // Route based on message type
             let result = match &msg {
@@ -185,7 +185,7 @@ impl IopubBroker {
                     parent_id
                 );
             }
-            
+
             true // Message was sent (or attempted to send)
         } else {
             // No matching request found - buffer as orphan
@@ -210,10 +210,10 @@ impl IopubBroker {
             "Orphan message (type: {}): no matching request found",
             self.message_type(&msg)
         );
-        
+
         let mut buffer = self.orphan_buffer.lock().unwrap();
         buffer.push_back((msg, Instant::now()));
-        
+
         // Keep buffer size bounded
         while buffer.len() > self.config.orphan_buffer_max {
             if let Some((dropped_msg, _)) = buffer.pop_front() {
@@ -228,13 +228,13 @@ impl IopubBroker {
     /// Register a new request that expects IOPub messages
     pub fn register_request(&self, request_id: RequestId, channels: RequestChannels) {
         log::trace!("Registering request: {}", request_id);
-        
+
         let ctx = RequestContext {
             request_id: request_id.clone(),
             started_at: Instant::now(),
             channels,
         };
-        
+
         self.active_requests.write().unwrap()
             .insert(request_id, ctx);
     }
@@ -242,7 +242,7 @@ impl IopubBroker {
     /// Unregister a completed request
     pub fn unregister_request(&self, request_id: &RequestId) {
         log::trace!("Unregistering request: {}", request_id);
-        
+
         self.active_requests.write().unwrap()
             .remove(request_id);
     }
@@ -251,10 +251,10 @@ impl IopubBroker {
     pub fn cleanup_stale_requests(&self) {
         let timeout = self.config.request_timeout;
         let now = Instant::now();
-        
+
         let mut active = self.active_requests.write().unwrap();
         let before_count = active.len();
-        
+
         active.retain(|id, ctx| {
             let age = now.duration_since(ctx.started_at);
             if age >= timeout {
@@ -268,7 +268,7 @@ impl IopubBroker {
                 true
             }
         });
-        
+
         let removed = before_count - active.len();
         if removed > 0 {
             log::info!("Cleaned up {} stale request(s)", removed);
@@ -279,14 +279,14 @@ impl IopubBroker {
     pub fn cleanup_orphans(&self) {
         let max_age = self.config.orphan_max_age;
         let now = Instant::now();
-        
+
         let mut buffer = self.orphan_buffer.lock().unwrap();
         let before_count = buffer.len();
-        
+
         buffer.retain(|(_, timestamp)| {
             now.duration_since(*timestamp) < max_age
         });
-        
+
         let removed = before_count - buffer.len();
         if removed > 0 {
             log::debug!("Cleaned up {} old orphan message(s)", removed);
@@ -477,7 +477,7 @@ impl ExecutionResult {
     /// Check if execution has completed (received Idle status after Busy)
     pub fn has_completed(&self) -> bool {
         use crate::msg::wire::status::ExecutionState;
-        
+
         let mut saw_busy = false;
         for msg in &self.status_messages {
             if let Message::Status(status) = msg {

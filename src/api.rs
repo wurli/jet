@@ -98,11 +98,11 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     // IOPub thread with broker-based routing
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     let broker = Arc::new(IopubBroker::new());
-    
+
     // Set up a global stream channel for backward compatibility
     let (stream_tx, stream_rx) = std::sync::mpsc::channel();
     broker.add_global_subscriber(stream_tx);
-    
+
     // Start the IOPub processing thread
     let broker_clone = Arc::clone(&broker);
     iopub_thread::start_iopub_thread(frontend.iopub, broker_clone);
@@ -149,7 +149,7 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
         }
         Ok(other) => {
             broker.unregister_request(&request_id);
-            return Err(anyhow::anyhow!("Expected Status(Busy), got {:?}", other.message_type()));
+            return Err(anyhow::anyhow!("Expected Status(Busy), got {:#?}", other));
         }
         Err(e) => {
             broker.unregister_request(&request_id);
@@ -164,7 +164,7 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
         }
         Ok(other) => {
             broker.unregister_request(&request_id);
-            return Err(anyhow::anyhow!("Expected ExecuteInput, got {:?}", other.message_type()));
+            return Err(anyhow::anyhow!("Expected ExecuteInput, got {:#?}", other));
         }
         Err(e) => {
             broker.unregister_request(&request_id);
@@ -185,7 +185,7 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
                 return Err(anyhow::anyhow!("Execution error: {}", msg.content.exception.evalue));
             }
             Ok(other) => {
-                log::warn!("Unexpected execution message: {:?}", other.message_type());
+                log::warn!("Unexpected execution message: {:#?}", other);
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Check status channel
@@ -205,7 +205,7 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
                 // Other status, continue
             }
             Ok(other) => {
-                log::warn!("Unexpected status message: {:?}", other.message_type());
+                log::warn!("Unexpected status message: {:#?}", other);
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // Continue waiting
