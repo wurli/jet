@@ -38,6 +38,27 @@ impl Iopub {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
+    /// Receive a message with a timeout
+    /// Returns None if no message is available within the timeout
+    pub fn recv_timeout(&self, timeout: std::time::Duration) -> Option<Message> {
+        let timeout_ms = timeout.as_millis() as i64;
+        
+        match self.socket.poll_incoming(timeout_ms) {
+            Ok(true) => {
+                // Data available, receive it
+                Message::read_from_socket(&self.socket).ok()
+            }
+            Ok(false) => {
+                // Timeout, no data available
+                None
+            }
+            Err(e) => {
+                log::error!("Error polling IOPub socket: {}", e);
+                None
+            }
+        }
+    }
+
     /// Receive from IOPub and assert Busy message
     pub fn recv_busy(&self) -> () {
         let msg = self.recv();
