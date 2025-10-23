@@ -27,9 +27,9 @@ pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
     Ok(kernels_table)
 }
 
-pub fn start_kernel(_lua: &Lua, spec_path: String) -> LuaResult<()> {
+pub fn start_kernel(_lua: &Lua, spec_path: String) -> LuaResult<String> {
     match api::start_kernel(spec_path) {
-        Ok(_) => Ok(()),
+        Ok(result) => Ok(result),
         Err(e) => Err(LuaError::external(e)),
     }
 }

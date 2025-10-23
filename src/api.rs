@@ -1,4 +1,3 @@
-use mlua::prelude::*;
 use rand::Rng;
 
 use crate::{
@@ -6,7 +5,10 @@ use crate::{
         frontend::{self, Frontend},
         shell::Shell,
     },
-    kernel::{kernel_spec::KernelSpecFull, startup_method::StartupMethod},
+    kernel::{
+        kernel_spec::{KernelSpec, KernelSpecFull},
+        startup_method::StartupMethod,
+    },
     msg::wire::{
         jupyter_message::Message, kernel_info_full_reply::KernelInfoReply, status::ExecutionState,
     },
@@ -18,7 +20,7 @@ use assert_matches::assert_matches;
 
 // When we call lua functions we can only pass args from Lua. So, in order
 // to access global state within these funcions, we need to use static values.
-pub static KERNEL_INFO: OnceLock<(KernelSpecFull, KernelInfoReply)> = OnceLock::new();
+pub static KERNEL_INFO: OnceLock<(KernelSpec, KernelInfoReply)> = OnceLock::new();
 pub static EXECUTE_RX: OnceLock<Mutex<Receiver<Message>>> = OnceLock::new();
 pub static STREAM_CHANNEL: OnceLock<Mutex<Receiver<Message>>> = OnceLock::new();
 pub static SHELL: OnceLock<Mutex<Shell>> = OnceLock::new();
@@ -27,10 +29,13 @@ pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
 }
 
-pub fn start_kernel(spec_path: String) -> anyhow::Result<()> {
-    // if let Some(kernel) = KERNEL.get() {
-    //     return Err(anyhow::anyhow!("Kernel {kernel} is already running"));
-    // };
+pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
+    if let Some(info) = KERNEL_INFO.get() {
+        return Err(anyhow::anyhow!(
+            "Kernel '{}' is already running",
+            info.0.display_name
+        ));
+    };
 
     let matched_spec = KernelSpecFull::get_all()
         .into_iter()
@@ -106,12 +111,14 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<()> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialise global state
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    KERNEL_INFO.get_or_init(|| (spec_full, kernel_info));
+    // log::info!("{}", kernel_info.banner);
+
+    KERNEL_INFO.get_or_init(|| (spec, kernel_info.clone()));
     SHELL.get_or_init(|| Mutex::new(frontend.shell));
     EXECUTE_RX.get_or_init(|| Mutex::new(execute_rx));
     STREAM_CHANNEL.get_or_init(|| Mutex::new(stream_rx));
 
-    Ok(())
+    Ok(kernel_info.banner)
 }
 
 pub fn execute_code(code: String) -> anyhow::Result<String> {
