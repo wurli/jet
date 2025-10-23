@@ -80,7 +80,7 @@ impl IopubBroker {
     }
 
     /// Create a new IOPub broker with custom configuration
-    pub fn wjth_config(config: BrokerConfig) -> Self {
+    pub fn with_config(config: BrokerConfig) -> Self {
         Self {
             active_requests: Arc::new(RwLock::new(HashMap::new())),
             global_subscribers: Arc::new(RwLock::new(Vec::new())),

@@ -1,7 +1,4 @@
-use crate::{
-    frontend::frontend::FrontendOptions,
-    msg::{socket::Socket, wire::wire_message::WireMessage},
-};
+use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
 
 pub struct Heartbeat {
     socket: Socket,

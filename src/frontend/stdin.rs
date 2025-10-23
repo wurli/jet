@@ -1,7 +1,6 @@
 use crate::msg::session::Session;
 use crate::msg::wire::input_reply::InputReply;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
-use crate::msg::wire::wire_message::WireMessage;
 use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 

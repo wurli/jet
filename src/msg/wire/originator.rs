@@ -6,7 +6,7 @@
  */
 
 use crate::msg::wire::header::JupyterHeader;
-use crate::msg::wire::jupyter_message::{JupyterMessage, MessageType};
+use crate::msg::wire::jupyter_message::JupyterMessage;
 
 #[derive(Debug, Clone)]
 pub struct Originator {
