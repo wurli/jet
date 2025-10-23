@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -67,7 +66,7 @@ pub struct KernelSpec {
 }
 
 impl KernelSpec {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let file = File::open(path)?;
         Ok(serde_json::from_reader(BufReader::new(file))?)
     }
@@ -121,7 +120,7 @@ impl KernelSpec {
 
 pub struct KernelInfo {
     pub path: PathBuf,
-    pub spec: Option<KernelSpec>,
+    pub spec: anyhow::Result<KernelSpec>,
 }
 
 impl KernelInfo {
@@ -130,7 +129,7 @@ impl KernelInfo {
             .iter()
             .map(|path| Self {
                 path: path.to_path_buf(),
-                spec: KernelSpec::from_file(path).ok(),
+                spec: KernelSpec::from_file(path),
             })
             .collect()
     }

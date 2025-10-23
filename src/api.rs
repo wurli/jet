@@ -1,10 +1,15 @@
 use crate::{
     EXECUTE_RX, SHELL,
     frontend::frontend,
+    kernel::kernel_spec::KernelInfo,
     msg::wire::{jupyter_message::Message, status::ExecutionState},
 };
 
 use assert_matches::assert_matches;
+
+pub fn discover_kernels() -> Vec<KernelInfo> {
+    KernelInfo::get_all()
+}
 
 pub fn execute_code(code: String) -> anyhow::Result<String> {
     let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
@@ -13,6 +18,9 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
 
     shell.send_execute_request(&code, frontend::ExecuteRequestOptions::default());
 
+    // Start with the assumption that the result is empty. Some kernels (e.g. Ark)
+    // don't publish an ExecuteResult message in some cases, e.g. when the result
+    // is invisible. In such cases we return an empty string for now.
     let mut result = String::from("");
 
     assert_matches!(execute_rx.recv().unwrap(), Message::Status(msg) => {

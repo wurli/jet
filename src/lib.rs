@@ -4,10 +4,10 @@ pub mod frontend;
 pub mod kernel;
 pub mod msg;
 
-use mlua::prelude::*;
 use frontend::frontend::Frontend;
 use kernel::kernel_spec::KernelInfo;
 use kernel::startup_method::StartupMethod;
+use mlua::prelude::*;
 use msg::error;
 use rand::Rng;
 
@@ -77,13 +77,13 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Get the kernel to use
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let selected_kernel_name = String::from("Ark R Kernel");
+    // let selected_kernel_name = String::from("Ark R Kernel");
     // let selected_kernel_name = String::from("Ark R Kernel (connection file method)");
-    // let selected_kernel_name = String::from("Python 3 (ipykernel)");
+    let selected_kernel_name = String::from("Python 3 (ipykernel)");
 
     let selected_kernel = KernelInfo::get_all()
         .into_iter()
-        .filter_map(|x| x.spec)
+        .filter_map(|x| x.spec.ok())
         .filter(|x| x.display_name == selected_kernel_name)
         .nth(0);
 
@@ -168,5 +168,7 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
 
     let exports = lua.create_table()?;
     exports.set("execute_code", lua.create_function(api_lua::execute_code)?)?;
+    exports.set("discover_kernels", lua.create_function(api_lua::discover_kernels)?)?;
+
     Ok(exports)
 }

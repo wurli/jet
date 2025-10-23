@@ -1,3 +1,4 @@
+use mlua::LuaSerdeExt;
 use mlua::prelude::*;
 
 use crate::api;
@@ -9,4 +10,19 @@ pub fn execute_code(_: &Lua, code: String) -> LuaResult<String> {
     }
 }
 
+pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
+    let kernels = api::discover_kernels();
 
+    let kernels_table = lua.create_table()?;
+
+    for kernel in kernels {
+        if let Ok(spec) = kernel.spec {
+            let _ = kernels_table.set(
+                kernel.path.to_string_lossy().to_string(),
+                lua.to_value(&spec).unwrap(),
+            );
+        };
+    }
+
+    Ok(kernels_table)
+}
