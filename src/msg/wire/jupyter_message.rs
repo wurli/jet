@@ -27,8 +27,8 @@ use crate::msg::wire::comm_msg::CommWireMsg;
 use crate::msg::wire::comm_open::CommOpen;
 use crate::msg::wire::complete_reply::CompleteReply;
 use crate::msg::wire::complete_request::CompleteRequest;
-use crate::msg::wire::error_reply::ErrorReply;
-use crate::msg::wire::exception::Exception;
+// use crate::msg::wire::error_reply::ErrorReply;
+// use crate::msg::wire::exception::Exception;
 use crate::msg::wire::execute_error::ExecuteError;
 use crate::msg::wire::execute_input::ExecuteInput;
 use crate::msg::wire::execute_reply::ExecuteReply;
@@ -45,7 +45,7 @@ use crate::msg::wire::interrupt_request::InterruptRequest;
 use crate::msg::wire::is_complete_reply::IsCompleteReply;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
-use crate::msg::wire::originator::Originator;
+// use crate::msg::wire::originator::Originator;
 use crate::msg::wire::shutdown_request::ShutdownRequest;
 use crate::msg::wire::status::KernelStatus;
 use crate::msg::wire::wire_message::WireMessage;
@@ -350,7 +350,7 @@ impl Message {
         }
     }
 
-    pub fn message_type(&self) -> String {
+    pub fn kind(&self) -> String {
         let msg_type = match self {
             Message::KernelInfoReply(_) => "kernel_info_reply",
             Message::KernelInfoRequest(_) => "kernel_info_request",
@@ -433,108 +433,108 @@ where
         }
     }
 
-    /// Create a new Jupyter message with a specific ZeroMQ identity.
-    pub fn create_with_identity(
-        originator: Originator,
-        content: T,
-        session: &Session,
-    ) -> JupyterMessage<T> {
-        JupyterMessage::<T> {
-            zmq_identities: originator.zmq_identities,
-            header: JupyterHeader::create(
-                T::message_type(),
-                session.session_id.clone(),
-                session.username.clone(),
-            ),
-            parent_header: Some(originator.header),
-            content,
-        }
-    }
+    // /// Create a new Jupyter message with a specific ZeroMQ identity.
+    // pub fn create_with_identity(
+    //     originator: Originator,
+    //     content: T,
+    //     session: &Session,
+    // ) -> JupyterMessage<T> {
+    //     JupyterMessage::<T> {
+    //         zmq_identities: originator.zmq_identities,
+    //         header: JupyterHeader::create(
+    //             T::message_type(),
+    //             session.session_id.clone(),
+    //             session.username.clone(),
+    //         ),
+    //         parent_header: Some(originator.header),
+    //         content,
+    //     }
+    // }
 
-    /// Sends a reply to the message; convenience method combining creating the
-    /// reply and sending it.
-    pub fn send_reply<R: ProtocolMessage>(&self, content: R, socket: &Socket) -> crate::Result<()> {
-        let reply = self.reply_msg(content, &socket.session)?;
-        reply.send(&socket)
-    }
+    // /// Sends a reply to the message; convenience method combining creating the
+    // /// reply and sending it.
+    // pub fn send_reply<R: ProtocolMessage>(&self, content: R, socket: &Socket) -> crate::Result<()> {
+    //     let reply = self.reply_msg(content, &socket.session)?;
+    //     reply.send(&socket)
+    // }
 
-    /// Sends an error reply to the message.
-    pub fn send_error<R: ProtocolMessage>(
-        &self,
-        exception: Exception,
-        socket: &Socket,
-    ) -> crate::Result<()> {
-        let reply = self.error_reply::<R>(exception, &socket.session);
-        reply.send(&socket)
-    }
+    // /// Sends an error reply to the message.
+    // pub fn send_error<R: ProtocolMessage>(
+    //     &self,
+    //     exception: Exception,
+    //     socket: &Socket,
+    // ) -> crate::Result<()> {
+    //     let reply = self.error_reply::<R>(exception, &socket.session);
+    //     reply.send(&socket)
+    // }
 
-    pub fn send_execute_error(
-        &self,
-        exception: Exception,
-        exec_count: u32,
-        socket: &Socket,
-    ) -> crate::Result<()> {
-        let rep = ExecuteReplyException {
-            status: Status::Error,
-            execution_count: exec_count,
-            exception,
-        };
-        self.send_reply(rep, socket)
-    }
+    // pub fn send_execute_error(
+    //     &self,
+    //     exception: Exception,
+    //     exec_count: u32,
+    //     socket: &Socket,
+    // ) -> crate::Result<()> {
+    //     let rep = ExecuteReplyException {
+    //         status: Status::Error,
+    //         execution_count: exec_count,
+    //         exception,
+    //     };
+    //     self.send_reply(rep, socket)
+    // }
 
-    /// Create a raw reply message to this message.
-    fn reply_msg<R: ProtocolMessage>(
-        &self,
-        content: R,
-        session: &Session,
-    ) -> Result<WireMessage, Error> {
-        let reply = self.create_reply(content, session);
-        WireMessage::try_from(&reply)
-    }
+    // /// Create a raw reply message to this message.
+    // fn reply_msg<R: ProtocolMessage>(
+    //     &self,
+    //     content: R,
+    //     session: &Session,
+    // ) -> Result<WireMessage, Error> {
+    //     let reply = self.create_reply(content, session);
+    //     WireMessage::try_from(&reply)
+    // }
 
-    /// Create a reply to this message with the given content.
-    pub fn create_reply<R: ProtocolMessage>(
-        &self,
-        content: R,
-        session: &Session,
-    ) -> JupyterMessage<R> {
-        // Note that the message we are creating needs to use the kernel session
-        // (given as an argument), not the client session (which we could
-        // otherwise copy from the message itself)
-        JupyterMessage::<R> {
-            zmq_identities: self.zmq_identities.clone(),
-            header: JupyterHeader::create(
-                R::message_type(),
-                session.session_id.clone(),
-                session.username.clone(),
-            ),
-            parent_header: Some(self.header.clone()),
-            content,
-        }
-    }
+    // /// Create a reply to this message with the given content.
+    // pub fn create_reply<R: ProtocolMessage>(
+    //     &self,
+    //     content: R,
+    //     session: &Session,
+    // ) -> JupyterMessage<R> {
+    //     // Note that the message we are creating needs to use the kernel session
+    //     // (given as an argument), not the client session (which we could
+    //     // otherwise copy from the message itself)
+    //     JupyterMessage::<R> {
+    //         zmq_identities: self.zmq_identities.clone(),
+    //         header: JupyterHeader::create(
+    //             R::message_type(),
+    //             session.session_id.clone(),
+    //             session.username.clone(),
+    //         ),
+    //         parent_header: Some(self.header.clone()),
+    //         content,
+    //     }
+    // }
 
-    /// Creates an error reply to this message; used on ROUTER/DEALER sockets to
-    /// indicate that an error occurred while processing a Request message.
-    ///
-    /// Error replies are special cases; they use the message type of a
-    /// successful reply, but their content is an Exception instead.
-    pub fn error_reply<R: ProtocolMessage>(
-        &self,
-        exception: Exception,
-        session: &Session,
-    ) -> JupyterMessage<ErrorReply> {
-        JupyterMessage::<ErrorReply> {
-            zmq_identities: self.zmq_identities.clone(),
-            header: JupyterHeader::create(
-                R::message_type(),
-                session.session_id.clone(),
-                session.username.clone(),
-            ),
-            parent_header: Some(self.header.clone()),
-            content: ErrorReply {
-                status: Status::Error,
-                exception,
-            },
-        }
-    }
+//     /// Creates an error reply to this message; used on ROUTER/DEALER sockets to
+//     /// indicate that an error occurred while processing a Request message.
+//     ///
+//     /// Error replies are special cases; they use the message type of a
+//     /// successful reply, but their content is an Exception instead.
+//     pub fn error_reply<R: ProtocolMessage>(
+//         &self,
+//         exception: Exception,
+//         session: &Session,
+//     ) -> JupyterMessage<ErrorReply> {
+//         JupyterMessage::<ErrorReply> {
+//             zmq_identities: self.zmq_identities.clone(),
+//             header: JupyterHeader::create(
+//                 R::message_type(),
+//                 session.session_id.clone(),
+//                 session.username.clone(),
+//             ),
+//             parent_header: Some(self.header.clone()),
+//             content: ErrorReply {
+//                 status: Status::Error,
+//                 exception,
+//             },
+//         }
+//     }
 }

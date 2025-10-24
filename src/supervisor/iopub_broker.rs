@@ -16,22 +16,11 @@ use crate::msg::wire::jupyter_message::Message;
 /// Uniquely identifies a request-response cycle using the request's msg_id
 pub type RequestId = String;
 
-/// Channels for different categories of IOPub messages related to a request
-#[derive(Debug)]
-pub struct RequestChannels {
-    pub status_tx: Sender<Message>,
-    pub execution_tx: Sender<Message>,
-    pub stream_tx: Sender<Message>,
-    pub display_tx: Sender<Message>,
-    pub comm_tx: Sender<Message>,
-}
-
 /// Context for tracking an active request that expects IOPub messages
 struct RequestContext {
-    #[allow(dead_code)]
     request_id: RequestId,
     started_at: Instant,
-    channels: RequestChannels,
+    channel: Sender<Message>,
 }
 
 /// Configuration for the IOPub broker
@@ -86,19 +75,16 @@ impl IopubBroker {
     }
 
     /// Route an incoming IOPub message to the appropriate handler(s)
-    pub fn route_message(&self, msg: Message) {
-        log::trace!("Routing message: {:#?}", msg);
+    pub fn route(&self, msg: Message) {
+        log::trace!("Routing message: {}", msg.kind());
 
-        // Try to route to specific request
         if let Some(parent_id) = msg.parent_id() {
             self.route_to_request(&parent_id, msg);
         } else {
             // No parent ID, handle as orphan
+            log::warn!("Orphaning message: {}", msg.kind());
             self.handle_orphan(msg);
         }
-
-        // route_to_request already consumed the message whether it succeeded or not
-        // (it either sent it or handled it as orphan internally)
     }
 
     /// Route a message to a specific request's channels
@@ -108,7 +94,7 @@ impl IopubBroker {
         let active = self.active_requests.read().unwrap();
 
         if let Some(ctx) = active.get(parent_id) {
-            let result = ctx.channels.status_tx.send(msg);
+            let result = ctx.channel.send(msg);
 
             if result.is_err() {
                 log::warn!(
@@ -145,30 +131,26 @@ impl IopubBroker {
     }
 
     /// Register a new request that expects IOPub messages
-    pub fn register_request(&self, request_id: RequestId, channels: RequestChannels) {
+    pub fn register_request(&self, request_id: RequestId, channel: Sender<Message>) {
         log::trace!("Registering request: {}", request_id);
-
-        let ctx = RequestContext {
-            request_id: request_id.clone(),
-            started_at: Instant::now(),
-            channels,
-        };
-
-        self.active_requests
-            .write()
-            .unwrap()
-            .insert(request_id, ctx);
+        self.active_requests.write().unwrap().insert(
+            request_id.clone(),
+            RequestContext {
+                request_id: request_id,
+                started_at: Instant::now(),
+                channel,
+            },
+        );
     }
 
     /// Unregister a completed request
     pub fn unregister_request(&self, request_id: &RequestId) {
         log::trace!("Unregistering request: {}", request_id);
-
         self.active_requests.write().unwrap().remove(request_id);
     }
 
     /// Clean up stale requests that have exceeded the timeout
-    pub fn cleanup_stale_requests(&self) {
+    pub fn drop_stale_requests(&self) {
         let timeout = self.config.request_timeout;
         let now = Instant::now();
 
@@ -192,7 +174,7 @@ impl IopubBroker {
     }
 
     /// Clean up old orphan messages
-    pub fn cleanup_orphans(&self) {
+    pub fn drop_orphan_requests(&self) {
         let max_age = self.config.orphan_max_age;
         let now = Instant::now();
 
@@ -208,26 +190,16 @@ impl IopubBroker {
     }
 
     /// Perform all cleanup operations
-    pub fn cleanup(&self) {
-        self.cleanup_stale_requests();
-        self.cleanup_orphans();
-    }
-
-    /// Get the number of active requests
-    pub fn active_request_count(&self) -> usize {
-        self.active_requests.read().unwrap().len()
-    }
-
-    /// Get the number of orphan messages in the buffer
-    pub fn orphan_count(&self) -> usize {
-        self.orphan_buffer.lock().unwrap().len()
+    pub fn clean(&self) {
+        self.drop_stale_requests();
+        self.drop_orphan_requests();
     }
 
     /// Get statistics about the broker
     pub fn stats(&self) -> BrokerStats {
         BrokerStats {
-            active_requests: self.active_request_count(),
-            orphan_messages: self.orphan_count(),
+            active_requests: self.active_requests.read().unwrap().len(),
+            orphan_messages: self.orphan_buffer.lock().unwrap().len(),
         }
     }
 }

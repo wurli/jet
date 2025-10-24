@@ -30,7 +30,7 @@ impl ExecutionResult {
         let channels = RequestChannels {
             status_tx,
             execution_tx,
-            stream_tx,
+            tx: stream_tx,
             display_tx,
             comm_tx,
         };

@@ -98,10 +98,9 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
 
     // Set up a global stream channel for backward compatibility
     let (stream_tx, stream_rx) = std::sync::mpsc::channel();
-    broker.add_global_subscriber(stream_tx);
 
     // Start the IOPub processing thread
-    iopub_listener::start_iopub_thread(frontend.iopub, Arc::clone(&broker));
+    iopub_listener::start(frontend.iopub, Arc::clone(&broker));
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialise global state

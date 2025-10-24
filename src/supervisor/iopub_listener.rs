@@ -13,7 +13,7 @@ use crate::frontend::iopub::Iopub;
 use crate::supervisor::iopub_broker::IopubBroker;
 
 /// Spawn a thread that continuously receives IOPub messages and routes them through the broker
-pub fn start_iopub_thread(iopub: Iopub, broker: Arc<IopubBroker>) -> JoinHandle<()> {
+pub fn start(iopub: Iopub, broker: Arc<IopubBroker>) -> JoinHandle<()> {
     thread::spawn(move || {
         log::info!("IOPub thread started");
 
@@ -25,7 +25,7 @@ pub fn start_iopub_thread(iopub: Iopub, broker: Arc<IopubBroker>) -> JoinHandle<
             match iopub.recv_with_timeout(100) {
                 Some(msg) => {
                     log::trace!("IOPub received: {:#?}", msg);
-                    broker.route_message(msg);
+                    broker.route(msg);
                 }
                 None => {
                     // Timeout - this is normal, gives us a chance to do cleanup
@@ -35,14 +35,13 @@ pub fn start_iopub_thread(iopub: Iopub, broker: Arc<IopubBroker>) -> JoinHandle<
             // Periodic cleanup of stale requests and orphan messages
             if last_cleanup.elapsed() >= cleanup_interval {
                 log::trace!("Performing IOPub broker cleanup");
-                broker.cleanup();
+                broker.clean();
 
                 let stats = broker.stats();
                 log::debug!(
-                    "IOPub broker stats: {} active requests, {} orphans, {} subscribers",
+                    "IOPub broker stats: [{}] active requests, [{}] orphans",
                     stats.active_requests,
                     stats.orphan_messages,
-                    stats.global_subscribers
                 );
 
                 last_cleanup = Instant::now();
