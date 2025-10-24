@@ -89,9 +89,6 @@ impl IopubBroker {
     pub fn route_message(&self, msg: Message) {
         log::trace!("Routing message: {:#?}", msg);
 
-        // First, send to all global subscribers
-        self.send_to_global_subscribers(&msg);
-
         // Try to route to specific request
         if let Some(parent_id) = msg.parent_id() {
             self.route_to_request(&parent_id, msg);
