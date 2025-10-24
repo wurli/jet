@@ -3,6 +3,7 @@ pub mod api_lua;
 pub mod frontend;
 pub mod kernel;
 pub mod msg;
+pub mod supervisor;
 
 use mlua::prelude::*;
 use msg::error;

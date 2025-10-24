@@ -3,8 +3,6 @@ use rand::Rng;
 use crate::{
     frontend::{
         frontend::{ExecuteRequestOptions, Frontend},
-        iopub_broker::{ExecutionResult, IopubBroker},
-        iopub_listener,
         shell::Shell,
     },
     kernel::{
@@ -14,6 +12,7 @@ use crate::{
     msg::wire::{
         jupyter_message::Message, kernel_info_full_reply::KernelInfoReply, status::ExecutionState,
     },
+    supervisor::{iopub_broker::IopubBroker, iopub_listener, request::ExecutionResult},
 };
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex, OnceLock};

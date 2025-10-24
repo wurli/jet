@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use crate::frontend::iopub::Iopub;
-use crate::frontend::iopub_broker::IopubBroker;
+use crate::supervisor::iopub_broker::IopubBroker;
 
 /// Spawn a thread that continuously receives IOPub messages and routes them through the broker
 pub fn start_iopub_thread(iopub: Iopub, broker: Arc<IopubBroker>) -> JoinHandle<()> {
