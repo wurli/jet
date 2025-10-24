@@ -114,16 +114,16 @@ impl IopubBroker {
     /// Extract the parent message ID from a message
     fn extract_parent_id(&self, msg: &Message) -> Option<String> {
         match msg {
-            Message::Status(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::ExecuteResult(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::ExecuteError(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::ExecuteInput(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::Stream(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::DisplayData(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::UpdateDisplayData(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::CommOpen(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::CommMsg(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
-            Message::CommClose(m) => m.parent_header.as_ref().map(|h| h.msg_id.clone()),
+            Message::Status(m) => m.parent_id(),
+            Message::ExecuteResult(m) => m.parent_id(),
+            Message::ExecuteError(m) => m.parent_id(),
+            Message::ExecuteInput(m) => m.parent_id(),
+            Message::Stream(m) => m.parent_id(),
+            Message::DisplayData(m) => m.parent_id(),
+            Message::UpdateDisplayData(m) => m.parent_id(),
+            Message::CommOpen(m) => m.parent_id(),
+            Message::CommMsg(m) => m.parent_id(),
+            Message::CommClose(m) => m.parent_id(),
             _ => None,
         }
     }
