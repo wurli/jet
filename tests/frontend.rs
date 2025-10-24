@@ -9,7 +9,7 @@ use carpo::msg::wire::status::ExecutionState;
 fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
     let selected_kernel = KernelSpecFull::get_all()
         .into_iter()
-        .filter_map(|x| x.spec)
+        .filter_map(|x| x.spec.ok())
         .filter(|x| x.display_name == kernel)
         .nth(0);
 

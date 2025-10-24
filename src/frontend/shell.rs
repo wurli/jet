@@ -5,7 +5,6 @@ use crate::msg::wire::is_complete_reply::IsCompleteReply;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
-use crate::msg::wire::wire_message::WireMessage;
 use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 

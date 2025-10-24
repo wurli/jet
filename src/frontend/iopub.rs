@@ -38,6 +38,13 @@ impl Iopub {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
+    pub fn recv_with_timeout(&self, timeout: i64) -> Option<Message> {
+        if self.socket.poll_incoming(timeout).unwrap() {
+            return Message::read_from_socket(&self.socket).ok();
+        }
+        None
+    }
+
     /// Receive from IOPub and assert Busy message
     pub fn recv_busy(&self) -> () {
         let msg = self.recv();

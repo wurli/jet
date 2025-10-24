@@ -2,7 +2,7 @@ use rand::Rng;
 
 use crate::{
     frontend::{
-        frontend::{self, Frontend},
+        frontend::{ExecuteRequestOptions, Frontend},
         shell::Shell,
     },
     kernel::{
@@ -12,18 +12,20 @@ use crate::{
     msg::wire::{
         jupyter_message::Message, kernel_info_full_reply::KernelInfoReply, status::ExecutionState,
     },
+    supervisor::{iopub_broker::IopubBroker, iopub_listener, request::ExecutionResult},
 };
 use std::sync::mpsc::Receiver;
-use std::sync::{Mutex, OnceLock};
-
-use assert_matches::assert_matches;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 // When we call lua functions we can only pass args from Lua. So, in order
 // to access global state within these funcions, we need to use static values.
 pub static KERNEL_INFO: OnceLock<(KernelSpec, KernelInfoReply)> = OnceLock::new();
-pub static EXECUTE_RX: OnceLock<Mutex<Receiver<Message>>> = OnceLock::new();
-pub static STREAM_CHANNEL: OnceLock<Mutex<Receiver<Message>>> = OnceLock::new();
 pub static SHELL: OnceLock<Mutex<Shell>> = OnceLock::new();
+pub static IOPUB_BROKER: OnceLock<Arc<IopubBroker>> = OnceLock::new();
+
+// Legacy stream channel for backward compatibility
+pub static STREAM_CHANNEL: OnceLock<Mutex<Receiver<Message>>> = OnceLock::new();
 
 pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
@@ -90,23 +92,16 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     });
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // Iopub thread
+    // IOPub thread with broker-based routing
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let (execute_tx, execute_rx) = std::sync::mpsc::channel();
-    let (stream_tx, stream_rx) = std::sync::mpsc::channel();
+    let broker = Arc::new(IopubBroker::new());
 
-    std::thread::spawn(move || {
-        loop {
-            match frontend.iopub.recv() {
-                msg @ Message::Stream(_) => stream_tx.send(msg).unwrap(),
-                msg @ Message::Status(_) => execute_tx.send(msg).unwrap(),
-                msg @ Message::ExecuteInput(_) => execute_tx.send(msg).unwrap(),
-                msg @ Message::ExecuteResult(_) => execute_tx.send(msg).unwrap(),
-                msg @ Message::ExecuteReply(_) => execute_tx.send(msg).unwrap(),
-                _ => todo!(),
-            };
-        }
-    });
+    // Set up a global stream channel for backward compatibility
+    let (stream_tx, stream_rx) = std::sync::mpsc::channel();
+    broker.add_global_subscriber(stream_tx);
+
+    // Start the IOPub processing thread
+    iopub_listener::start_iopub_thread(frontend.iopub, Arc::clone(&broker));
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialise global state
@@ -115,48 +110,125 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
 
     KERNEL_INFO.get_or_init(|| (spec, kernel_info.clone()));
     SHELL.get_or_init(|| Mutex::new(frontend.shell));
-    EXECUTE_RX.get_or_init(|| Mutex::new(execute_rx));
+    IOPUB_BROKER.get_or_init(|| broker);
     STREAM_CHANNEL.get_or_init(|| Mutex::new(stream_rx));
 
     Ok(kernel_info.banner)
 }
 
+// pub fn is_complete(code: String) -> anyhow::Result<String> {
+//     let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
+// }
+
 pub fn execute_code(code: String) -> anyhow::Result<String> {
     let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
+    let broker = IOPUB_BROKER.get_or_init(|| unreachable!());
 
-    let execute_rx = EXECUTE_RX.get_or_init(|| unreachable!()).lock().unwrap();
+    // Create channels for this specific execution request
+    let (channels, collector) = ExecutionResult::create_channels();
 
-    shell.send_execute_request(&code, frontend::ExecuteRequestOptions::default());
+    // Send the execute request and get its message ID
+    let request_id = shell.send_execute_request(&code, ExecuteRequestOptions::default());
+
+    // Register this request with the broker
+    broker.register_request(request_id.clone(), channels);
 
     // Start with the assumption that the result is empty. Some kernels (e.g. Ark)
     // don't publish an ExecuteResult message in some cases, e.g. when the result
     // is invisible. In such cases we return an empty string for now.
     let mut result = String::from("");
 
-    assert_matches!(execute_rx.recv().unwrap(), Message::Status(msg) => {
-        assert_eq!(msg.content.execution_state, ExecutionState::Busy);
-    });
-
-    assert_matches!(execute_rx.recv().unwrap(), Message::ExecuteInput(msg) => {
-        assert_eq!(code, msg.content.code);
-    });
-
-    loop {
-        match execute_rx.recv().unwrap() {
-            Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                break;
-            }
-            Message::ExecuteResult(msg) => {
-                result = msg.content.data["text/plain"].clone().to_string();
-            }
-            // Message::ExecuteInput(msg) => {
-            //     assert_eq!(code, msg.content.code);
-            // }
-            other => panic!("Expected Status(Busy), got {:#?}", other),
-        };
+    // Wait for Busy status
+    match collector.status_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Message::Status(msg)) => {
+            assert_eq!(msg.content.execution_state, ExecutionState::Busy);
+        }
+        Ok(other) => {
+            broker.unregister_request(&request_id);
+            return Err(anyhow::anyhow!("Expected Status(Busy), got {:#?}", other));
+        }
+        Err(e) => {
+            broker.unregister_request(&request_id);
+            return Err(anyhow::anyhow!("Timeout waiting for Busy status: {}", e));
+        }
     }
 
+    // Wait for ExecuteInput
+    match collector.execution_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Message::ExecuteInput(msg)) => {
+            assert_eq!(code, msg.content.code);
+        }
+        Ok(other) => {
+            broker.unregister_request(&request_id);
+            return Err(anyhow::anyhow!("Expected ExecuteInput, got {:#?}", other));
+        }
+        Err(e) => {
+            broker.unregister_request(&request_id);
+            return Err(anyhow::anyhow!("Timeout waiting for ExecuteInput: {}", e));
+        }
+    }
+
+    // Collect results until we see Idle status
+    loop {
+        // Try execution channel first (for results)
+        match collector
+            .execution_rx
+            .recv_timeout(Duration::from_millis(100))
+        {
+            Ok(Message::ExecuteResult(msg)) => {
+                result = msg.content.data["text/plain"].clone().to_string();
+                continue;
+            }
+            Ok(Message::ExecuteError(msg)) => {
+                broker.unregister_request(&request_id);
+                return Err(anyhow::anyhow!(
+                    "Execution error: {}",
+                    msg.content.exception.evalue
+                ));
+            }
+            Ok(other) => {
+                log::warn!("Unexpected execution message: {:#?}", other);
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Check status channel
+            }
+            Err(e) => {
+                broker.unregister_request(&request_id);
+                return Err(anyhow::anyhow!("Error receiving execution messages: {}", e));
+            }
+        }
+
+        // Check for Idle status
+        match collector.status_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Message::Status(msg)) if msg.content.execution_state == ExecutionState::Idle => {
+                break;
+            }
+            Ok(Message::Status(_)) => {
+                // Other status, continue
+            }
+            Ok(other) => {
+                log::warn!("Unexpected status message: {:#?}", other);
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Continue waiting
+            }
+            Err(e) => {
+                broker.unregister_request(&request_id);
+                return Err(anyhow::anyhow!("Error receiving status messages: {}", e));
+            }
+        }
+
+        // Also drain stream and display channels to avoid blocking
+        let _ = collector.stream_rx.try_recv();
+        let _ = collector.display_rx.try_recv();
+        let _ = collector.comm_rx.try_recv();
+    }
+
+    // Get the reply from shell
     shell.recv_execute_reply();
+
+    // Unregister the request
+    broker.unregister_request(&request_id);
 
     Ok(result)
 }

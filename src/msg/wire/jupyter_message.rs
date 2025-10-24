@@ -78,7 +78,7 @@ pub trait ProtocolMessage: MessageType + Serialize + std::fmt::Debug + Clone {}
 impl<T> ProtocolMessage for T where T: MessageType + Serialize + std::fmt::Debug + Clone {}
 
 /// List of all known/implemented messages
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
     // Shell
     KernelInfoReply(JupyterMessage<KernelInfoReply>),
@@ -317,6 +317,13 @@ impl<T> JupyterMessage<T>
 where
     T: ProtocolMessage,
 {
+    pub fn parent_id(&self) -> Option<String> {
+        match &self.parent_header {
+            Some(header) => Some(header.msg_id.clone()),
+            None => None,
+        }
+    }
+
     /// Sends this Jupyter message to the designated ZeroMQ socket.
     pub fn send(self, socket: &Socket) -> Result<(), Error> {
         let msg = WireMessage::try_from(&self)?;
