@@ -96,11 +96,8 @@ impl IopubBroker {
         // First, send to all global subscribers
         self.send_to_global_subscribers(&msg);
 
-        // Extract parent header to correlate with request
-        let parent_id = self.extract_parent_id(&msg);
-
         // Try to route to specific request
-        if let Some(parent_id) = parent_id {
+        if let Some(parent_id) = msg.parent_id() {
             self.route_to_request(&parent_id, msg);
         } else {
             // No parent ID, handle as orphan
@@ -111,23 +108,6 @@ impl IopubBroker {
         // (it either sent it or handled it as orphan internally)
     }
 
-    /// Extract the parent message ID from a message
-    fn extract_parent_id(&self, msg: &Message) -> Option<String> {
-        match msg {
-            Message::Status(m) => m.parent_id(),
-            Message::ExecuteResult(m) => m.parent_id(),
-            Message::ExecuteError(m) => m.parent_id(),
-            Message::ExecuteInput(m) => m.parent_id(),
-            Message::Stream(m) => m.parent_id(),
-            Message::DisplayData(m) => m.parent_id(),
-            Message::UpdateDisplayData(m) => m.parent_id(),
-            Message::CommOpen(m) => m.parent_id(),
-            Message::CommMsg(m) => m.parent_id(),
-            Message::CommClose(m) => m.parent_id(),
-            _ => None,
-        }
-    }
-
     /// Route a message to a specific request's channels
     /// Returns whether the message was successfully routed (and consumed)
     /// If routing fails, the message is buffered as an orphan
@@ -135,27 +115,7 @@ impl IopubBroker {
         let active = self.active_requests.read().unwrap();
 
         if let Some(ctx) = active.get(parent_id) {
-            // Route based on message type
-            let result = match &msg {
-                Message::Status(_) => ctx.channels.status_tx.send(msg),
-                Message::Stream(_) => ctx.channels.stream_tx.send(msg),
-                Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::ExecuteInput(_) => {
-                    ctx.channels.execution_tx.send(msg)
-                }
-                Message::DisplayData(_) | Message::UpdateDisplayData(_) => {
-                    ctx.channels.display_tx.send(msg)
-                }
-                Message::CommOpen(_) | Message::CommMsg(_) | Message::CommClose(_) => {
-                    ctx.channels.comm_tx.send(msg)
-                }
-                _ => {
-                    log::warn!("Unhandled message type for routing: {:#?}", msg);
-                    // Drop msg by moving it into orphan buffer
-                    drop(active); // Release lock before calling handle_orphan
-                    self.handle_orphan(msg);
-                    return true; // Message consumed
-                }
-            };
+            let result = ctx.channels.status_tx.send(msg);
 
             if result.is_err() {
                 log::warn!(

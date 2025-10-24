@@ -313,6 +313,51 @@ impl Message {
     }
 }
 
+impl Message {
+    pub fn parent_header(&self) -> &Option<JupyterHeader> {
+        match self {
+            Message::KernelInfoReply(m) => &m.parent_header,
+            Message::KernelInfoRequest(m) => &m.parent_header,
+            Message::CompleteReply(m) => &m.parent_header,
+            Message::CompleteRequest(m) => &m.parent_header,
+            Message::ExecuteReply(m) => &m.parent_header,
+            Message::ExecuteReplyException(m) => &m.parent_header,
+            Message::ExecuteRequest(m) => &m.parent_header,
+            Message::InspectReply(m) => &m.parent_header,
+            Message::InspectRequest(m) => &m.parent_header,
+            Message::IsCompleteReply(m) => &m.parent_header,
+            Message::IsCompleteRequest(m) => &m.parent_header,
+            Message::CommInfoReply(m) => &m.parent_header,
+            Message::CommInfoRequest(m) => &m.parent_header,
+            Message::InputReply(m) => &m.parent_header,
+            Message::InputRequest(m) => &m.parent_header,
+            Message::InterruptReply(m) => &m.parent_header,
+            Message::InterruptRequest(m) => &m.parent_header,
+            Message::ShutdownRequest(m) => &m.parent_header,
+            Message::HandshakeRequest(m) => &m.parent_header,
+            Message::HandshakeReply(m) => &m.parent_header,
+            Message::Status(m) => &m.parent_header,
+            Message::ExecuteResult(m) => &m.parent_header,
+            Message::ExecuteError(m) => &m.parent_header,
+            Message::ExecuteInput(m) => &m.parent_header,
+            Message::Stream(m) => &m.parent_header,
+            Message::DisplayData(m) => &m.parent_header,
+            Message::UpdateDisplayData(m) => &m.parent_header,
+            Message::Welcome(m) => &m.parent_header,
+            Message::CommMsg(m) => &m.parent_header,
+            Message::CommOpen(m) => &m.parent_header,
+            Message::CommClose(m) => &m.parent_header,
+        }
+    }
+
+    pub fn parent_id(&self) -> Option<String> {
+        match self.parent_header() {
+            Some(msg) => Some(msg.msg_id.clone()),
+            None => None
+        }
+    }
+}
+
 impl<T> JupyterMessage<T>
 where
     T: ProtocolMessage,
