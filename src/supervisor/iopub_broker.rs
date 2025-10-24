@@ -63,9 +63,6 @@ pub struct IopubBroker {
     /// Active requests waiting for messages
     active_requests: Arc<RwLock<HashMap<RequestId, RequestContext>>>,
 
-    /// Global subscribers that receive all messages regardless of correlation
-    global_subscribers: Arc<RwLock<Vec<Sender<Message>>>>,
-
     /// Buffer for "orphan" messages (no matching request)
     orphan_buffer: Arc<Mutex<VecDeque<(Message, Instant)>>>,
 
@@ -83,7 +80,6 @@ impl IopubBroker {
     pub fn with_config(config: BrokerConfig) -> Self {
         Self {
             active_requests: Arc::new(RwLock::new(HashMap::new())),
-            global_subscribers: Arc::new(RwLock::new(Vec::new())),
             orphan_buffer: Arc::new(Mutex::new(VecDeque::new())),
             config,
         }
@@ -130,15 +126,6 @@ impl IopubBroker {
             drop(active); // Release lock before calling handle_orphan
             self.handle_orphan(msg);
             true // Message consumed
-        }
-    }
-
-    /// Send message to all global subscribers
-    fn send_to_global_subscribers(&self, msg: &Message) {
-        let subscribers = self.global_subscribers.read().unwrap();
-        for sub in subscribers.iter() {
-            // Ignore send errors - subscribers may have disconnected
-            let _ = sub.send(msg.clone());
         }
     }
 
@@ -229,16 +216,6 @@ impl IopubBroker {
         self.cleanup_orphans();
     }
 
-    /// Add a global subscriber that receives all IOPub messages
-    pub fn add_global_subscriber(&self, tx: Sender<Message>) {
-        self.global_subscribers.write().unwrap().push(tx);
-    }
-
-    /// Remove all global subscribers
-    pub fn clear_global_subscribers(&self) {
-        self.global_subscribers.write().unwrap().clear();
-    }
-
     /// Get the number of active requests
     pub fn active_request_count(&self) -> usize {
         self.active_requests.read().unwrap().len()
@@ -254,7 +231,6 @@ impl IopubBroker {
         BrokerStats {
             active_requests: self.active_request_count(),
             orphan_messages: self.orphan_count(),
-            global_subscribers: self.global_subscribers.read().unwrap().len(),
         }
     }
 }
@@ -264,5 +240,4 @@ impl IopubBroker {
 pub struct BrokerStats {
     pub active_requests: usize,
     pub orphan_messages: usize,
-    pub global_subscribers: usize,
 }
