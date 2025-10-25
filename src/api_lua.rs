@@ -11,6 +11,8 @@ use std::sync::mpsc::channel;
 use crate::api;
 
 pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
+    log::trace!("Sending executre request `{}`", code);
+
     let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
     let broker = IOPUB_BROKER.get_or_init(|| unreachable!());
 
@@ -23,24 +25,33 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
     // Register this request with the broker
     broker.register_request(request_id.clone(), tx);
 
-    // Get the reply from shell (this should block until rx has received all the iopub messages for
-    // the request)
-    shell.recv_execute_reply();
-
     let out = lua
         .create_function(move |_, ()| {
-            let mut result = String::from("");
+            let mut result = String::new();
+
+            // Get the reply from shell (this blocks until all iopub replies have come through)
+            // TODO: Unfortunately we can't query the shell every time the user calls this
+            // function, otherwise we risk accidentally consuming replies to other requests. So we
+            // need something else. E.g:
+            // * We have some kind of global lookup for completed requests which we look into
+            //   _before_ we try receiving here
+            // * We add a broker for shell messages. This is probably the best approach since
+            //   we already have the infrastructure for it.
+            let _count = shell.try_recv_execute_reply(&request_id);
+
             while let Ok(reply) = rx.try_recv() {
-                log::trace!("Looping through message {}", reply.kind());
+                log::trace!("Receiving message {}", reply.kind());
                 match reply {
                     // TODO: this won't update incrementally, so we need to change tack. I think what we
                     // need to do is return a handle which can be called from lua to get any results which
                     // may have come through.
                     Message::ExecuteResult(msg) => {
-                        result.push_str(&msg.content.data["text/plain"].clone().to_string());
+                        result = msg.content.data["text/plain"].clone().to_string();
+                        break
                     }
                     Message::Stream(msg) => {
-                        result.push_str(&msg.content.text);
+                        result = msg.content.text;
+                        break
                     }
                     // Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
                     //     busy = true;
@@ -51,9 +62,11 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
                     }
                     _ => {
                         log::trace!("Dropping received message {}", reply.kind());
+                        // We continue receiving until we get something to return
+                        // break;
                     }
-                }
-            }
+                };
+            };
 
             Ok(result)
         })

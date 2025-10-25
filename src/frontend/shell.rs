@@ -41,7 +41,33 @@ impl Shell {
     // }
 
     pub fn recv(&self) -> Message {
-        Message::read_from_socket(&self.socket).unwrap()
+        let msg = Message::read_from_socket(&self.socket).unwrap();
+        log::trace!("Shell: received {}", msg.kind());
+        msg
+    }
+
+    pub fn try_recv_reply(&self, id: &String) -> anyhow::Result<Message> {
+        if self.socket.has_incoming_data()? {
+            let reply = Message::read_from_socket(&self.socket)?;
+            return match reply.parent_id() {
+                Some(parent_id) if parent_id == *id => Ok(reply),
+                Some(parent_id) => {
+                    Err(anyhow::anyhow!(
+                        "Received message parent ID {} does not match expected ID {}",
+                        parent_id,
+                        id
+                    ))
+                },
+                None => {
+                    Err(anyhow::anyhow!(
+                        "Received message has no parent ID, expected ID {}",
+                        id
+                    ))
+                }
+            }
+        } else {
+            return Err(anyhow::anyhow!("No incoming data on shell socket"))
+        }
     }
 
     pub fn recv_with_timeout(&self, timeout: i64) -> Option<Message> {
@@ -60,12 +86,12 @@ impl Shell {
 
     /// Receive from Shell and assert `ExecuteReply` message.
     /// Returns `execution_count`.
-    pub fn recv_execute_reply(&self) -> u32 {
-        let msg = self.recv();
+    pub fn try_recv_execute_reply(&self, id: &String) -> anyhow::Result<u32> {
+        let msg = self.try_recv_reply(id)?;
 
         assert_matches!(msg, Message::ExecuteReply(data) => {
             assert_eq!(data.content.status, Status::Ok);
-            data.content.execution_count
+            Ok(data.content.execution_count)
         })
     }
 

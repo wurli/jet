@@ -106,7 +106,7 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
 
     // Get the reply from shell (this should block until rx has received all the iopub messages for
     // the request)
-    shell.recv_execute_reply();
+    let _ = shell.try_recv_execute_reply(&request_id);
 
     let mut result = String::from("");
     let mut busy = false;

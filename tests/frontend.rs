@@ -67,7 +67,7 @@ fn test_ark_with_registration_file() {
     });
 
     let code = "1 + 1";
-    frontend
+    let msg_id = frontend
         .shell
         .send_execute_request(code, ExecuteRequestOptions::default());
 
@@ -95,7 +95,7 @@ fn test_ark_with_registration_file() {
     assert!(received_input);
     assert!(received_result);
 
-    frontend.shell.recv_execute_reply();
+    let _ = frontend.shell.try_recv_execute_reply(&msg_id);
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn test_ark_with_connection_file() {
 
     let code = "1 + 1";
 
-    frontend
+    let msg_id = frontend
         .shell
         .send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.iopub.recv_busy();
@@ -116,7 +116,7 @@ fn test_ark_with_connection_file() {
     assert_eq!("[1] 2", reply);
 
     frontend.iopub.recv_idle();
-    frontend.shell.recv_execute_reply();
+    let _ = frontend.shell.try_recv_execute_reply(&msg_id);
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn test_ipykernel() {
 
     let code = "1 + 1";
 
-    frontend
+    let msg_id = frontend
         .shell
         .send_execute_request(code, frontend::ExecuteRequestOptions::default());
     frontend.iopub.recv_busy();
@@ -137,5 +137,5 @@ fn test_ipykernel() {
     assert_eq!("2", reply);
 
     frontend.iopub.recv_idle();
-    frontend.shell.recv_execute_reply();
+    let _ = frontend.shell.try_recv_execute_reply(&msg_id);
 }
