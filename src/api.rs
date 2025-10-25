@@ -1,5 +1,3 @@
-use rand::Rng;
-
 use crate::{
     frontend::{
         frontend::{ExecuteRequestOptions, Frontend},
@@ -12,20 +10,19 @@ use crate::{
     msg::wire::{
         jupyter_message::Message, kernel_info_full_reply::KernelInfoReply, status::ExecutionState,
     },
-    supervisor::{iopub_broker::IopubBroker, iopub_listener, request::ExecutionResult},
+    supervisor::{
+        broker::Broker,
+        listeners::{listen_iopub, loop_heartbeat},
+    },
 };
-use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock, mpsc::channel};
 
 // When we call lua functions we can only pass args from Lua. So, in order
 // to access global state within these funcions, we need to use static values.
 pub static KERNEL_INFO: OnceLock<(KernelSpec, KernelInfoReply)> = OnceLock::new();
 pub static SHELL: OnceLock<Mutex<Shell>> = OnceLock::new();
-pub static IOPUB_BROKER: OnceLock<Arc<IopubBroker>> = OnceLock::new();
-
-// Legacy stream channel for backward compatibility
-pub static STREAM_CHANNEL: OnceLock<Mutex<Receiver<Message>>> = OnceLock::new();
+pub static IOPUB_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
+pub static SHELL_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 
 pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
@@ -69,38 +66,13 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
 
     let kernel_info = frontend.subscribe();
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // Heartbeat thread
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let heartbeat = frontend.heartbeat;
+    loop_heartbeat(frontend.heartbeat);
+    let iopub_broker = Arc::new(Broker::new(String::from("IOPub")));
+    let shell_broker = Arc::new(Broker::new(String::from("Shell")));
 
-    std::thread::spawn(move || {
-        loop {
-            let mut rng = rand::rng();
-            // We just send some random number to the kernel
-            let bytes: Vec<u8> = (0..32).map(|_| rng.random_range(0..10)).collect();
-
-            heartbeat.send(zmq::Message::from(bytes));
-
-            // Then we (hopefully) wait to receive the same message back
-            let _ = heartbeat.recv_with_timeout().expect("Heartbeat timed out");
-
-            // TODO: check the message we receive is the one we sent
-            // assert_eq!(bytes, msg.);
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-    });
-
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // IOPub thread with broker-based routing
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let broker = Arc::new(IopubBroker::new());
-
-    // Set up a global stream channel for backward compatibility
-    let (stream_tx, stream_rx) = std::sync::mpsc::channel();
-
-    // Start the IOPub processing thread
-    iopub_listener::start(frontend.iopub, Arc::clone(&broker));
+    // Start the iopub/shell processing threads
+    listen_iopub(frontend.iopub, Arc::clone(&iopub_broker));
+    // listen_shell(frontend.shell, Arc::clone(&shell_broker));
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialise global state
@@ -109,8 +81,8 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
 
     KERNEL_INFO.get_or_init(|| (spec, kernel_info.clone()));
     SHELL.get_or_init(|| Mutex::new(frontend.shell));
-    IOPUB_BROKER.get_or_init(|| broker);
-    STREAM_CHANNEL.get_or_init(|| Mutex::new(stream_rx));
+    IOPUB_BROKER.get_or_init(|| iopub_broker);
+    SHELL_BROKER.get_or_init(|| shell_broker);
 
     Ok(kernel_info.banner)
 }
@@ -124,110 +96,45 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
     let broker = IOPUB_BROKER.get_or_init(|| unreachable!());
 
     // Create channels for this specific execution request
-    let (channels, collector) = ExecutionResult::create_channels();
+    let (tx, rx) = channel();
 
     // Send the execute request and get its message ID
     let request_id = shell.send_execute_request(&code, ExecuteRequestOptions::default());
 
     // Register this request with the broker
-    broker.register_request(request_id.clone(), channels);
+    broker.register_request(request_id.clone(), tx);
 
-    // Start with the assumption that the result is empty. Some kernels (e.g. Ark)
-    // don't publish an ExecuteResult message in some cases, e.g. when the result
-    // is invisible. In such cases we return an empty string for now.
-    let mut result = String::from("");
-
-    // Wait for Busy status
-    match collector.status_rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(Message::Status(msg)) => {
-            assert_eq!(msg.content.execution_state, ExecutionState::Busy);
-        }
-        Ok(other) => {
-            broker.unregister_request(&request_id);
-            return Err(anyhow::anyhow!("Expected Status(Busy), got {:#?}", other));
-        }
-        Err(e) => {
-            broker.unregister_request(&request_id);
-            return Err(anyhow::anyhow!("Timeout waiting for Busy status: {}", e));
-        }
-    }
-
-    // Wait for ExecuteInput
-    match collector.execution_rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(Message::ExecuteInput(msg)) => {
-            assert_eq!(code, msg.content.code);
-        }
-        Ok(other) => {
-            broker.unregister_request(&request_id);
-            return Err(anyhow::anyhow!("Expected ExecuteInput, got {:#?}", other));
-        }
-        Err(e) => {
-            broker.unregister_request(&request_id);
-            return Err(anyhow::anyhow!("Timeout waiting for ExecuteInput: {}", e));
-        }
-    }
-
-    // Collect results until we see Idle status
-    loop {
-        // Try execution channel first (for results)
-        match collector
-            .execution_rx
-            .recv_timeout(Duration::from_millis(100))
-        {
-            Ok(Message::ExecuteResult(msg)) => {
-                result = msg.content.data["text/plain"].clone().to_string();
-                continue;
-            }
-            Ok(Message::ExecuteError(msg)) => {
-                broker.unregister_request(&request_id);
-                return Err(anyhow::anyhow!(
-                    "Execution error: {}",
-                    msg.content.exception.evalue
-                ));
-            }
-            Ok(other) => {
-                log::warn!("Unexpected execution message: {:#?}", other);
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Check status channel
-            }
-            Err(e) => {
-                broker.unregister_request(&request_id);
-                return Err(anyhow::anyhow!("Error receiving execution messages: {}", e));
-            }
-        }
-
-        // Check for Idle status
-        match collector.status_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Message::Status(msg)) if msg.content.execution_state == ExecutionState::Idle => {
-                break;
-            }
-            Ok(Message::Status(_)) => {
-                // Other status, continue
-            }
-            Ok(other) => {
-                log::warn!("Unexpected status message: {:#?}", other);
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Continue waiting
-            }
-            Err(e) => {
-                broker.unregister_request(&request_id);
-                return Err(anyhow::anyhow!("Error receiving status messages: {}", e));
-            }
-        }
-
-        // Also drain stream and display channels to avoid blocking
-        let _ = collector.stream_rx.try_recv();
-        let _ = collector.display_rx.try_recv();
-        let _ = collector.comm_rx.try_recv();
-    }
-
-    // Get the reply from shell
+    // Get the reply from shell (this should block until rx has received all the iopub messages for
+    // the request)
     shell.recv_execute_reply();
 
-    // Unregister the request
-    broker.unregister_request(&request_id);
+    let mut result = String::from("");
+    let mut busy = false;
+
+    for reply in rx.iter() {
+        log::trace!("Looping through message {}", reply.kind());
+        match reply {
+            // TODO: this won't update incrementally, so we need to change tack. I think what we
+            // need to do is return a handle which can be called from lua to get any results which
+            // may have come through.
+            Message::ExecuteResult(msg) => {
+                result.push_str(&msg.content.data["text/plain"].clone().to_string());
+            }
+            Message::Stream(msg) => {
+                result.push_str(&msg.content.text);
+            }
+            Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
+                busy = true;
+            }
+            Message::Status(msg) if busy && msg.content.execution_state == ExecutionState::Idle => {
+                broker.unregister_request(&request_id);
+                break;
+            }
+            _ => {
+                log::trace!("Dropping received message {}", reply.kind());
+            }
+        }
+    }
 
     Ok(result)
 }

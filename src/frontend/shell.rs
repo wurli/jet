@@ -44,6 +44,13 @@ impl Shell {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
+    pub fn recv_with_timeout(&self, timeout: i64) -> Option<Message> {
+        if self.socket.poll_incoming(timeout).unwrap() {
+            return Message::read_from_socket(&self.socket).ok();
+        }
+        None
+    }
+
     pub fn send<T: ProtocolMessage>(&self, msg: T) -> String {
         let message = JupyterMessage::create(msg, None, &self.session);
         let id = message.header.msg_id.clone();
@@ -87,7 +94,6 @@ impl Shell {
         })
     }
 
-
     pub fn send_execute_request(&self, code: &str, options: ExecuteRequestOptions) -> String {
         self.send(ExecuteRequest {
             code: String::from(code),
@@ -98,5 +104,4 @@ impl Shell {
             stop_on_error: false,
         })
     }
-
 }

@@ -1,7 +1,7 @@
 /*
  * broker.rs
  *
- * Message broker for routing IOPub messages to appropriate handlers
+ * Message broker for routing messages to appropriate handlers
  * based on parent message correlation.
  *
  */
@@ -16,14 +16,13 @@ use crate::msg::wire::jupyter_message::Message;
 /// Uniquely identifies a request-response cycle using the request's msg_id
 pub type RequestId = String;
 
-/// Context for tracking an active request that expects IOPub messages
+/// Context for tracking an active request that expects messages to be returned from the kernel
 struct RequestContext {
-    request_id: RequestId,
     started_at: Instant,
     channel: Sender<Message>,
 }
 
-/// Configuration for the IOPub broker
+/// Configuration for the broker
 #[derive(Debug, Clone)]
 pub struct BrokerConfig {
     /// Maximum number of orphan messages to buffer
@@ -47,8 +46,10 @@ impl Default for BrokerConfig {
     }
 }
 
-/// Central message broker that routes IOPub messages based on parent headers
-pub struct IopubBroker {
+/// Central message broker that routes messages based on parent headers
+pub struct Broker {
+    name: String,
+
     /// Active requests waiting for messages
     active_requests: Arc<RwLock<HashMap<RequestId, RequestContext>>>,
 
@@ -59,30 +60,31 @@ pub struct IopubBroker {
     pub config: BrokerConfig,
 }
 
-impl IopubBroker {
-    /// Create a new IOPub broker with default configuration
-    pub fn new() -> Self {
-        Self::with_config(BrokerConfig::default())
+impl Broker {
+    /// Create a new broker with default configuration
+    pub fn new(name: String) -> Self {
+        Self::with_config(name, BrokerConfig::default())
     }
 
-    /// Create a new IOPub broker with custom configuration
-    pub fn with_config(config: BrokerConfig) -> Self {
+    /// Create a new broker with custom configuration
+    pub fn with_config(name: String, config: BrokerConfig) -> Self {
         Self {
+            name,
             active_requests: Arc::new(RwLock::new(HashMap::new())),
             orphan_buffer: Arc::new(Mutex::new(VecDeque::new())),
             config,
         }
     }
 
-    /// Route an incoming IOPub message to the appropriate handler(s)
+    /// Route an incoming message to the appropriate handler(s)
     pub fn route(&self, msg: Message) {
-        log::trace!("Routing message: {}", msg.kind());
+        log::trace!("{}: Routing message: {}", self.name, msg.kind());
 
         if let Some(parent_id) = msg.parent_id() {
             self.route_to_request(&parent_id, msg);
         } else {
             // No parent ID, handle as orphan
-            log::warn!("Orphaning message: {}", msg.kind());
+            log::warn!("{}: Orphaning message: {}", self.name, msg.kind());
             self.handle_orphan(msg);
         }
     }
@@ -98,7 +100,8 @@ impl IopubBroker {
 
             if result.is_err() {
                 log::warn!(
-                    "Failed to send message to request {}: receiver dropped",
+                    "{}: Failed to send message to request {}: receiver dropped",
+                    self.name,
                     parent_id
                 );
             }
@@ -114,7 +117,11 @@ impl IopubBroker {
 
     /// Handle a message that doesn't match any active request
     fn handle_orphan(&self, msg: Message) {
-        log::debug!("Orphan message {:#?}: no matching request found", &msg);
+        log::trace!(
+            "{}: Orphan message {:#?}: no matching request found",
+            self.name,
+            &msg
+        );
 
         let mut buffer = self.orphan_buffer.lock().unwrap();
         buffer.push_back((msg, Instant::now()));
@@ -123,20 +130,20 @@ impl IopubBroker {
         while buffer.len() > self.config.orphan_buffer_max {
             if let Some((dropped_msg, _)) = buffer.pop_front() {
                 log::trace!(
-                    "Dropped old orphan message {:#?} due to buffer limit",
+                    "{}: Dropped old orphan message {:#?} due to buffer limit",
+                    self.name,
                     &dropped_msg
                 );
             }
         }
     }
 
-    /// Register a new request that expects IOPub messages
+    /// Register a new request that expects messages
     pub fn register_request(&self, request_id: RequestId, channel: Sender<Message>) {
-        log::trace!("Registering request: {}", request_id);
+        log::trace!("{}: Registering request: {}", self.name, request_id);
         self.active_requests.write().unwrap().insert(
             request_id.clone(),
             RequestContext {
-                request_id: request_id,
                 started_at: Instant::now(),
                 channel,
             },
@@ -145,7 +152,7 @@ impl IopubBroker {
 
     /// Unregister a completed request
     pub fn unregister_request(&self, request_id: &RequestId) {
-        log::trace!("Unregistering request: {}", request_id);
+        log::trace!("{}: Unregistering request: {}", self.name, request_id);
         self.active_requests.write().unwrap().remove(request_id);
     }
 
@@ -160,7 +167,12 @@ impl IopubBroker {
         active.retain(|id, ctx| {
             let age = now.duration_since(ctx.started_at);
             if age >= timeout {
-                log::warn!("Removing stale request {} (age: {:?})", id, age);
+                log::warn!(
+                    "{}: Removing stale broker request {} (age: {:?})",
+                    self.name,
+                    id,
+                    age
+                );
                 false
             } else {
                 true
@@ -169,7 +181,7 @@ impl IopubBroker {
 
         let removed = before_count - active.len();
         if removed > 0 {
-            log::info!("Cleaned up {} stale request(s)", removed);
+            log::info!("{}: Cleaned up {} stale request(s)", self.name, removed);
         }
     }
 
@@ -185,28 +197,29 @@ impl IopubBroker {
 
         let removed = before_count - buffer.len();
         if removed > 0 {
-            log::debug!("Cleaned up {} old orphan message(s)", removed);
+            log::trace!(
+                "{}: Cleaned up {} old orphan message(s)",
+                self.name,
+                removed
+            );
         }
     }
 
     /// Perform all cleanup operations
-    pub fn clean(&self) {
+    pub fn purge(&self) {
+        self.log_stats();
+        log::trace!("{}: Performing broker cleanup", self.name);
         self.drop_stale_requests();
         self.drop_orphan_requests();
+        self.log_stats();
     }
 
-    /// Get statistics about the broker
-    pub fn stats(&self) -> BrokerStats {
-        BrokerStats {
-            active_requests: self.active_requests.read().unwrap().len(),
-            orphan_messages: self.orphan_buffer.lock().unwrap().len(),
-        }
+    pub fn log_stats(&self) {
+        log::trace!(
+            "{} broker stats: {} active requests, {} orphans",
+            self.name,
+            self.active_requests.read().unwrap().len(),
+            self.orphan_buffer.lock().unwrap().len(),
+        );
     }
-}
-
-/// Statistics about the broker's current state
-#[derive(Debug, Clone)]
-pub struct BrokerStats {
-    pub active_requests: usize,
-    pub orphan_messages: usize,
 }
