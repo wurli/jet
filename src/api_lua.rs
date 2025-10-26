@@ -75,7 +75,6 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
                     _ => {
                         log::warn!("Dropping received message {}", reply.kind());
                         // We continue receiving until we get something to return
-                        // break;
                     }
                 };
             }
