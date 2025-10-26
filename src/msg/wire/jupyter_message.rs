@@ -70,6 +70,9 @@ pub struct JupyterMessage<T> {
 /// Trait used to extract the wire message type from a Jupyter message
 pub trait MessageType {
     fn message_type() -> String;
+    fn kind(&self) -> String {
+        Self::message_type()
+    }
 }
 
 /// Convenience trait for grouping traits that must be present on all Jupyter
@@ -352,37 +355,37 @@ impl Message {
 
     pub fn kind(&self) -> String {
         let msg_type = match self {
-            Message::KernelInfoReply(_) => "kernel_info_reply",
-            Message::KernelInfoRequest(_) => "kernel_info_request",
-            Message::CompleteReply(_) => "complete_reply",
-            Message::CompleteRequest(_) => "complete_request",
-            Message::ExecuteReply(_) => "execute_reply",
-            Message::ExecuteReplyException(_) => "execute_reply_exception",
-            Message::ExecuteRequest(_) => "execute_request",
-            Message::InspectReply(_) => "inspect_reply",
-            Message::InspectRequest(_) => "inspect_request",
-            Message::IsCompleteReply(_) => "is_complete_reply",
-            Message::IsCompleteRequest(_) => "is_complete_request",
-            Message::CommInfoReply(_) => "comm_info_reply",
-            Message::CommInfoRequest(_) => "comm_info_request",
-            Message::InputReply(_) => "input_reply",
-            Message::InputRequest(_) => "input_request",
-            Message::InterruptReply(_) => "interrupt_reply",
-            Message::InterruptRequest(_) => "interrupt_request",
-            Message::ShutdownRequest(_) => "shutdown_request",
-            Message::HandshakeRequest(_) => "handshake_request",
-            Message::HandshakeReply(_) => "handshake_reply",
-            Message::Status(_) => "status",
-            Message::ExecuteResult(_) => "execute_result",
-            Message::ExecuteError(_) => "execute_error",
-            Message::ExecuteInput(_) => "execute_input",
-            Message::Stream(_) => "stream",
-            Message::DisplayData(_) => "display_data",
-            Message::UpdateDisplayData(_) => "update_display_data",
-            Message::Welcome(_) => "welcome",
-            Message::CommMsg(_) => "comm_msg",
-            Message::CommOpen(_) => "comm_open",
-            Message::CommClose(_) => "comm_close",
+            Message::KernelInfoReply(msg) => msg.content.kind(),
+            Message::KernelInfoRequest(msg) => msg.content.kind(),
+            Message::CompleteReply(msg) => msg.content.kind(),
+            Message::CompleteRequest(msg) => msg.content.kind(),
+            Message::ExecuteReply(msg) => msg.content.kind(),
+            Message::ExecuteReplyException(msg) => msg.content.kind(),
+            Message::ExecuteRequest(msg) => msg.content.kind(),
+            Message::InspectReply(msg) => msg.content.kind(),
+            Message::InspectRequest(msg) => msg.content.kind(),
+            Message::IsCompleteReply(msg) => msg.content.kind(),
+            Message::IsCompleteRequest(msg) => msg.content.kind(),
+            Message::CommInfoReply(msg) => msg.content.kind(),
+            Message::CommInfoRequest(msg) => msg.content.kind(),
+            Message::InputReply(msg) => msg.content.kind(),
+            Message::InputRequest(msg) => msg.content.kind(),
+            Message::InterruptReply(msg) => msg.content.kind(),
+            Message::InterruptRequest(msg) => msg.content.kind(),
+            Message::ShutdownRequest(msg) => msg.content.kind(),
+            Message::HandshakeRequest(msg) => msg.content.kind(),
+            Message::HandshakeReply(msg) => msg.content.kind(),
+            Message::Status(msg) => msg.content.kind(),
+            Message::ExecuteResult(msg) => msg.content.kind(),
+            Message::ExecuteError(msg) => msg.content.kind(),
+            Message::ExecuteInput(msg) => msg.content.kind(),
+            Message::Stream(msg) => msg.content.kind(),
+            Message::DisplayData(msg) => msg.content.kind(),
+            Message::UpdateDisplayData(msg) => msg.content.kind(),
+            Message::Welcome(msg) => msg.content.kind(),
+            Message::CommMsg(msg) => msg.content.kind(),
+            Message::CommOpen(msg) => msg.content.kind(),
+            Message::CommClose(msg) => msg.content.kind(),
         };
 
         String::from(msg_type)
@@ -513,28 +516,28 @@ where
     //     }
     // }
 
-//     /// Creates an error reply to this message; used on ROUTER/DEALER sockets to
-//     /// indicate that an error occurred while processing a Request message.
-//     ///
-//     /// Error replies are special cases; they use the message type of a
-//     /// successful reply, but their content is an Exception instead.
-//     pub fn error_reply<R: ProtocolMessage>(
-//         &self,
-//         exception: Exception,
-//         session: &Session,
-//     ) -> JupyterMessage<ErrorReply> {
-//         JupyterMessage::<ErrorReply> {
-//             zmq_identities: self.zmq_identities.clone(),
-//             header: JupyterHeader::create(
-//                 R::message_type(),
-//                 session.session_id.clone(),
-//                 session.username.clone(),
-//             ),
-//             parent_header: Some(self.header.clone()),
-//             content: ErrorReply {
-//                 status: Status::Error,
-//                 exception,
-//             },
-//         }
-//     }
+    //     /// Creates an error reply to this message; used on ROUTER/DEALER sockets to
+    //     /// indicate that an error occurred while processing a Request message.
+    //     ///
+    //     /// Error replies are special cases; they use the message type of a
+    //     /// successful reply, but their content is an Exception instead.
+    //     pub fn error_reply<R: ProtocolMessage>(
+    //         &self,
+    //         exception: Exception,
+    //         session: &Session,
+    //     ) -> JupyterMessage<ErrorReply> {
+    //         JupyterMessage::<ErrorReply> {
+    //             zmq_identities: self.zmq_identities.clone(),
+    //             header: JupyterHeader::create(
+    //                 R::message_type(),
+    //                 session.session_id.clone(),
+    //                 session.username.clone(),
+    //             ),
+    //             parent_header: Some(self.header.clone()),
+    //             content: ErrorReply {
+    //                 status: Status::Error,
+    //                 exception,
+    //             },
+    //         }
+    //     }
 }
