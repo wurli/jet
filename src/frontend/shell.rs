@@ -46,25 +46,11 @@ impl Shell {
         msg
     }
 
-    pub fn try_recv_reply(&self, id: &String) -> anyhow::Result<Message> {
+    pub fn try_recv(&self) -> anyhow::Result<Message> {
         if self.socket.has_incoming_data()? {
-            let reply = Message::read_from_socket(&self.socket)?;
-            return match reply.parent_id() {
-                Some(parent_id) if parent_id == *id => Ok(reply),
-                Some(parent_id) => {
-                    Err(anyhow::anyhow!(
-                        "Received message parent ID {} does not match expected ID {}",
-                        parent_id,
-                        id
-                    ))
-                },
-                None => {
-                    Err(anyhow::anyhow!(
-                        "Received message has no parent ID, expected ID {}",
-                        id
-                    ))
-                }
-            }
+            // Just unwrapping here because I don't _think_ this should go wrong
+            // and currently not sure how to handle if it does.
+            return Ok(Message::read_from_socket(&self.socket)?);
         } else {
             return Err(anyhow::anyhow!("No incoming data on shell socket"))
         }
@@ -86,8 +72,8 @@ impl Shell {
 
     /// Receive from Shell and assert `ExecuteReply` message.
     /// Returns `execution_count`.
-    pub fn try_recv_execute_reply(&self, id: &String) -> anyhow::Result<u32> {
-        let msg = self.try_recv_reply(id)?;
+    pub fn recv_execute_reply(&self) -> anyhow::Result<u32> {
+        let msg = self.recv();
 
         assert_matches!(msg, Message::ExecuteReply(data) => {
             assert_eq!(data.content.status, Status::Ok);

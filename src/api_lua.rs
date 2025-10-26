@@ -2,7 +2,7 @@ use mlua::LuaSerdeExt;
 use mlua::prelude::*;
 
 use crate::{
-    api::{IOPUB_BROKER, SHELL},
+    api::{IOPUB_BROKER, SHELL, SHELL_BROKER},
     frontend::frontend::ExecuteRequestOptions,
     msg::wire::{jupyter_message::Message, status::ExecutionState},
 };
@@ -11,54 +11,44 @@ use std::sync::mpsc::channel;
 use crate::api;
 
 pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
-    log::trace!("Sending executre request `{}`", code);
-
-    let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-    let broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-
-    // Create channels for this specific execution request
-    let (tx, rx) = channel();
+    log::trace!("Sending execute request `{}`", code);
 
     // Send the execute request and get its message ID
-    let request_id = shell.send_execute_request(&code, ExecuteRequestOptions::default());
+    let request_id = {
+        let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
+        shell.send_execute_request(&code, ExecuteRequestOptions::default())
+    };
 
-    // Register this request with the broker
-    broker.register_request(request_id.clone(), tx);
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+
+    let (shell_tx, shell_rx) = channel();
+    let (iopub_tx, iopub_rx) = channel();
+
+    shell_broker.register_request(request_id.clone(), shell_tx);
+    iopub_broker.register_request(request_id.clone(), iopub_tx);
 
     let out = lua
         .create_function(move |_, ()| {
-            let mut result = String::new();
-
-            // Get the reply from shell (this blocks until all iopub replies have come through)
-            // TODO: Unfortunately we can't query the shell every time the user calls this
-            // function, otherwise we risk accidentally consuming replies to other requests. So we
-            // need something else. E.g:
-            // * We have some kind of global lookup for completed requests which we look into
-            //   _before_ we try receiving here
-            // * We add a broker for shell messages. This is probably the best approach since
-            //   we already have the infrastructure for it.
-            let _count = shell.try_recv_execute_reply(&request_id);
-
-            while let Ok(reply) = rx.try_recv() {
+            // First we check iopub for results. If we get something we don't want to send the user
+            // we try again straight away.
+            while let Ok(reply) = iopub_rx.try_recv() {
                 log::trace!("Receiving message {}", reply.kind());
                 match reply {
-                    // TODO: this won't update incrementally, so we need to change tack. I think what we
-                    // need to do is return a handle which can be called from lua to get any results which
-                    // may have come through.
                     Message::ExecuteResult(msg) => {
-                        result = msg.content.data["text/plain"].clone().to_string();
-                        break
+                        return Ok(msg.content.data["text/plain"].clone().to_string());
                     }
-                    Message::Stream(msg) => {
-                        result = msg.content.text;
-                        break
+                    Message::ExecuteError(msg) => return Ok(msg.content.exception.ename),
+                    Message::Stream(msg) => return Ok(msg.content.text),
+                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
                     }
-                    // Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
-                    //     busy = true;
-                    // }
+                    // NB, it's possible that here we should also check if we have already received
+                    // a busy status. However, I don't see any reason to confirm that the kernel is
+                    // conforming to this pattern, so I'm not going to for now.
                     Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                        broker.unregister_request(&request_id);
-                        break;
+                        IOPUB_BROKER
+                            .get_or_init(|| unreachable!())
+                            .unregister_request(&request_id);
                     }
                     _ => {
                         log::trace!("Dropping received message {}", reply.kind());
@@ -66,9 +56,58 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
                         // break;
                     }
                 };
+            }
+            let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+
+            // If the request id is no longer registered as active then we've evidently already
+            // received the reply and we can just return an empty result.
+            if !shell_broker.is_active(&request_id) {
+                return Ok(String::new());
+            }
+
+            // First let's try routing any incoming messages from the shell. In theory there should
+            // be only one - the reply to this execute request. However there may be more, e.g.
+            // late responses to previous requests.
+            if let Ok(msg) = SHELL
+                .get_or_init(|| unreachable!())
+                .lock()
+                .unwrap()
+                .try_recv()
+            {
+                shell_broker.route(msg);
             };
 
-            Ok(result)
+            // Now let's check any shell replies related to this execute request. In theory there
+            // should only be one, the final execute reply.
+            let _ = match shell_rx.try_recv() {
+                // If we get the final reply we can unregister the request since we can be confident
+                // it's completed.
+                Ok(Message::ExecuteReply(_)) => {
+                    shell_broker.unregister_request(&request_id);
+                    Ok(lua.create_table())
+                }
+                Ok(Message::ExecuteReplyException(msg)) => {
+                    shell_broker.unregister_request(&request_id);
+                    Ok(lua.create_table_from(
+                        vec![msg.content.exception.evalue.to_string()]
+                            .into_iter()
+                            .enumerate(),
+                    ))
+                }
+                // Any other reply is unexpected so we should error
+                Ok(msg) => {
+                    log::warn!("Unexpected reply received on shell: {}", msg.kind());
+                    Err(mlua::Error::RuntimeError(format!(
+                        "Unexpected reply received on shell: {}",
+                        msg.kind()
+                    )))
+                }
+                // If we couldn't get a reply from the shell then the request is finished
+                // and we don't need to return anything.
+                Err(_) => Ok(lua.create_table()),
+            };
+
+            Ok(String::from(""))
         })
         .unwrap();
 

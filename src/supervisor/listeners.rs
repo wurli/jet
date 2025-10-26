@@ -12,7 +12,6 @@ use std::time::Instant;
 
 use crate::frontend::heartbeat::Heartbeat;
 use crate::frontend::iopub::Iopub;
-// use crate::frontend::shell::Shell;
 use crate::supervisor::broker::Broker;
 
 /// Spawn a thread that continuously receives IOPub messages and routes them through the broker
@@ -44,6 +43,9 @@ pub fn listen_iopub(iopub: Iopub, broker: Arc<Broker>) -> JoinHandle<()> {
     })
 }
 
+// NOTE::
+// We can't really move the shell socket into its own thread since it, unlike iopub, needs
+// to be able to _send_ as well as receive.
 // /// Spawn a thread that continuously receives shell messages and routes them through the broker
 // pub fn listen_shell(shell: Shell, broker: Arc<Broker>) -> JoinHandle<()> {
 //     thread::spawn(move || {
@@ -54,7 +56,9 @@ pub fn listen_iopub(iopub: Iopub, broker: Arc<Broker>) -> JoinHandle<()> {
 //
 //         loop {
 //             // Receive with a short timeout to allow periodic cleanup
-//             if let Some(msg) = shell.recv_with_timeout(100) {
+//             // This timeout is quite a bit less than the iopub one since we receive a lot less
+//             // messages on the shell.
+//             if let Some(msg) = shell.recv_with_timeout(30_000) {
 //                 log::trace!("Message received on shell: {}", msg.kind());
 //                 broker.route(msg);
 //             };

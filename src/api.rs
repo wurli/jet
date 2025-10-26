@@ -93,25 +93,28 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
 
 pub fn execute_code(code: String) -> anyhow::Result<String> {
     let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-    let broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
 
     // Create channels for this specific execution request
-    let (tx, rx) = channel();
+    let (shell_tx, _shell_rx) = channel();
+    let (iopub_tx, iopub_rx) = channel();
 
     // Send the execute request and get its message ID
     let request_id = shell.send_execute_request(&code, ExecuteRequestOptions::default());
 
     // Register this request with the broker
-    broker.register_request(request_id.clone(), tx);
+    shell_broker.register_request(request_id.clone(), shell_tx);
+    iopub_broker.register_request(request_id.clone(), iopub_tx);
 
     // Get the reply from shell (this should block until rx has received all the iopub messages for
     // the request)
-    let _ = shell.try_recv_execute_reply(&request_id);
+    let _ = shell.recv_execute_reply();
 
     let mut result = String::from("");
     let mut busy = false;
 
-    for reply in rx.iter() {
+    for reply in iopub_rx.iter() {
         log::trace!("Looping through message {}", reply.kind());
         match reply {
             // TODO: this won't update incrementally, so we need to change tack. I think what we
@@ -127,7 +130,7 @@ pub fn execute_code(code: String) -> anyhow::Result<String> {
                 busy = true;
             }
             Message::Status(msg) if busy && msg.content.execution_state == ExecutionState::Idle => {
-                broker.unregister_request(&request_id);
+                iopub_broker.unregister_request(&request_id);
                 break;
             }
             _ => {

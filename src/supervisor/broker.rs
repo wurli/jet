@@ -156,6 +156,10 @@ impl Broker {
         self.active_requests.write().unwrap().remove(request_id);
     }
 
+    pub fn is_active(&self, request_id: &RequestId) -> bool {
+        self.active_requests.read().unwrap().contains_key(request_id)
+    }
+
     /// Clean up stale requests that have exceeded the timeout
     pub fn drop_stale_requests(&self) {
         let timeout = self.config.request_timeout;
