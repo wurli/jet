@@ -22,6 +22,13 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
     })
 }
 
+/// Converts a message into a Lua table like this:
+/// ``` lua
+/// {
+///     type = "<message type>",
+///     data = { <message data> }
+/// }
+/// ```
 fn to_lua<T: MessageType + serde::Serialize>(x: &T, lua: &Lua) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
     let _ = out.set("type", x.kind());
