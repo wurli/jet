@@ -95,7 +95,12 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     Ok(kernel_info.banner)
 }
 
-pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
+pub struct ExecuteResult {
+    pub is_complete: bool,
+    pub message: Option<Message>,
+}
+
+pub fn execute_code(code: String) -> impl Fn() -> ExecuteResult {
     log::trace!("Sending execute request `{}`", code);
 
     // Send the execute request and get its message ID
@@ -119,13 +124,14 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
     move || {
         // First we check iopub for results. If we get a reply without any viewable output we
         // try again straight away.
-        let mut out = None;
+        let mut result = None;
+
         while let Ok(reply) = iopub_rx.try_recv() {
             log::trace!("Receiving message from iopub: {}", reply.kind());
             match reply {
                 // These are the message types we want to surface in Lua
                 Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::Stream(_) => {
-                    out = Some(reply);
+                    result = Some(reply);
                     break;
                 }
                 // Here we can just add a sense check to ensure the code matches what we sent
@@ -138,14 +144,14 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                         );
                     };
                 }
-                // This is expected immediately after sending the execute request
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
                 // NB, it's possible that here we should also check if we have already received
                 // a busy status. However, I don't see any reason to confirm that the kernel is
                 // conforming to this pattern, so I'm not going to for now.
                 Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
                     iopub_broker.unregister_request(&request_id);
                 }
+                // This is expected immediately after sending the execute request
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
                 // There shouldn't be anything else. If there is we need a warning.
                 _ => {
                     log::warn!("Dropping unexpected iopub message {}", reply.kind());
@@ -155,7 +161,7 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
         }
 
         // If we don't have anything to send from iopub, let's check stdin for input requests
-        if let None = out {
+        if let None = result {
             // First let's try routing any incoming messages from stdin. This helps mitigate the
             if let Ok(msg) = STDIN
                 .get_or_init(|| unreachable!())
@@ -170,7 +176,7 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                 log::trace!("Receiving message from stdin: {}", msg.kind());
                 match msg {
                     Message::InputRequest(_) => {
-                        out = Some(msg);
+                        result = Some(msg);
                     }
                     _ => {
                         log::warn!("Dropping unexpected stdin message {}", msg.kind());
@@ -182,7 +188,10 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
         // If the request id is no longer registered as active then we've evidently already
         // received the reply and we can just return an empty result.
         if !shell_broker.is_active(&request_id) {
-            return out;
+            return ExecuteResult {
+                is_complete: true,
+                message: result,
+            };
         }
 
         // First let's try routing any incoming messages from the shell. In theory there should
@@ -201,25 +210,30 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
         // should only be one, the final execute reply.
         match shell_rx.try_recv() {
             // If we get the final reply we can unregister the request since we can be confident
-            // it's completed.
-            Ok(Message::ExecuteReply(_)) => {
+            // it's completed. We might also get an exception, but we don't need special treatment
+            // since the user will see the exception in the iopub stream.
+            Ok(Message::ExecuteReply(_) | Message::ExecuteReplyException(_)) => {
                 shell_broker.unregister_request(&request_id);
-            }
-            // This comes through in the case that the code produced an error, but the user is
-            // notified via the iopub's `ExecuteError`
-            Ok(Message::ExecuteReplyException(_)) => {
-                shell_broker.unregister_request(&request_id);
+                stdin_broker.unregister_request(&request_id);
             }
             // Any other reply is unexpected
             Ok(msg) => {
                 log::warn!("Unexpected reply received on shell: {}", msg.kind());
+                // This shouldn't happen, but just in case we unregister the request. Whether or
+                // not this is the right thing to do who knows - this is an error recovery
+                // situation.
+                shell_broker.unregister_request(&request_id);
+                stdin_broker.unregister_request(&request_id);
             }
             // If we couldn't get a reply from the shell then the request is finished
             // and we don't need to return anything.
             Err(_) => {}
         };
 
-        out
+        ExecuteResult {
+            is_complete: false,
+            message: result,
+        }
     }
 }
 
