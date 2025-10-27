@@ -11,13 +11,6 @@ use std::sync::mpsc::channel;
 
 use crate::api;
 
-fn to_lua<T: MessageType + serde::Serialize>(x: &T, lua: &Lua) -> LuaResult<LuaTable> {
-    let out = lua.create_table().unwrap();
-    let _ = out.set("type", x.kind());
-    let _ = out.set("data", lua.to_value(x).unwrap());
-    Ok(out)
-}
-
 pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
     log::trace!("Sending execute request `{}`", code);
 
@@ -68,9 +61,7 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
                     // a busy status. However, I don't see any reason to confirm that the kernel is
                     // conforming to this pattern, so I'm not going to for now.
                     Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                        IOPUB_BROKER
-                            .get_or_init(|| unreachable!())
-                            .unregister_request(&request_id);
+                        iopub_broker.unregister_request(&request_id);
                     }
                     _ => {
                         log::warn!("Dropping received message {}", reply.kind());
@@ -78,7 +69,6 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
                     }
                 };
             }
-            let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
 
             // If the request id is no longer registered as active then we've evidently already
             // received the reply and we can just return an empty result.
@@ -126,6 +116,15 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
 
     Ok(out)
 }
+
+
+fn to_lua<T: MessageType + serde::Serialize>(x: &T, lua: &Lua) -> LuaResult<LuaTable> {
+    let out = lua.create_table().unwrap();
+    let _ = out.set("type", x.kind());
+    let _ = out.set("data", lua.to_value(x).unwrap());
+    Ok(out)
+}
+
 
 pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
     let kernels = api::discover_kernels();
