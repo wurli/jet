@@ -40,6 +40,16 @@ impl Stdin {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
+    pub fn try_recv(&self) -> anyhow::Result<Message> {
+        if self.socket.has_incoming_data()? {
+            // Just unwrapping here because I don't _think_ this should go wrong
+            // and currently not sure how to handle if it does.
+            return Ok(Message::read_from_socket(&self.socket)?);
+        } else {
+            return Err(anyhow::anyhow!("No incoming data on stdin socket"))
+        }
+    }
+
     fn send_stdin<T: ProtocolMessage>(&self, msg: T) {
         let message = JupyterMessage::create(msg, None, &self.session);
         // let id = message.header.msg_id.clone();

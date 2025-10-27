@@ -2,6 +2,7 @@ use crate::{
     frontend::{
         frontend::{ExecuteRequestOptions, Frontend},
         shell::Shell,
+        stdin::Stdin,
     },
     kernel::{
         kernel_spec::{KernelSpec, KernelSpecFull},
@@ -23,8 +24,10 @@ use std::sync::{Arc, Mutex, OnceLock, mpsc::channel};
 // to access global state within these funcions, we need to use static values.
 pub static KERNEL_INFO: OnceLock<(KernelSpec, KernelInfoReply)> = OnceLock::new();
 pub static SHELL: OnceLock<Mutex<Shell>> = OnceLock::new();
+pub static STDIN: OnceLock<Mutex<Stdin>> = OnceLock::new();
 pub static IOPUB_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static SHELL_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
+pub static STDIN_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 
 pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
@@ -71,6 +74,7 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     loop_heartbeat(frontend.heartbeat);
     let iopub_broker = Arc::new(Broker::new(String::from("IOPub")));
     let shell_broker = Arc::new(Broker::new(String::from("Shell")));
+    let stdin_broker = Arc::new(Broker::new(String::from("Control")));
 
     // Start the iopub/shell processing threads
     listen_iopub(frontend.iopub, Arc::clone(&iopub_broker));
@@ -83,8 +87,10 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
 
     KERNEL_INFO.get_or_init(|| (spec, kernel_info.clone()));
     SHELL.get_or_init(|| Mutex::new(frontend.shell));
+    STDIN.get_or_init(|| Mutex::new(frontend.stdin));
     IOPUB_BROKER.get_or_init(|| iopub_broker);
     SHELL_BROKER.get_or_init(|| shell_broker);
+    STDIN_BROKER.get_or_init(|| stdin_broker);
 
     Ok(kernel_info.banner)
 }
@@ -98,24 +104,29 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
         shell.send_execute_request(&code, ExecuteRequestOptions::default())
     };
 
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
     let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
 
-    let (shell_tx, shell_rx) = channel();
     let (iopub_tx, iopub_rx) = channel();
+    let (shell_tx, shell_rx) = channel();
+    let (stdin_tx, stdin_rx) = channel();
 
     shell_broker.register_request(request_id.clone(), shell_tx);
     iopub_broker.register_request(request_id.clone(), iopub_tx);
+    stdin_broker.register_request(request_id.clone(), stdin_tx);
 
     move || {
         // First we check iopub for results. If we get a reply without any viewable output we
         // try again straight away.
+        let mut out = None;
         while let Ok(reply) = iopub_rx.try_recv() {
-            log::trace!("Receiving message {}", reply.kind());
+            log::trace!("Receiving message from iopub: {}", reply.kind());
             match reply {
                 // These are the message types we want to surface in Lua
                 Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::Stream(_) => {
-                    return Some(reply);
+                    out = Some(reply);
+                    break;
                 }
                 // Here we can just add a sense check to ensure the code matches what we sent
                 Message::ExecuteInput(msg) => {
@@ -137,16 +148,41 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                 }
                 // There shouldn't be anything else. If there is we need a warning.
                 _ => {
-                    log::warn!("Dropping received message {}", reply.kind());
+                    log::warn!("Dropping unexpected iopub message {}", reply.kind());
                     // We continue receiving until we get something to return
                 }
-            };
+            }
         }
+
+        // If we don't have anything to send from iopub, let's check stdin for input requests
+        if let None = out {
+            // First let's try routing any incoming messages from stdin. This helps mitigate the
+            if let Ok(msg) = STDIN
+                .get_or_init(|| unreachable!())
+                .lock()
+                .unwrap()
+                .try_recv()
+            {
+                shell_broker.route(msg);
+            };
+
+            if let Ok(msg) = stdin_rx.try_recv() {
+                log::trace!("Receiving message from stdin: {}", msg.kind());
+                match msg {
+                    Message::InputRequest(_) => {
+                        out = Some(msg);
+                    }
+                    _ => {
+                        log::warn!("Dropping unexpected stdin message {}", msg.kind());
+                    }
+                }
+            }
+        };
 
         // If the request id is no longer registered as active then we've evidently already
         // received the reply and we can just return an empty result.
         if !shell_broker.is_active(&request_id) {
-            return None;
+            return out;
         }
 
         // First let's try routing any incoming messages from the shell. In theory there should
@@ -183,7 +219,7 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
             Err(_) => {}
         };
 
-        None
+        out
     }
 }
 

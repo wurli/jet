@@ -13,6 +13,7 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
             Some(Message::ExecuteResult(msg)) => to_lua(&msg.content, lua),
             Some(Message::ExecuteError(msg)) => to_lua(&msg.content, lua),
             Some(Message::Stream(msg)) => to_lua(&msg.content, lua),
+            Some(Message::InputRequest(msg)) => to_lua(&msg.content, lua),
             Some(msg) => Err(LuaError::external(format!(
                 "Received unexpected message type {}",
                 msg.kind()

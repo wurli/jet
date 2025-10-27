@@ -229,6 +229,6 @@ impl Frontend {
 
 impl Default for ExecuteRequestOptions {
     fn default() -> Self {
-        Self { allow_stdin: false }
+        Self { allow_stdin: true }
     }
 }
