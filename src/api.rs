@@ -8,7 +8,9 @@ use crate::{
         startup_method::StartupMethod,
     },
     msg::wire::{
-        jupyter_message::Message, kernel_info_full_reply::KernelInfoReply, status::ExecutionState,
+        jupyter_message::{Message, MessageType},
+        kernel_info_full_reply::KernelInfoReply,
+        status::ExecutionState,
     },
     supervisor::{
         broker::Broker,
@@ -87,59 +89,102 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     Ok(kernel_info.banner)
 }
 
-// pub fn is_complete(code: String) -> anyhow::Result<String> {
-//     let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-// }
-
-pub fn execute_code(code: String) -> anyhow::Result<String> {
-    let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
-
-    // Create channels for this specific execution request
-    let (shell_tx, _shell_rx) = channel();
-    let (iopub_tx, iopub_rx) = channel();
+pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
+    log::trace!("Sending execute request `{}`", code);
 
     // Send the execute request and get its message ID
-    let request_id = shell.send_execute_request(&code, ExecuteRequestOptions::default());
+    let request_id = {
+        let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
+        shell.send_execute_request(&code, ExecuteRequestOptions::default())
+    };
 
-    // Register this request with the broker
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+
+    let (shell_tx, shell_rx) = channel();
+    let (iopub_tx, iopub_rx) = channel();
+
     shell_broker.register_request(request_id.clone(), shell_tx);
     iopub_broker.register_request(request_id.clone(), iopub_tx);
 
-    // Get the reply from shell (this should block until rx has received all the iopub messages for
-    // the request)
-    let _ = shell.recv_execute_reply();
-
-    let mut result = String::from("");
-    let mut busy = false;
-
-    for reply in iopub_rx.iter() {
-        log::trace!("Looping through message {}", reply.kind());
-        match reply {
-            // TODO: this won't update incrementally, so we need to change tack. I think what we
-            // need to do is return a handle which can be called from lua to get any results which
-            // may have come through.
-            Message::ExecuteResult(msg) => {
-                result.push_str(&msg.content.data["text/plain"].clone().to_string());
-            }
-            Message::Stream(msg) => {
-                result.push_str(&msg.content.text);
-            }
-            Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
-                busy = true;
-            }
-            Message::Status(msg) if busy && msg.content.execution_state == ExecutionState::Idle => {
-                iopub_broker.unregister_request(&request_id);
-                break;
-            }
-            _ => {
-                log::trace!("Dropping received message {}", reply.kind());
-            }
+    move || {
+        // First we check iopub for results. If we get a reply without any viewable output we
+        // try again straight away.
+        while let Ok(reply) = iopub_rx.try_recv() {
+            log::trace!("Receiving message {}", reply.kind());
+            match reply {
+                // These are the message types we want to surface in Lua
+                Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::Stream(_) => {
+                    return Some(reply);
+                }
+                // Here we can just add a sense check to ensure the code matches what we sent
+                Message::ExecuteInput(msg) => {
+                    if msg.content.code != code {
+                        log::warn!(
+                            "Received {} with unexpected code: {}",
+                            msg.content.kind(),
+                            msg.content.code
+                        );
+                    };
+                }
+                // This is expected immediately after sending the execute request
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                // NB, it's possible that here we should also check if we have already received
+                // a busy status. However, I don't see any reason to confirm that the kernel is
+                // conforming to this pattern, so I'm not going to for now.
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    iopub_broker.unregister_request(&request_id);
+                }
+                // There shouldn't be anything else. If there is we need a warning.
+                _ => {
+                    log::warn!("Dropping received message {}", reply.kind());
+                    // We continue receiving until we get something to return
+                }
+            };
         }
-    }
 
-    Ok(result)
+        // If the request id is no longer registered as active then we've evidently already
+        // received the reply and we can just return an empty result.
+        if !shell_broker.is_active(&request_id) {
+            return None;
+        }
+
+        // First let's try routing any incoming messages from the shell. In theory there should
+        // be only one - the reply to this execute request. However there may be more, e.g.
+        // late responses to previous requests.
+        if let Ok(msg) = SHELL
+            .get_or_init(|| unreachable!())
+            .lock()
+            .unwrap()
+            .try_recv()
+        {
+            shell_broker.route(msg);
+        };
+
+        // Now let's check any shell replies related to this execute request. In theory there
+        // should only be one, the final execute reply.
+        match shell_rx.try_recv() {
+            // If we get the final reply we can unregister the request since we can be confident
+            // it's completed.
+            Ok(Message::ExecuteReply(_)) => {
+                shell_broker.unregister_request(&request_id);
+            }
+            // This comes through in the case that the code produced an error, but the user is
+            // notified via the iopub's `ExecuteError`
+            Ok(Message::ExecuteReplyException(_)) => {
+                shell_broker.unregister_request(&request_id);
+            }
+            // Any other reply is unexpected
+            Ok(msg) => {
+                log::warn!("Unexpected reply received on shell: {}", msg.kind());
+            }
+            // If we couldn't get a reply from the shell then the request is finished
+            // and we don't need to return anything.
+            Err(_) => {}
+        };
+
+        None
+    }
 }
 
 // fn is_complete(_lua: Lua, code) -> LuaResult<()> {
