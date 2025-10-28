@@ -252,7 +252,7 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
             // --------------------------------------------------------------------------------------------------------
             // Since there was nothing on iopub, let's see if the kernel wants input from the user
             // --------------------------------------------------------------------------------------------------------
-            if let Ok(msg) = STDIN
+            while let Ok(msg) = STDIN
                 .get_or_init(|| unreachable!())
                 .lock()
                 .unwrap()
@@ -274,7 +274,7 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
             // --------------------------------------------------------------------------------------------------------
             // Now let's check any shell replies related to this execute request. In theory there
             // should only be one, the final execute reply.
-            if let Ok(msg) = shell_rx.try_recv() {
+            while let Ok(msg) = shell_rx.try_recv() {
                 match msg {
                     Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
                     _ => log::warn!("Unexpected reply received on shell: {}", msg.kind()),
@@ -293,18 +293,66 @@ pub fn provide_stdin(value: String) {
     stdin.send_input_reply(value);
 }
 
-// fn is_complete(_lua: Lua, code) -> LuaResult<()> {
-//
-// }
-//
-// fn flush_streams() -> LuaResult<()> {
-//
-// }
-//
-// fn poll_stdin() -> LuaResult<()> {
-//
-// }
-//
-// fn provide_stdin() -> LuaResult<()> {
-//     // let x = frontend.stdin
-// }
+pub fn is_complete(code: String) -> anyhow::Result<Message> {
+    log::trace!("Sending is complete request `{}`", code);
+
+    // Send the execute request and get its message ID
+    let request_id = {
+        let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
+        shell.send_is_complete_request(&code)
+    };
+
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+
+    let (iopub_tx, iopub_rx) = channel();
+    let (shell_tx, shell_rx) = channel();
+
+    shell_broker.register_request(request_id.clone(), shell_tx);
+    iopub_broker.register_request(request_id.clone(), iopub_tx);
+
+    let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
+
+    while let Ok(reply) = iopub_rx.recv() {
+        match reply {
+            Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
+                log::trace!("Received iopub busy status for is_complete_request");
+            }
+            Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                log::trace!("Received iopub idle status for is_complete_request");
+                iopub_broker.unregister_request(&request_id);
+                break;
+            }
+            _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
+        }
+    }
+
+    // First let's try routing any incoming messages from the shell. In theory there should
+    // be only one - the reply to this execute request. However there may be more, e.g.
+    // late responses to previous requests.
+    while let Ok(msg) = SHELL
+        .get_or_init(|| unreachable!())
+        .lock()
+        .unwrap()
+        .try_recv()
+    {
+        shell_broker.route(msg);
+    };
+
+    if let Ok(reply) = shell_rx.recv() {
+        match reply {
+            Message::IsCompleteReply(_) => {
+                log::trace!("Received is_complete_reply on the shell");
+                out = Ok(reply);
+            }
+            _ => log::warn!("Unexpected reply received on shell: {}", reply.kind()),
+        }
+        shell_broker.unregister_request(&request_id);
+        stdin_broker.unregister_request(&request_id);
+    } else {
+        log::warn!("Failed to obtain is_complete_reply from the shell");
+    }
+
+    out
+}

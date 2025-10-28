@@ -46,7 +46,8 @@ local function dump(o, level)
     end
 end
 
----@param x string
+---@param x string?
+---@param pad string?
 local cat_header = function(x, pad)
     local out_len = 80
     pad = pad or "-"
@@ -57,7 +58,9 @@ end
 
 --- Execute code in the carpo kernel and print results until the execution finishes
 local function execute(carpo, code)
+    cat_header(nil, "=")
     cat_header("Executing code", "=")
+    cat_header(nil, "=")
     print("```")
     print(code)
     print("```")
@@ -72,12 +75,23 @@ local function execute(carpo, code)
 
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"
-            cat_header(("Sending dummy val '%s'"):format(stdin), "*")
+            cat_header(("Sending dummy val '%s'"):format(stdin), ".")
             carpo.provide_stdin(stdin)
         end
 
         os.execute("sleep 0.1")
     end
+end
+
+local function is_complete(carpo, code)
+    cat_header(nil, "=")
+    cat_header("Testing completeness", "=")
+    cat_header(nil, "=")
+    print("```")
+    print(code)
+    print("```")
+
+    print(dump(carpo.is_complete(code)))
 end
 
 --------------------------------------------------
@@ -94,4 +108,9 @@ print(startup_message)
 -- Try running some code
 execute(carpo, "1 + 1")
 execute(carpo, "readline('Enter something: ')")
-execute(carpo, "Sys.sleep(2); 1 + 1")
+execute(carpo, "Sys.sleep(1); 1 + 1")
+
+-- Try testing completeness
+is_complete(carpo, "1 +")
+is_complete(carpo, "1 + 1")
+is_complete(carpo, "_")

@@ -52,7 +52,7 @@ impl Shell {
             // and currently not sure how to handle if it does.
             return Ok(Message::read_from_socket(&self.socket)?);
         } else {
-            return Err(anyhow::anyhow!("No incoming data on shell socket"))
+            return Err(anyhow::anyhow!("No incoming data on shell socket"));
         }
     }
 
@@ -101,6 +101,7 @@ impl Shell {
     }
 
     pub fn send_is_complete_request(&self, code: &str) -> String {
+        log::trace!("Sending is_complete_request {} on the shell", code);
         self.send(IsCompleteRequest {
             code: String::from(code),
         })
