@@ -191,6 +191,15 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
     stdin_broker.register_request(request_id.clone(), stdin_tx);
 
     move || {
+        // ------------------------------------------------------------------------------------------------------------
+        // First we check if the request is still active. If not we return an empty result.
+        // ------------------------------------------------------------------------------------------------------------
+        // If the request id is no longer registered as active then we've evidently already
+        // received the reply and we can just return an empty result.
+        if !shell_broker.is_active(&request_id) {
+            return None;
+        }
+
         // First let's try routing any incoming messages from the shell. In theory there should
         // be only one - the reply to this execute request. However there may be more, e.g.
         // late responses to previous requests.
@@ -204,6 +213,9 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
         };
 
         loop {
+            // --------------------------------------------------------------------------------------------------------
+            // The request _is_ active, so let's see if there's anything on iopub
+            // --------------------------------------------------------------------------------------------------------
             if let Ok(reply) = iopub_rx.try_recv() {
                 log::trace!("Receiving message from iopub: {}", reply.kind());
                 match reply {
@@ -240,7 +252,9 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                 }
             }
 
-            // First let's try routing any incoming messages from stdin.
+            // --------------------------------------------------------------------------------------------------------
+            // Since there was nothing on iopub, let's see if the kernel wants input from the user
+            // --------------------------------------------------------------------------------------------------------
             if let Ok(msg) = STDIN
                 .get_or_init(|| unreachable!())
                 .lock()
@@ -263,6 +277,9 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                 }
             }
 
+            // --------------------------------------------------------------------------------------------------------
+            // Last of all we check if the request is complete. If not we loop again.
+            // --------------------------------------------------------------------------------------------------------
             // Now let's check any shell replies related to this execute request. In theory there
             // should only be one, the final execute reply.
             match shell_rx.try_recv() {
@@ -272,6 +289,7 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                 Ok(Message::ExecuteReply(_) | Message::ExecuteReplyException(_)) => {
                     shell_broker.unregister_request(&request_id);
                     stdin_broker.unregister_request(&request_id);
+                    return None;
                 }
                 // Any other reply is unexpected
                 Ok(msg) => {
@@ -281,17 +299,12 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                     // situation.
                     shell_broker.unregister_request(&request_id);
                     stdin_broker.unregister_request(&request_id);
+                    return None;
                 }
                 // If we couldn't get a reply from the shell then the request is finished
                 // and we don't need to return anything.
                 Err(_) => {}
             };
-
-            // If the request id is no longer registered as active then we've evidently already
-            // received the reply and we can just return an empty result.
-            if !shell_broker.is_active(&request_id) {
-                return None;
-            }
         }
     }
 }
