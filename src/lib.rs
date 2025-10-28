@@ -31,9 +31,10 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
 
     let exports = lua.create_table()?;
     exports.set("execute_code", lua.create_function(api_lua::execute_code)?)?;
+    exports.set("start_kernel", lua.create_function(api_lua::start_kernel)?)?;
     exports.set(
-        "start_kernel",
-        lua.create_function(api_lua::start_kernel)?,
+        "provide_stdin",
+        lua.create_function(api_lua::provide_stdin)?,
     )?;
     exports.set(
         "discover_kernels",

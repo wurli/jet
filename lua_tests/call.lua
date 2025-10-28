@@ -56,11 +56,20 @@ local function execute(carpo, code)
     local i = 0
     while true do
         i = i + 1
-        print(("-- result %d ------------------"):format(i))
+        print(("-- result %d ---------------------------"):format(i))
         local result = callback()
         print(dump(result))
-        os.execute("sleep 0.1")
         if result.is_complete then break end
+
+        if result.type == "input_request" then
+            local stdin = "Hello from Lua!"
+            print( "-----------------------------------------")
+            print(("-- Sending dummy val '%s' --"):format(stdin))
+            print( "-----------------------------------------")
+            carpo.provide_stdin(stdin)
+        end
+
+        os.execute("sleep 0.1")
     end
 end
 
@@ -72,7 +81,7 @@ local carpo = carpo_loader()
 local startup_message = carpo.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 
 -- Print the startup message
-print("-- startup message ------------")
+print("== startup message ==================")
 print(startup_message)
 
 -- Try running some code

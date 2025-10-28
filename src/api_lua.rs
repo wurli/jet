@@ -48,6 +48,11 @@ fn to_lua<T: MessageType + serde::Serialize>(
     Ok(out)
 }
 
+pub fn provide_stdin(_: &Lua, value: String) -> LuaResult<()> {
+    api::provide_stdin(value);
+    Ok(())
+}
+
 pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
     let kernels = api::discover_kernels();
 

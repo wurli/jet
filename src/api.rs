@@ -311,6 +311,11 @@ pub fn execute_code(code: String) -> impl Fn() -> ExecuteResult {
     }
 }
 
+pub fn provide_stdin(value: String) {
+    let stdin = STDIN.get_or_init(|| unreachable!()).lock().unwrap();
+    stdin.send_input_reply(value);
+}
+
 // fn is_complete(_lua: Lua, code) -> LuaResult<()> {
 //
 // }

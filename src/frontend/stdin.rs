@@ -68,7 +68,7 @@ impl Stdin {
     }
 
     /// Send back an `InputReply` to an `InputRequest` over Stdin
-    pub fn send_stdin_input_reply(&self, value: String) {
+    pub fn send_input_reply(&self, value: String) {
         self.send_stdin(InputReply { value })
     }
 }
