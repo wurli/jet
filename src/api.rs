@@ -1,3 +1,5 @@
+use assert_matches::assert_matches;
+
 use crate::{
     frontend::{
         frontend::{ExecuteRequestOptions, Frontend},
@@ -11,6 +13,7 @@ use crate::{
     msg::wire::{
         jupyter_message::{Message, MessageType},
         kernel_info_full_reply::KernelInfoReply,
+        kernel_info_request::KernelInfoRequest,
         status::ExecutionState,
     },
     supervisor::{
@@ -69,8 +72,6 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
         }
     };
 
-    let kernel_info = frontend.subscribe();
-
     loop_heartbeat(frontend.heartbeat);
     let iopub_broker = Arc::new(Broker::new(String::from("IOPub")));
     let shell_broker = Arc::new(Broker::new(String::from("Shell")));
@@ -79,6 +80,8 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     // Start the iopub/shell processing threads
     listen_iopub(frontend.iopub, Arc::clone(&iopub_broker));
     // listen_shell(frontend.shell, Arc::clone(&shell_broker));
+
+    let kernel_info = subscribe(&frontend.shell, Arc::clone(&iopub_broker));
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialise global state
@@ -93,6 +96,77 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     STDIN_BROKER.get_or_init(|| stdin_broker);
 
     Ok(kernel_info.banner)
+}
+
+// TODO: write a framework for sending arbitrary requests and waiting for replies
+// and use it here.
+pub fn subscribe(shell: &Shell, iopub_broker: Arc<Broker>) -> KernelInfoReply {
+    // Not all kernels implement the XPUB socket which provides the welcome message which confirms
+    // the connection is established. PEP 65 recommends dealing with this by:
+    // 1. Sending a kernel info request
+    // 2. Checking the protocol version in the reply
+    // 3. Waiting for the welcome message if the protocol supports it
+    //
+    // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
+    let (request_tx, request_rx) = channel();
+    let (unparent_tx, unparent_rx) = channel();
+
+    iopub_broker.register_request(String::from("unparented"), unparent_tx);
+
+    log::info!("[kernel info] Sending the startup kernel info request");
+    let request_id = shell.send(KernelInfoRequest {});
+
+    iopub_broker.register_request(request_id, request_tx);
+
+    log::info!("[kernel info] Waiting for the busy status");
+    assert_matches!(request_rx.recv().unwrap(), Message::Status(data) => {
+        assert_eq!(data.content.execution_state, ExecutionState::Busy);
+    });
+
+    log::info!("[kernel info] Waiting for the reply on the shell");
+    let reply = shell.recv();
+
+    log::info!("[kernel info] Waiting for the reply on iopub");
+    let kernel_info = match reply {
+        Message::KernelInfoReply(reply) => reply.content,
+        _ => panic!("Expected kernel_info_reply, but got {:#?}", reply),
+    };
+
+    log::info!(
+        "Kernel is using protocol version: {}",
+        kernel_info.protocol_version
+    );
+
+    // Receive the Welcome message for kernels which support it
+    // Unfortunately, although JEP 65 is accepted, I can't find the version of the jupyter protocol
+    // in which it becomes effective. Ark _does_ support it and is 5.4, ipython doesn't and is 5.3.
+    if kernel_info.protocol_version >= String::from("5.4") {
+        // Immediately block until we've received the IOPub welcome message from the XPUB server side
+        // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
+        // IOPub messages that a server may send if we start to perform requests immediately (in
+        // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
+        log::info!("[kernel info] Waiting for the welcome message");
+        assert_matches!(unparent_rx.recv().unwrap(), Message::Welcome(data) => {
+            assert_eq!(data.content.subscription, String::from(""));
+        });
+        // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
+        // from the kernel right after the `Welcome` message.
+        log::info!("[kernel info] Waiting for the starting message");
+        assert_matches!(unparent_rx.recv().unwrap(), Message::Status(data) => {
+            assert_eq!(data.content.execution_state, ExecutionState::Starting);
+        });
+    }
+
+    iopub_broker.unregister_request(&String::from("unparented"));
+
+    // Consume the Idle status
+    log::info!("[kernel info] Waiting for the idle status");
+    assert_matches!(request_rx.recv().unwrap(), Message::Status(data) => {
+        assert_eq!(data.content.execution_state, ExecutionState::Idle);
+    });
+
+    log::info!("[kernel info] Subscription complete");
+    kernel_info
 }
 
 pub struct ExecuteResult {
@@ -169,7 +243,7 @@ pub fn execute_code(code: String) -> impl Fn() -> ExecuteResult {
                 .unwrap()
                 .try_recv()
             {
-                shell_broker.route(msg);
+                stdin_broker.route(msg);
             };
 
             if let Ok(msg) = stdin_rx.try_recv() {

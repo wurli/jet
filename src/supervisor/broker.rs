@@ -84,8 +84,8 @@ impl Broker {
             self.route_to_request(&parent_id, msg);
         } else {
             // No parent ID, handle as orphan
-            log::warn!("{}: Orphaning message: {}", self.name, msg.kind());
-            self.handle_orphan(msg);
+            log::trace!("{}: Routing unparented message: {}", self.name, msg.kind());
+            self.route_to_request("unparented", msg);
         }
     }
 
@@ -118,8 +118,9 @@ impl Broker {
     /// Handle a message that doesn't match any active request
     fn handle_orphan(&self, msg: Message) {
         log::trace!(
-            "{}: Orphan message {:#?}: no matching request found",
+            "{}: Orphan {} message {:#?}: no matching request found",
             self.name,
+            msg.kind(),
             &msg
         );
 
@@ -130,8 +131,9 @@ impl Broker {
         while buffer.len() > self.config.orphan_buffer_max {
             if let Some((dropped_msg, _)) = buffer.pop_front() {
                 log::trace!(
-                    "{}: Dropped old orphan message {:#?} due to buffer limit",
+                    "{}: Dropped old {} orphan message {:#?} due to buffer limit",
                     self.name,
+                    dropped_msg.kind(),
                     &dropped_msg
                 );
             }
@@ -157,7 +159,10 @@ impl Broker {
     }
 
     pub fn is_active(&self, request_id: &RequestId) -> bool {
-        self.active_requests.read().unwrap().contains_key(request_id)
+        self.active_requests
+            .read()
+            .unwrap()
+            .contains_key(request_id)
     }
 
     /// Clean up stale requests that have exceeded the timeout

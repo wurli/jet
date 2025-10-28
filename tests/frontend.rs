@@ -40,7 +40,7 @@ fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
         }
     };
 
-    let _kernel_info = frontend.subscribe();
+    // let _kernel_info = frontend.subscribe();
 
     Ok(frontend)
 }
