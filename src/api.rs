@@ -190,6 +190,8 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
     iopub_broker.register_request(request_id.clone(), iopub_tx);
     stdin_broker.register_request(request_id.clone(), stdin_tx);
 
+    // We return a closure which can be repeatedly called as a function from Lua to get the
+    // response from the kernel
     move || {
         // ------------------------------------------------------------------------------------------------------------
         // First we check if the request is still active. If not we return an empty result.
@@ -240,15 +242,10 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                             );
                         };
                     }
-                    // This is expected immediately after sending the execute request. Let's keep
-                    // looping...
+                    // This is expected immediately after sending the execute request.
                     Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
                     }
-                    // There shouldn't be anything else. If there is we need a warning.
-                    _ => {
-                        log::warn!("Dropping unexpected iopub message {}", reply.kind());
-                        // We continue receiving until we get something to return
-                    }
+                    _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
                 }
             }
 
@@ -272,7 +269,6 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                     }
                     _ => {
                         log::warn!("Dropping unexpected stdin message {}", msg.kind());
-                        // TODO: we should probably return an error here...
                     }
                 }
             }
@@ -282,29 +278,16 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
             // --------------------------------------------------------------------------------------------------------
             // Now let's check any shell replies related to this execute request. In theory there
             // should only be one, the final execute reply.
-            match shell_rx.try_recv() {
-                // If we get the final reply we can unregister the request since we can be confident
-                // it's completed. We might also get an exception, but we don't need special treatment
-                // since the user will see the exception in the iopub stream.
-                Ok(Message::ExecuteReply(_) | Message::ExecuteReplyException(_)) => {
-                    shell_broker.unregister_request(&request_id);
-                    stdin_broker.unregister_request(&request_id);
-                    return None;
+            if let Ok(msg) = shell_rx.try_recv() {
+                match msg {
+                    Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
+                    _ => log::warn!("Unexpected reply received on shell: {}", msg.kind()),
                 }
-                // Any other reply is unexpected
-                Ok(msg) => {
-                    log::warn!("Unexpected reply received on shell: {}", msg.kind());
-                    // This shouldn't happen, but just in case we unregister the request. Whether or
-                    // not this is the right thing to do who knows - this is an error recovery
-                    // situation.
-                    shell_broker.unregister_request(&request_id);
-                    stdin_broker.unregister_request(&request_id);
-                    return None;
-                }
-                // If we couldn't get a reply from the shell then the request is finished
-                // and we don't need to return anything.
-                Err(_) => {}
-            };
+                shell_broker.unregister_request(&request_id);
+                stdin_broker.unregister_request(&request_id);
+                return None;
+            }
+            // If we couldn't get a reply from the shell then let's try looping again
         }
     }
 }
