@@ -46,9 +46,18 @@ local function dump(o, level)
     end
 end
 
+---@param x string
+local cat_header = function(x, pad)
+    local out_len = 80
+    pad = pad or "-"
+    x = x and " " .. x .. " " or ""
+    local x_len = x:len()
+    print(pad:rep(2) .. x .. pad:rep(math.max(out_len - 2 - x_len, 0)))
+end
+
 --- Execute code in the carpo kernel and print results until the execution finishes
 local function execute(carpo, code)
-    print("=== Executing code ==================")
+    cat_header("Executing code", "=")
     print("```")
     print(code)
     print("```")
@@ -56,16 +65,14 @@ local function execute(carpo, code)
     local i = 0
     while true do
         i = i + 1
-        print(("-- result %d ---------------------------"):format(i))
+        cat_header("Result " .. i)
         local result = callback()
         print(dump(result))
         if result.is_complete then break end
 
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"
-            print( "-----------------------------------------")
-            print(("-- Sending dummy val '%s' --"):format(stdin))
-            print( "-----------------------------------------")
+            cat_header(("Sending dummy val '%s'"):format(stdin), "*")
             carpo.provide_stdin(stdin)
         end
 
@@ -81,7 +88,7 @@ local carpo = carpo_loader()
 local startup_message = carpo.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 
 -- Print the startup message
-print("== startup message ==================")
+cat_header("startup message", "=")
 print(startup_message)
 
 -- Try running some code
