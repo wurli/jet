@@ -11,20 +11,16 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
     lua.create_function_mut(move |lua, (): ()| -> LuaResult<LuaTable> {
         let result = callback();
 
-        match result.message {
-            Some(Message::ExecuteResult(msg)) => to_lua(lua, result.is_complete, &msg.content),
-            Some(Message::ExecuteError(msg)) => to_lua(lua, result.is_complete, &msg.content),
-            Some(Message::Stream(msg)) => to_lua(lua, result.is_complete, &msg.content),
-            Some(Message::InputRequest(msg)) => to_lua(lua, result.is_complete, &msg.content),
+        match result {
+            Some(Message::ExecuteResult(msg)) => to_lua(lua, &msg.content),
+            Some(Message::ExecuteError(msg)) => to_lua(lua, &msg.content),
+            Some(Message::Stream(msg)) => to_lua(lua, &msg.content),
+            Some(Message::InputRequest(msg)) => to_lua(lua, &msg.content),
             Some(msg) => Err(LuaError::external(format!(
                 "Received unexpected message type {}",
                 msg.kind()
             ))),
-            _ => {
-                let out = lua.create_table().unwrap();
-                let _ = out.set("is_complete", result.is_complete);
-                Ok(out)
-            }
+            _ => Ok(lua.create_table().unwrap()),
         }
     })
 }
@@ -36,13 +32,8 @@ pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
 ///     data = { <message data> }
 /// }
 /// ```
-fn to_lua<T: MessageType + serde::Serialize>(
-    lua: &Lua,
-    is_complete: bool,
-    x: &T,
-) -> LuaResult<LuaTable> {
+fn to_lua<T: MessageType + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
-    let _ = out.set("is_complete", is_complete);
     let _ = out.set("type", x.kind());
     let _ = out.set("data", lua.to_value(x).unwrap());
     Ok(out)

@@ -68,7 +68,7 @@ local function execute(carpo, code)
         cat_header("Result " .. i)
         local result = callback()
         print(dump(result))
-        if result.is_complete then break end
+        if tbl_len(result) == 0 then break end
 
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"

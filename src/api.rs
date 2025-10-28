@@ -169,12 +169,7 @@ pub fn subscribe(shell: &Shell, iopub_broker: Arc<Broker>) -> KernelInfoReply {
     kernel_info
 }
 
-pub struct ExecuteResult {
-    pub is_complete: bool,
-    pub message: Option<Message>,
-}
-
-pub fn execute_code(code: String) -> impl Fn() -> ExecuteResult {
+pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
     log::trace!("Sending execute request `{}`", code);
 
     // Send the execute request and get its message ID
@@ -196,47 +191,56 @@ pub fn execute_code(code: String) -> impl Fn() -> ExecuteResult {
     stdin_broker.register_request(request_id.clone(), stdin_tx);
 
     move || {
-        // First we check iopub for results. If we get a reply without any viewable output we
-        // try again straight away.
-        let mut result = None;
+        // First let's try routing any incoming messages from the shell. In theory there should
+        // be only one - the reply to this execute request. However there may be more, e.g.
+        // late responses to previous requests.
+        if let Ok(msg) = SHELL
+            .get_or_init(|| unreachable!())
+            .lock()
+            .unwrap()
+            .try_recv()
+        {
+            shell_broker.route(msg);
+        };
 
-        while let Ok(reply) = iopub_rx.try_recv() {
-            log::trace!("Receiving message from iopub: {}", reply.kind());
-            match reply {
-                // These are the message types we want to surface in Lua
-                Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::Stream(_) => {
-                    result = Some(reply);
-                    break;
-                }
-                // Here we can just add a sense check to ensure the code matches what we sent
-                Message::ExecuteInput(msg) => {
-                    if msg.content.code != code {
-                        log::warn!(
-                            "Received {} with unexpected code: {}",
-                            msg.content.kind(),
-                            msg.content.code
-                        );
-                    };
-                }
-                // NB, it's possible that here we should also check if we have already received
-                // a busy status. However, I don't see any reason to confirm that the kernel is
-                // conforming to this pattern, so I'm not going to for now.
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                    iopub_broker.unregister_request(&request_id);
-                }
-                // This is expected immediately after sending the execute request
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
-                // There shouldn't be anything else. If there is we need a warning.
-                _ => {
-                    log::warn!("Dropping unexpected iopub message {}", reply.kind());
-                    // We continue receiving until we get something to return
+        loop {
+            if let Ok(reply) = iopub_rx.try_recv() {
+                log::trace!("Receiving message from iopub: {}", reply.kind());
+                match reply {
+                    // These are the message types we want to surface in Lua
+                    Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::Stream(_) => {
+                        return Some(reply);
+                    }
+                    // NB, it's possible that here we should also check if we have already received
+                    // a busy status. However, I don't see any reason to confirm that the kernel is
+                    // conforming to this pattern, so I'm not going to for now.
+                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                        iopub_broker.unregister_request(&request_id);
+                        return None;
+                    }
+                    // Here we can just add a sense check to ensure the code matches what we sent
+                    Message::ExecuteInput(msg) => {
+                        if msg.content.code != code {
+                            log::warn!(
+                                "Received {} with unexpected code: {}",
+                                msg.content.kind(),
+                                msg.content.code
+                            );
+                        };
+                    }
+                    // This is expected immediately after sending the execute request. Let's keep
+                    // looping...
+                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
+                    }
+                    // There shouldn't be anything else. If there is we need a warning.
+                    _ => {
+                        log::warn!("Dropping unexpected iopub message {}", reply.kind());
+                        // We continue receiving until we get something to return
+                    }
                 }
             }
-        }
 
-        // If we don't have anything to send from iopub, let's check stdin for input requests
-        if let None = result {
-            // First let's try routing any incoming messages from stdin. This helps mitigate the
+            // First let's try routing any incoming messages from stdin.
             if let Ok(msg) = STDIN
                 .get_or_init(|| unreachable!())
                 .lock()
@@ -250,63 +254,44 @@ pub fn execute_code(code: String) -> impl Fn() -> ExecuteResult {
                 log::trace!("Receiving message from stdin: {}", msg.kind());
                 match msg {
                     Message::InputRequest(_) => {
-                        result = Some(msg);
+                        return Some(msg);
                     }
                     _ => {
                         log::warn!("Dropping unexpected stdin message {}", msg.kind());
+                        // TODO: we should probably return an error here...
                     }
                 }
             }
-        };
 
-        // If the request id is no longer registered as active then we've evidently already
-        // received the reply and we can just return an empty result.
-        if !shell_broker.is_active(&request_id) {
-            return ExecuteResult {
-                is_complete: true,
-                message: result,
+            // Now let's check any shell replies related to this execute request. In theory there
+            // should only be one, the final execute reply.
+            match shell_rx.try_recv() {
+                // If we get the final reply we can unregister the request since we can be confident
+                // it's completed. We might also get an exception, but we don't need special treatment
+                // since the user will see the exception in the iopub stream.
+                Ok(Message::ExecuteReply(_) | Message::ExecuteReplyException(_)) => {
+                    shell_broker.unregister_request(&request_id);
+                    stdin_broker.unregister_request(&request_id);
+                }
+                // Any other reply is unexpected
+                Ok(msg) => {
+                    log::warn!("Unexpected reply received on shell: {}", msg.kind());
+                    // This shouldn't happen, but just in case we unregister the request. Whether or
+                    // not this is the right thing to do who knows - this is an error recovery
+                    // situation.
+                    shell_broker.unregister_request(&request_id);
+                    stdin_broker.unregister_request(&request_id);
+                }
+                // If we couldn't get a reply from the shell then the request is finished
+                // and we don't need to return anything.
+                Err(_) => {}
             };
-        }
 
-        // First let's try routing any incoming messages from the shell. In theory there should
-        // be only one - the reply to this execute request. However there may be more, e.g.
-        // late responses to previous requests.
-        if let Ok(msg) = SHELL
-            .get_or_init(|| unreachable!())
-            .lock()
-            .unwrap()
-            .try_recv()
-        {
-            shell_broker.route(msg);
-        };
-
-        // Now let's check any shell replies related to this execute request. In theory there
-        // should only be one, the final execute reply.
-        match shell_rx.try_recv() {
-            // If we get the final reply we can unregister the request since we can be confident
-            // it's completed. We might also get an exception, but we don't need special treatment
-            // since the user will see the exception in the iopub stream.
-            Ok(Message::ExecuteReply(_) | Message::ExecuteReplyException(_)) => {
-                shell_broker.unregister_request(&request_id);
-                stdin_broker.unregister_request(&request_id);
+            // If the request id is no longer registered as active then we've evidently already
+            // received the reply and we can just return an empty result.
+            if !shell_broker.is_active(&request_id) {
+                return None;
             }
-            // Any other reply is unexpected
-            Ok(msg) => {
-                log::warn!("Unexpected reply received on shell: {}", msg.kind());
-                // This shouldn't happen, but just in case we unregister the request. Whether or
-                // not this is the right thing to do who knows - this is an error recovery
-                // situation.
-                shell_broker.unregister_request(&request_id);
-                stdin_broker.unregister_request(&request_id);
-            }
-            // If we couldn't get a reply from the shell then the request is finished
-            // and we don't need to return anything.
-            Err(_) => {}
-        };
-
-        ExecuteResult {
-            is_complete: false,
-            message: result,
         }
     }
 }
