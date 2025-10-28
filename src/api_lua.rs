@@ -36,6 +36,18 @@ pub fn is_complete(lua: &Lua, code: String) -> LuaResult<LuaTable> {
     }
 }
 
+
+pub fn get_completions(lua: &Lua, (code, cursor_pos): (String, u32)) -> LuaResult<LuaTable> {
+    match api::get_completions(code, cursor_pos) {
+        Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
+        Ok(msg) => Err(LuaError::external(format!(
+            "Received unexpected message type {}",
+            msg.kind()
+        ))),
+        Err(e) => Err(e.into_lua_err()),
+    }
+}
+
 /// Converts a message into a Lua table like this:
 /// ``` lua
 /// {

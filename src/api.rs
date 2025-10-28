@@ -11,6 +11,7 @@ use crate::{
         startup_method::StartupMethod,
     },
     msg::wire::{
+        complete_request::CompleteRequest,
         jupyter_message::{Message, MessageType},
         kernel_info_full_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
@@ -259,7 +260,7 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
                 .try_recv()
             {
                 stdin_broker.route(msg);
-            };
+            }
 
             if let Ok(msg) = stdin_rx.try_recv() {
                 log::trace!("Received message from stdin: {}", msg.kind());
@@ -286,6 +287,70 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
             // If we couldn't get a reply from the shell then let's try looping again
         }
     }
+}
+
+pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message> {
+    log::trace!("Sending is completion request `{}`", code);
+
+    // Send the execute request and get its message ID
+    let request_id = {
+        let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
+        shell.send(CompleteRequest { code, cursor_pos })
+    };
+
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+
+    let (iopub_tx, iopub_rx) = channel();
+    let (shell_tx, shell_rx) = channel();
+
+    shell_broker.register_request(request_id.clone(), shell_tx);
+    iopub_broker.register_request(request_id.clone(), iopub_tx);
+
+    let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
+
+    while let Ok(reply) = iopub_rx.recv() {
+        match reply {
+            Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
+                log::trace!("Received iopub busy status for completion_request");
+            }
+            Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                log::trace!("Received iopub idle status for completion_request");
+                iopub_broker.unregister_request(&request_id);
+                break;
+            }
+            _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
+        }
+    }
+
+    // First let's try routing any incoming messages from the shell. In theory there should
+    // be only one - the reply to this execute request. However there may be more, e.g.
+    // late responses to previous requests.
+    while let Ok(msg) = SHELL
+        .get_or_init(|| unreachable!())
+        .lock()
+        .unwrap()
+        .try_recv()
+    {
+        shell_broker.route(msg);
+    }
+
+    if let Ok(reply) = shell_rx.recv() {
+        match reply {
+            Message::CompleteReply(_) => {
+                log::trace!("Received completion_reply on the shell");
+                out = Ok(reply);
+            }
+            _ => log::warn!("Unexpected reply received on shell: {}", reply.kind()),
+        }
+        shell_broker.unregister_request(&request_id);
+        stdin_broker.unregister_request(&request_id);
+    } else {
+        log::warn!("Failed to obtain completion_reply from the shell");
+    }
+
+    out
 }
 
 pub fn provide_stdin(value: String) {
@@ -338,7 +403,7 @@ pub fn is_complete(code: String) -> anyhow::Result<Message> {
         .try_recv()
     {
         shell_broker.route(msg);
-    };
+    }
 
     if let Ok(reply) = shell_rx.recv() {
         match reply {
