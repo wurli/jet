@@ -94,3 +94,4 @@ print(startup_message)
 -- Try running some code
 execute(carpo, "1 + 1")
 execute(carpo, "readline('Enter something: ')")
+execute(carpo, "Sys.sleep(2); 1 + 1")
