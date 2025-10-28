@@ -262,15 +262,11 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
             };
 
             if let Ok(msg) = stdin_rx.try_recv() {
-                log::trace!("Receiving message from stdin: {}", msg.kind());
-                match msg {
-                    Message::InputRequest(_) => {
-                        return Some(msg);
-                    }
-                    _ => {
-                        log::warn!("Dropping unexpected stdin message {}", msg.kind());
-                    }
+                log::trace!("Received message from stdin: {}", msg.kind());
+                if let Message::InputRequest(_) = msg {
+                    return Some(msg);
                 }
+                log::warn!("Dropping unexpected stdin message {}", msg.kind());
             }
 
             // --------------------------------------------------------------------------------------------------------
