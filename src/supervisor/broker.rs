@@ -78,7 +78,12 @@ impl Broker {
 
     /// Route an incoming message to the appropriate handler(s)
     pub fn route(&self, msg: Message) {
-        log::trace!("{}: Routing message: {}", self.name, msg.kind());
+        log::trace!(
+            "{}: Routing message: {}<{}>",
+            self.name,
+            msg.kind(),
+            msg.parent_id().unwrap_or(String::from("unparented"))
+        );
 
         if let Some(parent_id) = msg.parent_id() {
             self.route_to_request(&parent_id, msg);
