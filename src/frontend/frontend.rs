@@ -20,9 +20,6 @@ use crate::msg::socket::Socket;
 use crate::msg::wire::handshake_reply::HandshakeReply;
 use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message};
-use crate::msg::wire::kernel_info_full_reply::KernelInfoReply;
-use crate::msg::wire::kernel_info_request::KernelInfoRequest;
-use crate::msg::wire::status::ExecutionState;
 
 pub struct FrontendOptions {
     pub ctx: zmq::Context,

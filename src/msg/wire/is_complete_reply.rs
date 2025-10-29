@@ -17,7 +17,7 @@ pub struct IsCompleteReply {
     pub status: IsComplete,
 
     /// Characters to use for indenting the next line (if incomplete)
-    pub indent: String,
+    pub indent: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

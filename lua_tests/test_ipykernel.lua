@@ -18,18 +18,17 @@ time.sleep(1)
 1 + 1
 ]])
 
--- -- Try testing completeness
--- utils.is_complete(carpo, "1 +")
--- utils.is_complete(carpo, "1 + 1")
--- utils.is_complete(carpo, "$")
+-- Try testing completeness
+-- These seem brittle... Often this hangs.
+utils.is_complete(carpo, "for i in range(3):")
+utils.is_complete(carpo, "1 + 1")
+utils.is_complete(carpo, "$")
 
--- Try getting completions (ark doesn't do these)
-utils.get_completions(
+utils.execute(
     carpo,
-[[import pandas as pd
-df = pd.DataFrame(dict(foo = [1, 2, 3], bar = ["a", "b", "c"]))
-df.f]],
-    88
+    [[import pandas as pd
+df = pd.DataFrame(dict(foo = [1, 2, 3], bar = ["a", "b", "c"]))]]
 )
 
-
+-- Try getting completions (ark doesn't do these)
+utils.get_completions(carpo, "df.f", 4)
