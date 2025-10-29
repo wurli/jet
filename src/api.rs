@@ -173,15 +173,25 @@ pub fn subscribe(shell: &Shell, iopub_broker: Arc<Broker>) -> KernelInfoReply {
 pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
     log::trace!("Sending execute request `{}`", code);
 
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+
+    // First let's try routing any incoming messages from the shell.
+    if let Ok(msg) = SHELL
+        .get_or_init(|| unreachable!())
+        .lock()
+        .unwrap()
+        .try_recv()
+    {
+        shell_broker.route(msg);
+    };
+
     // Send the execute request and get its message ID
     let request_id = {
         let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
         shell.send_execute_request(&code, ExecuteRequestOptions::default())
     };
-
-    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
-    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
 
     let (iopub_tx, iopub_rx) = channel();
     let (shell_tx, shell_rx) = channel();
@@ -292,15 +302,25 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
 pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message> {
     log::trace!("Sending is completion request `{}`", code);
 
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+
+    // First let's try routing any incoming messages from the shell.
+    if let Ok(msg) = SHELL
+        .get_or_init(|| unreachable!())
+        .lock()
+        .unwrap()
+        .try_recv()
+    {
+        shell_broker.route(msg);
+    };
+
     // Send the execute request and get its message ID
     let request_id = {
         let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
         shell.send(CompleteRequest { code, cursor_pos })
     };
-
-    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
-    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
 
     let (iopub_tx, iopub_rx) = channel();
     let (shell_tx, shell_rx) = channel();
@@ -354,15 +374,26 @@ pub fn provide_stdin(value: String) {
 pub fn is_complete(code: String) -> anyhow::Result<Message> {
     log::trace!("Sending is complete request `{}`", code);
 
+    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
+    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
+    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+
+
+    // First let's try routing any incoming messages from the shell.
+    if let Ok(msg) = SHELL
+        .get_or_init(|| unreachable!())
+        .lock()
+        .unwrap()
+        .try_recv()
+    {
+        shell_broker.route(msg);
+    };
+
     // Send the execute request and get its message ID
     let request_id = {
         let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
         shell.send_is_complete_request(&code)
     };
-
-    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
-    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
 
     let (iopub_tx, iopub_rx) = channel();
     let (shell_tx, shell_rx) = channel();
