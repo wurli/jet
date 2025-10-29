@@ -12,6 +12,9 @@ utils.execute(carpo, "1 + 1")
 utils.execute(carpo, "readline('Enter something: ')")
 utils.execute(carpo, "Sys.sleep(1); 1 + 1")
 
+-- Try user expressions
+utils.execute(carpo, "1 + 1", { test = "2^2" })
+
 -- Try testing completeness
 utils.is_complete(carpo, "1 +")
 utils.is_complete(carpo, "1 + 1")

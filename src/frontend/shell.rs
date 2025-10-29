@@ -46,6 +46,7 @@ impl Shell {
         msg
     }
 
+    // TODO: this really needs more granular error handling
     pub fn try_recv(&self) -> anyhow::Result<Message> {
         if self.socket.has_incoming_data()? {
             // Just unwrapping here because I don't _think_ this should go wrong

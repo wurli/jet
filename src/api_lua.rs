@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use mlua::LuaSerdeExt;
 use mlua::prelude::*;
 
@@ -5,8 +7,11 @@ use crate::api;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::jupyter_message::MessageType;
 
-pub fn execute_code(lua: &Lua, code: String) -> LuaResult<LuaFunction> {
-    let callback = api::execute_code(code);
+pub fn execute_code(
+    lua: &Lua,
+    (code, user_expressions): (String, HashMap<String, String>),
+) -> LuaResult<LuaFunction> {
+    let callback = api::execute_code(code, user_expressions);
 
     lua.create_function_mut(move |lua, (): ()| -> LuaResult<LuaTable> {
         let result = callback();
@@ -35,7 +40,6 @@ pub fn is_complete(lua: &Lua, code: String) -> LuaResult<LuaTable> {
         Err(e) => Err(e.into_lua_err()),
     }
 }
-
 
 pub fn get_completions(lua: &Lua, (code, cursor_pos): (String, u32)) -> LuaResult<LuaTable> {
     match api::get_completions(code, cursor_pos) {

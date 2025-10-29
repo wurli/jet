@@ -59,14 +59,17 @@ M.cat_header = function(x, pad)
 end
 
 --- Execute code in the carpo kernel and print results until the execution finishes
-function M.execute(carpo, code)
+function M.execute(carpo, code, user_expressions)
     M.cat_header(nil, "=")
-    M.cat_header("Executing code", "=")
+    print("Executing code")
+    if M.tbl_len(user_expressions or {}) > 0 then
+        print("User expressions: " .. M.dump(user_expressions))
+    end
     M.cat_header(nil, "=")
     print("```")
     print(code)
     print("```")
-    local callback = carpo.execute_code(code)
+    local callback = carpo.execute_code(code, user_expressions or {})
     local i = 0
     while true do
         i = i + 1
@@ -87,7 +90,7 @@ end
 
 function M.is_complete(carpo, code)
     M.cat_header(nil, "=")
-    M.cat_header("Testing completeness", "=")
+    print("Testing completeness")
     M.cat_header(nil, "=")
     print("```")
     print(code)
@@ -98,7 +101,7 @@ end
 
 function M.get_completions(carpo, code, cursor_pos)
     M.cat_header(nil, "=")
-    M.cat_header("Getting completions", "=")
+    print("Getting completions")
     M.cat_header(nil, "=")
     print("Cursor pos: ", cursor_pos)
     print("```")

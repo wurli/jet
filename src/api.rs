@@ -1,18 +1,15 @@
 use assert_matches::assert_matches;
 
 use crate::{
-    frontend::{
-        frontend::{ExecuteRequestOptions, Frontend},
-        shell::Shell,
-        stdin::Stdin,
-    },
+    frontend::{frontend::Frontend, shell::Shell, stdin::Stdin},
     kernel::{
         kernel_spec::{KernelSpec, KernelSpecFull},
         startup_method::StartupMethod,
     },
     msg::wire::{
         complete_request::CompleteRequest,
-        jupyter_message::{Message, MessageType},
+        execute_request::ExecuteRequest,
+        jupyter_message::{Message, MessageType, ProtocolMessage},
         kernel_info_full_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
         status::ExecutionState,
@@ -22,7 +19,13 @@ use crate::{
         listeners::{listen_iopub, loop_heartbeat},
     },
 };
-use std::sync::{Arc, Mutex, OnceLock, mpsc::channel};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, Mutex, OnceLock,
+        mpsc::{Receiver, channel},
+    },
+};
 
 // When we call lua functions we can only pass args from Lua. So, in order
 // to access global state within these funcions, we need to use static values.
@@ -32,6 +35,80 @@ pub static STDIN: OnceLock<Mutex<Stdin>> = OnceLock::new();
 pub static IOPUB_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static SHELL_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static STDIN_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
+
+struct Channels {
+    iopub: Receiver<Message>,
+    shell: Receiver<Message>,
+    stdin: Receiver<Message>,
+}
+
+struct Frontend {}
+
+impl Frontend {
+    pub fn get() -> Self {
+        Self {}
+    }
+
+    pub fn lock_shell(&self) -> std::sync::MutexGuard<'_, Shell> {
+        SHELL.get_or_init(|| unreachable!()).lock().unwrap()
+    }
+
+    pub fn lock_stdin(&self) -> std::sync::MutexGuard<'_, Stdin> {
+        STDIN.get_or_init(|| unreachable!()).lock().unwrap()
+    }
+
+    pub fn iopub_broker(&self) -> &Arc<Broker> {
+        IOPUB_BROKER.get_or_init(|| unreachable!())
+    }
+
+    pub fn shell_broker(&self) -> &Arc<Broker> {
+        SHELL_BROKER.get_or_init(|| unreachable!())
+    }
+
+    pub fn stdin_broker(&self) -> &Arc<Broker> {
+        STDIN_BROKER.get_or_init(|| unreachable!())
+    }
+
+    pub fn register_request<T: ProtocolMessage>(&self, message: T) -> Channels {
+        let request_id = self.lock_shell().send(message);
+        let (iopub_tx, iopub_rx) = channel();
+        let (stdin_tx, stdin_rx) = channel();
+        let (shell_tx, shell_rx) = channel();
+
+        self.iopub_broker()
+            .register_request(request_id.clone(), iopub_tx);
+        self.stdin_broker()
+            .register_request(request_id.clone(), stdin_tx);
+        self.shell_broker()
+            .register_request(request_id.clone(), shell_tx);
+
+        return Channels {
+            iopub: iopub_rx,
+            shell: shell_rx,
+            stdin: stdin_rx,
+        };
+    }
+
+    pub fn flush_shell(&self) {
+        loop {
+            match self.lock_shell().try_recv() {
+                Ok(msg) => self.shell_broker().route(msg),
+                // TODO: distinguish between no messages and error
+                Err(_) => break,
+            }
+        }
+    }
+
+    pub fn flush_stdin(&self) {
+        loop {
+            match self.lock_stdin().try_recv() {
+                Ok(msg) => self.stdin_broker().route(msg),
+                // TODO: distinguish between no messages and error
+                Err(_) => break,
+            }
+        }
+    }
+}
 
 pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
@@ -170,7 +247,10 @@ pub fn subscribe(shell: &Shell, iopub_broker: Arc<Broker>) -> KernelInfoReply {
     kernel_info
 }
 
-pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
+pub fn execute_code(
+    code: String,
+    user_expressions: HashMap<String, String>,
+) -> impl Fn() -> Option<Message> {
     log::trace!("Sending execute request `{}`", code);
 
     let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
@@ -190,7 +270,14 @@ pub fn execute_code(code: String) -> impl Fn() -> Option<Message> {
     // Send the execute request and get its message ID
     let request_id = {
         let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-        shell.send_execute_request(&code, ExecuteRequestOptions::default())
+        shell.send(ExecuteRequest {
+            code: code.clone(),
+            silent: false,
+            store_history: true,
+            allow_stdin: true,
+            stop_on_error: true,
+            user_expressions: serde_json::to_value(user_expressions).unwrap(),
+        })
     };
 
     let (iopub_tx, iopub_rx) = channel();
@@ -377,7 +464,6 @@ pub fn is_complete(code: String) -> anyhow::Result<Message> {
     let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
     let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
     let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
-
 
     // First let's try routing any incoming messages from the shell.
     if let Ok(msg) = SHELL

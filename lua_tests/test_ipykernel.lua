@@ -18,6 +18,9 @@ time.sleep(1)
 1 + 1
 ]])
 
+-- User expressions
+utils.execute(carpo, "1 + 1", { test = "2 ** 2" })
+
 -- Try testing completeness
 -- These seem brittle... Often this hangs.
 utils.is_complete(carpo, "for i in range(3):")
