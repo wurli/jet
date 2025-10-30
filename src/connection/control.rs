@@ -34,6 +34,17 @@ impl Control {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
+    // TODO: this really needs more granular error handling
+    pub fn try_recv(&self) -> anyhow::Result<Message> {
+        if self.socket.has_incoming_data()? {
+            // Just unwrapping here because I don't _think_ this should go wrong
+            // and currently not sure how to handle if it does.
+            return Ok(Message::read_from_socket(&self.socket)?);
+        } else {
+            return Err(anyhow::anyhow!("No incoming data on shell socket"));
+        }
+    }
+
     /// TODO: do we need to register ids with brokers _before_ sending the message to avoid
     /// orphaned requests? This might be a good idea :'(
     pub fn send<T: ProtocolMessage>(&self, msg: T) -> String {

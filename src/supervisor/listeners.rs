@@ -50,7 +50,7 @@ pub fn loop_heartbeat(heartbeat: Heartbeat) -> JoinHandle<()> {
 
             // Then we (hopefully) wait to receive the same message back
             let reply = heartbeat
-                .recv_with_timeout(1000)
+                .recv_with_timeout(9000)
                 .expect("Heartbeat timed out");
 
             let reply_slice: &[u8] = reply.as_ref();

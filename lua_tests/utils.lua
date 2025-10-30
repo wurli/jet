@@ -132,7 +132,7 @@ function M.get_completions(carpo, kernel_id, code, cursor_pos)
     print(M.dump(carpo.get_completions(kernel_id, code, cursor_pos)))
 end
 
-function M.request_shudown(carpo, kernel_id)
+function M.request_shutdown(carpo, kernel_id)
     M.cat_header(nil, "=")
     print("Requesting shutdown")
     M.cat_header(nil, "=")

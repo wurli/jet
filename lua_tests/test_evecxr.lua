@@ -13,7 +13,7 @@ utils.execute(carpo, kernel_id, "1 + 1")
 -- utils.execute(carpo, kernel_id, "Sys.sleep(1); 1 + 1")
 
 -- Try user expressions
-utils.execute(carpo, kernel_id, "1 + 1", { test = "2^2" })
+utils.execute(carpo, kernel_id, "1 + 1", info.display_name, { test = "2^2" })
 
 -- Try testing completeness
 utils.is_complete(carpo, kernel_id, "1 +")
@@ -22,3 +22,6 @@ utils.is_complete(carpo, kernel_id, "1 +")
 
 -- Try getting completions (ark doesn't do these)
 utils.get_completions(carpo, kernel_id, [[use std::back]], 13)
+
+-- Try shutting down
+utils.request_shutdown(carpo, kernel_id)

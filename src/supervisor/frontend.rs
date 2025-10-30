@@ -9,6 +9,7 @@ use crate::{
     connection::connection::Connection,
     kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod},
     msg::wire::{
+        input_request::InputRequest,
         jupyter_message::{Message, ProtocolMessage},
         kernel_info_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
@@ -172,6 +173,7 @@ impl Frontend {
         Self::request_shutdown_impl(kernel_id, true)
     }
 
+    /// This is a mess
     fn request_shutdown_impl(kernel_id: &KernelId, restart: bool) -> anyhow::Result<Message> {
         Self::kernel_manager()
             .with_kernel(kernel_id, |kernel| {
@@ -183,49 +185,63 @@ impl Frontend {
                 );
                 let (control_tx, control_rx) = channel();
                 let (iopub_tx, iopub_rx) = channel();
+                let (stdin_tx, stdin_rx) = channel();
 
                 kernel.iopub_broker.register_request(&request_id, iopub_tx);
+                kernel.stdin_broker.register_request(&request_id, stdin_tx);
                 kernel
                     .control_broker
                     .register_request(&request_id, control_tx);
 
-                let _ = Self::route_control_reply(&kernel_id, &request_id);
-
                 loop {
-                    match iopub_rx.recv().unwrap() {
-                        msg @ Message::ShutdownReply(_) => {
-                            log::info!("Received shutdown_reply");
+                    match iopub_rx.try_recv() {
+                        Ok(msg @ Message::ShutdownReply(_)) => {
+                            log::trace!("Received shutdown_reply");
                             return Ok(msg);
                         }
-                        Message::Status(msg)
+                        Ok(Message::Status(msg))
                             if msg.content.execution_state == ExecutionState::Idle =>
                         {
                             kernel
                                 .control_broker
                                 .unregister_request(&request_id, "idle status received");
-                            break;
+                            log::trace!("Received idle status; breaking");
                         }
-                        _ => {}
+                        Ok(other) => {
+                            log::trace!("Received unexpeted message {}", other.describe())
+                        }
+                        Err(_) => {}
                     }
-                }
 
-                match control_rx.recv().unwrap() {
-                    reply @ Message::ShutdownReply(_) => {
-                        log::info!("Received shutdown_reply");
-                        kernel
-                            .control_broker
-                            .unregister_request(&request_id, "reply received");
-                        return Ok(reply);
+                    let _ = Self::recv_all_incoming_control(&kernel_id);
+
+                    match stdin_rx.try_recv() {
+                        Ok(msg @ Message::InputRequest(_)) => return Ok(msg),
+                        Ok(msg) => log::warn!("Received unexpected reply {}", msg.describe()),
+                        Err(_) => {}
                     }
-                    other => {
-                        log::warn!(
-                            "Expected shutdown_reply but received unexpected message: {:#?}",
-                            other
-                        );
-                        return Err(anyhow::anyhow!(
-                            "Expected shutdown_reply but received unexpected message: {:#?}",
-                            other
-                        ));
+
+                    let _ = Self::recv_all_incoming_control(&kernel_id);
+
+                    match control_rx.try_recv() {
+                        Ok(reply @ Message::ShutdownReply(_)) => {
+                            log::info!("Received shutdown_reply");
+                            kernel
+                                .control_broker
+                                .unregister_request(&request_id, "reply received");
+                            return Ok(reply);
+                        }
+                        Ok(other) => {
+                            log::warn!(
+                                "Expected shutdown_reply but received unexpected message: {:#?}",
+                                other
+                            );
+                            return Err(anyhow::anyhow!(
+                                "Expected shutdown_reply but received unexpected message: {:#?}",
+                                other
+                            ));
+                        }
+                        Err(_) => {}
                     }
                 }
             })
@@ -352,18 +368,26 @@ impl Frontend {
         })
     }
 
-    pub fn recv_all_incoming_stdin(kernel_id: &KernelId) -> anyhow::Result<()> {
-        let kernel = Self::kernel_manager()
-            .get_kernel(kernel_id)
-            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
-
-        loop {
-            match kernel.connection.stdin.lock().unwrap().try_recv() {
-                Ok(msg) => kernel.stdin_broker.route(msg),
-                Err(_) => break,
+    pub fn recv_all_incoming_control(kernel_id: &KernelId) -> anyhow::Result<()> {
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            loop {
+                match kernel.connection.control.lock().unwrap().try_recv() {
+                    Ok(msg) => kernel.control_broker.route(msg),
+                    Err(_) => break,
+                }
             }
-        }
-        Ok(())
+        })
+    }
+
+    pub fn recv_all_incoming_stdin(kernel_id: &KernelId) -> anyhow::Result<()> {
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            loop {
+                match kernel.connection.stdin.lock().unwrap().try_recv() {
+                    Ok(msg) => kernel.stdin_broker.route(msg),
+                    Err(_) => break,
+                }
+            }
+        })
     }
 
     pub fn get_stdin_broker(kernel_id: &KernelId) -> anyhow::Result<Arc<Broker>> {
