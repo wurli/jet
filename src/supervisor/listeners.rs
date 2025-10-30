@@ -63,8 +63,6 @@ pub fn loop_heartbeat(heartbeat: Heartbeat) -> JoinHandle<()> {
                 )
             }
 
-            // TODO: check the message we receive is the one we sent
-            // assert_eq!(bytes, msg.);
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
     })

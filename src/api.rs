@@ -149,7 +149,7 @@ pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message>
     // First let's try routing any incoming messages from the shell. In theory there should
     // be only one - the reply to this execute request. However there may be more, e.g.
     // late responses to previous requests.
-    Frontend::route_shell();
+    Frontend::route_shell_reply(&request.id);
 
     if let Ok(reply) = request.shell.recv() {
         match reply {
@@ -192,7 +192,7 @@ pub fn is_complete(code: String) -> anyhow::Result<Message> {
     // First let's try routing any incoming messages from the shell. In theory there should
     // be only one - the reply to this execute request. However there may be more, e.g.
     // late responses to previous requests.
-    Frontend::route_shell();
+    Frontend::route_shell_reply(&request.id);
 
     if let Ok(reply) = request.shell.recv() {
         match reply {

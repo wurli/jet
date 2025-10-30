@@ -118,7 +118,7 @@ impl Frontend {
         let request = Self::send_request(KernelInfoRequest {});
 
         // Block until we get the info reply
-        Self::route_shell();
+        Self::route_shell_reply(&request.id);
         let reply = request.shell.recv().unwrap();
         log::info!("Received reply on the shell");
 
@@ -209,14 +209,27 @@ impl Frontend {
         Self::shell_broker().is_active(request_id)
     }
 
-    /// Block until a message is received on the shell. This can be helpful, e.g. for long-running
-    /// operations where the shell reply contains the information we want to surface to the user.
-    ///
-    /// TODO: if the reply isn't related to the original request, keep routing.
-    pub fn route_shell() {
-        let msg = Self::lock_shell().recv();
-        Self::shell_broker().route(msg);
+    /// Block until a reply to a given message is received on the shell. This can be helpful, e.g.
+    /// for long-running operations where the shell reply contains the information we want to
+    /// surface to the user.
+    pub fn route_shell_reply(request_id: &String) {
+        loop {
+            let msg = Self::lock_shell().recv();
+            let is_reply = match msg.parent_id() {
+                Some(parent_id) => *request_id == parent_id,
+                None => *request_id == String::from("unparented"),
+            };
+            Self::shell_broker().route(msg);
+            if is_reply {
+                break;
+            }
+        }
     }
+
+    // pub fn route_shell() {
+    //     let msg = Self::lock_shell().recv();
+    //     Self::shell_broker().route(msg);
+    // }
 
     /// Drain the shell channel of all incoming messages and routes them
     pub fn recv_all_incoming_shell() {
