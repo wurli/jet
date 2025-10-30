@@ -59,28 +59,11 @@ M.cat_header = function(x, pad)
 end
 
 --- Execute code in the carpo kernel and print results until the execution finishes
-function M.execute(carpo, kernel_id_or_code, code_or_user_expressions, user_expressions_or_nil)
-    -- Support both old and new API: execute(carpo, code) and execute(carpo, kernel_id, code)
-    local kernel_id, code, user_expressions
-    
-    if type(kernel_id_or_code) == "string" and code_or_user_expressions ~= nil and type(code_or_user_expressions) == "string" then
-        -- New API: execute(carpo, kernel_id, code, user_expressions)
-        kernel_id = kernel_id_or_code
-        code = code_or_user_expressions
-        user_expressions = user_expressions_or_nil or {}
-    else
-        -- Old API: execute(carpo, code, user_expressions) - will fail at runtime if no kernel exists
-        kernel_id = nil
-        code = kernel_id_or_code
-        user_expressions = code_or_user_expressions or {}
-    end
-    
+function M.execute(carpo, kernel_id, code, user_expressions)
+    user_expressions = user_expressions or {}
+
     M.cat_header(nil, "=")
-    if kernel_id then
-        print("Executing code in kernel: " .. kernel_id)
-    else
-        print("Executing code")
-    end
+    print("Executing code in kernel: " .. kernel_id)
     if M.tbl_len(user_expressions) > 0 then
         print("User expressions: " .. M.dump(user_expressions))
     end
@@ -88,15 +71,9 @@ function M.execute(carpo, kernel_id_or_code, code_or_user_expressions, user_expr
     print("```")
     print(code)
     print("```")
-    
-    local callback
-    if kernel_id then
-        callback = carpo.execute_code(kernel_id, code, user_expressions)
-    else
-        -- This will be an error with the new API, but we maintain backwards compatibility in the function signature
-        error("execute() requires a kernel_id parameter")
-    end
-    
+
+    local callback = carpo.execute_code(kernel_id, code, user_expressions)
+
     local i = 0
     while true do
         i = i + 1
@@ -121,7 +98,7 @@ end
 
 function M.is_complete(carpo, kernel_id_or_code, code_or_nil)
     local kernel_id, code
-    
+
     if code_or_nil ~= nil then
         kernel_id = kernel_id_or_code
         code = code_or_nil
@@ -129,7 +106,7 @@ function M.is_complete(carpo, kernel_id_or_code, code_or_nil)
         kernel_id = nil
         code = kernel_id_or_code
     end
-    
+
     M.cat_header(nil, "=")
     print("Testing completeness")
     M.cat_header(nil, "=")
@@ -144,19 +121,7 @@ function M.is_complete(carpo, kernel_id_or_code, code_or_nil)
     end
 end
 
-function M.get_completions(carpo, kernel_id_or_code, code_or_cursor_pos, cursor_pos_or_nil)
-    local kernel_id, code, cursor_pos
-    
-    if cursor_pos_or_nil ~= nil then
-        kernel_id = kernel_id_or_code
-        code = code_or_cursor_pos
-        cursor_pos = cursor_pos_or_nil
-    else
-        kernel_id = nil
-        code = kernel_id_or_code
-        cursor_pos = code_or_cursor_pos
-    end
-    
+function M.get_completions(carpo, kernel_id, code, cursor_pos)
     M.cat_header(nil, "=")
     print("Getting completions")
     M.cat_header(nil, "=")

@@ -7,7 +7,7 @@ use crate::{
         jupyter_message::{Describe, Message},
         status::ExecutionState,
     },
-    supervisor::{frontend::Frontend, manager::KernelId},
+    supervisor::{frontend::Frontend, manager::{KernelId, KernelInfo}},
 };
 use std::collections::HashMap;
 
@@ -24,10 +24,10 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<KernelId> {
     let spec_full = matched_spec.expect(&format!("No kernel found with name '{}'", spec_path));
     let spec = spec_full.spec?;
 
-    Frontend::start_kernel(spec)
+    Frontend::start_kernel(spec_path, spec)
 }
 
-pub fn list_kernels() -> Vec<KernelId> {
+pub fn list_kernels() -> HashMap<KernelId, KernelInfo> {
     Frontend::kernel_manager().list_kernels()
 }
 
@@ -62,9 +62,6 @@ pub fn execute_code(
         }
     };
 
-    let kernel_id_clone = kernel_id.clone();
-    let code_clone = code.clone();
-    
     Box::new(move || {
         loop {
             if let Ok(false) = Frontend::is_request_active(&kernel_id, &request.id) {
@@ -83,7 +80,7 @@ pub fn execute_code(
                         return None;
                     }
                     Message::ExecuteInput(msg) => {
-                        if msg.content.code != code_clone {
+                        if msg.content.code != code {
                             log::warn!(
                                 "Received {} with unexpected code: {}",
                                 msg.content.kind(),
@@ -112,7 +109,7 @@ pub fn execute_code(
                     Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
                     _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
                 }
-                if let Ok(broker) = Frontend::get_stdin_broker(&kernel_id_clone) {
+                if let Ok(broker) = Frontend::get_stdin_broker(&kernel_id) {
                     broker.unregister_request(&request.id, "reply received");
                 }
                 return None;
@@ -126,7 +123,11 @@ pub fn get_completions(
     code: String,
     cursor_pos: u32,
 ) -> anyhow::Result<Message> {
-    log::trace!("Sending completion request `{}` to kernel {}", code, kernel_id);
+    log::trace!(
+        "Sending completion request `{}` to kernel {}",
+        code,
+        kernel_id
+    );
 
     Frontend::recv_all_incoming_shell(&kernel_id)?;
 
@@ -168,7 +169,11 @@ pub fn get_completions(
 }
 
 pub fn is_complete(kernel_id: KernelId, code: String) -> anyhow::Result<Message> {
-    log::trace!("Sending is complete request `{}` to kernel {}", code, kernel_id);
+    log::trace!(
+        "Sending is complete request `{}` to kernel {}",
+        code,
+        kernel_id
+    );
 
     Frontend::recv_all_incoming_shell(&kernel_id)?;
 
