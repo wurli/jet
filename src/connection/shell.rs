@@ -1,11 +1,11 @@
-use crate::frontend::frontend::ExecuteRequestOptions;
+use crate::connection::connection::ExecuteRequestOptions;
 use crate::msg::session::Session;
 use crate::msg::wire::execute_request::ExecuteRequest;
 use crate::msg::wire::is_complete_reply::IsCompleteReply;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
-use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
+use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 
 pub struct Shell {
@@ -14,7 +14,7 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn init(opts: &FrontendOptions, endpoint: String) -> Self {
+    pub fn init(opts: &ConnectionOptions, endpoint: String) -> Self {
         let socket = Socket::new(
             opts.session.clone(),
             opts.ctx.clone(),

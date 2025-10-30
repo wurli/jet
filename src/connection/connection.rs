@@ -1,16 +1,9 @@
-/*
- * dummy_frontend.rs
- *
- * Copyright (C) 2022-2024 Posit Software, PBC. All rights reserved.
- *
- */
-
 use std::path::PathBuf;
 
 use assert_matches::assert_matches;
 use rand::Rng;
 
-use crate::frontend::{
+use crate::connection::{
     control::Control, heartbeat::Heartbeat, iopub::Iopub, shell::Shell, stdin::Stdin,
 };
 use crate::msg::connection_file::ConnectionFile;
@@ -21,7 +14,7 @@ use crate::msg::wire::handshake_reply::HandshakeReply;
 use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message};
 
-pub struct FrontendOptions {
+pub struct ConnectionOptions {
     pub ctx: zmq::Context,
     pub session: Session,
     pub key: String,
@@ -35,7 +28,7 @@ pub struct ExecuteRequestOptions {
     pub allow_stdin: bool,
 }
 
-impl FrontendOptions {
+impl ConnectionOptions {
     pub fn init() -> Self {
         // Create a random HMAC key for signing messages.
         let key_bytes = rand::rng().random::<[u8; 16]>();
@@ -73,7 +66,7 @@ pub struct RegistrationSockets {
 }
 
 impl RegistrationSockets {
-    pub fn from(opts: &FrontendOptions) -> Self {
+    pub fn from(opts: &ConnectionOptions) -> Self {
         RegistrationSockets {
             registration: Socket::new(
                 opts.session.clone(),
@@ -87,7 +80,7 @@ impl RegistrationSockets {
         }
     }
 
-    pub fn to_file(&self, opts: &FrontendOptions, path: PathBuf) {
+    pub fn to_file(&self, opts: &ConnectionOptions, path: PathBuf) {
         let registration_file = RegistrationFile {
             transport: opts.transport.clone(),
             signature_scheme: opts.signature_scheme.clone(),
@@ -100,7 +93,7 @@ impl RegistrationSockets {
     }
 }
 
-pub struct Frontend {
+pub struct Connection {
     pub _control: Control,
     pub shell: Shell,
     pub iopub: Iopub,
@@ -109,14 +102,14 @@ pub struct Frontend {
     // session: Session,
 }
 
-impl Frontend {
-    pub fn start_with_connection_file(
+impl Connection {
+    pub fn init_with_connection_file(
         mut kernel_cmd: std::process::Command,
         path: PathBuf,
     ) -> Self {
         log::info!("Starting kernel using connection file");
 
-        let opts = FrontendOptions::init();
+        let opts = ConnectionOptions::init();
 
         let mut connection_file = ConnectionFile::new();
         connection_file.key = opts.key.clone();
@@ -143,13 +136,13 @@ impl Frontend {
         }
     }
 
-    pub fn start_with_registration_file(
+    pub fn init_with_registration_file(
         mut kernel_cmd: std::process::Command,
         path: PathBuf,
     ) -> Self {
         log::info!("Starting kernel using registration file");
 
-        let opts = FrontendOptions::init();
+        let opts = ConnectionOptions::init();
 
         let sockets = RegistrationSockets::from(&opts);
         sockets.to_file(&opts, path.into());

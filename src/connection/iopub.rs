@@ -2,7 +2,7 @@ use crate::msg::wire::execute_input::ExecuteInput;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::status::ExecutionState;
 use crate::msg::wire::stream::Stream;
-use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
+use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 use serde_json::Value;
 
@@ -11,7 +11,7 @@ pub struct Iopub {
 }
 
 impl Iopub {
-    pub fn init(opts: &FrontendOptions, endpoint: String) -> Self {
+    pub fn init(opts: &ConnectionOptions, endpoint: String) -> Self {
         let socket = Socket::new(
             opts.session.clone(),
             opts.ctx.clone(),

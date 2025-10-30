@@ -1,11 +1,11 @@
-use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
+use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 
 pub struct Heartbeat {
     socket: Socket,
 }
 
 impl Heartbeat {
-    pub fn init(opts: &FrontendOptions, endpoint: String) -> Self {
+    pub fn init(opts: &ConnectionOptions, endpoint: String) -> Self {
         let socket = Socket::new(
             opts.session.clone(),
             opts.ctx.clone(),

@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 
 use crate::{
-    frontend::{frontend::Frontend, shell::Shell, stdin::Stdin},
+    connection::{connection::Connection, shell::Shell, stdin::Stdin},
     kernel::{
         kernel_spec::{KernelSpec, KernelSpecFull},
         startup_method::StartupMethod,
@@ -172,10 +172,10 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     let frontend = match spec.get_startup_method() {
         StartupMethod::RegistrationFile => {
-            Frontend::start_with_registration_file(kernel_cmd, connection_file_path.into())
+            Connection::init_with_registration_file(kernel_cmd, connection_file_path.into())
         }
         StartupMethod::ConnectionFile => {
-            Frontend::start_with_connection_file(kernel_cmd, connection_file_path.into())
+            Connection::init_with_connection_file(kernel_cmd, connection_file_path.into())
         }
     };
 

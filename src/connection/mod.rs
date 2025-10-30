@@ -1,5 +1,5 @@
 pub mod control;
-pub mod frontend;
+pub mod connection;
 pub mod heartbeat;
 pub mod iopub;
 pub mod shell;

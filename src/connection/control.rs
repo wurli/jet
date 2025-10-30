@@ -1,5 +1,5 @@
 use crate::{
-    frontend::frontend::FrontendOptions,
+    connection::connection::ConnectionOptions,
     msg::{socket::Socket, wire::jupyter_message::Message},
 };
 
@@ -8,7 +8,7 @@ pub struct Control {
 }
 
 impl Control {
-    pub fn init(opts: &FrontendOptions, endpoint: String) -> Self {
+    pub fn init(opts: &ConnectionOptions, endpoint: String) -> Self {
         let socket = Socket::new(
             opts.session.clone(),
             opts.ctx.clone(),

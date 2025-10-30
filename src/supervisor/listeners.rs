@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use crate::frontend::heartbeat::Heartbeat;
-use crate::frontend::iopub::Iopub;
+use crate::connection::heartbeat::Heartbeat;
+use crate::connection::iopub::Iopub;
 use crate::supervisor::broker::Broker;
 
 /// Spawn a thread that continuously receives IOPub messages and routes them through the broker

@@ -1,12 +1,12 @@
-use carpo::frontend::frontend::{ExecuteRequestOptions, Frontend};
+use carpo::connection::connection::{ExecuteRequestOptions, Connection};
 use carpo::kernel::kernel_spec::KernelSpecFull;
 use carpo::kernel::startup_method::StartupMethod;
 
-use carpo::frontend::frontend;
+use carpo::connection::connection;
 use carpo::msg::wire::jupyter_message::Message;
 use carpo::msg::wire::status::ExecutionState;
 
-fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
+fn get_frontend(kernel: String) -> anyhow::Result<Connection> {
     let selected_kernel = KernelSpecFull::get_all()
         .into_iter()
         .filter_map(|x| x.spec.ok())
@@ -32,11 +32,11 @@ fn get_frontend(kernel: String) -> anyhow::Result<Frontend> {
     let frontend = match spec.get_startup_method() {
         StartupMethod::RegistrationFile => {
             println!("Starting with registration file");
-            Frontend::start_with_registration_file(kernel_cmd, connection_file_path.into())
+            Connection::init_with_registration_file(kernel_cmd, connection_file_path.into())
         }
         StartupMethod::ConnectionFile => {
             println!("Starting with connection file");
-            Frontend::start_with_connection_file(kernel_cmd, connection_file_path.into())
+            Connection::init_with_connection_file(kernel_cmd, connection_file_path.into())
         }
     };
 
@@ -106,7 +106,7 @@ fn test_ark_with_connection_file() {
 
     let _msg_id = frontend
         .shell
-        .send_execute_request(code, frontend::ExecuteRequestOptions::default());
+        .send_execute_request(code, connection::ExecuteRequestOptions::default());
     frontend.iopub.recv_busy();
 
     let input = frontend.iopub.recv_execute_input();
@@ -127,7 +127,7 @@ fn test_ipykernel() {
 
     let _msg_id = frontend
         .shell
-        .send_execute_request(code, frontend::ExecuteRequestOptions::default());
+        .send_execute_request(code, connection::ExecuteRequestOptions::default());
     frontend.iopub.recv_busy();
 
     let input = frontend.iopub.recv_execute_input();

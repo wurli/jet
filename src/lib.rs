@@ -1,6 +1,6 @@
 pub mod api;
 pub mod api_lua;
-pub mod frontend;
+pub mod connection;
 pub mod kernel;
 pub mod msg;
 pub mod supervisor;

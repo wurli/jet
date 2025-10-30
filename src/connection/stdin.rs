@@ -1,7 +1,7 @@
 use crate::msg::session::Session;
 use crate::msg::wire::input_reply::InputReply;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
-use crate::{frontend::frontend::FrontendOptions, msg::socket::Socket};
+use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 
 pub struct Stdin {
@@ -10,7 +10,7 @@ pub struct Stdin {
 }
 
 impl Stdin {
-    pub fn init(opts: &FrontendOptions, endpoint: String) -> Self {
+    pub fn init(opts: &ConnectionOptions, endpoint: String) -> Self {
         let socket = Socket::new(
             opts.session.clone(),
             opts.ctx.clone(),
