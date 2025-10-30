@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 
 /// Represents a reply from the kernel giving code inspection results
@@ -28,7 +28,7 @@ pub struct InspectReply {
     pub metadata: Value,
 }
 
-impl MessageType for InspectReply {
+impl Describe for InspectReply {
     fn message_type() -> String {
         String::from("inspect_reply")
     }

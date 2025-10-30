@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::Map;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 
 /// Represents a reply from the kernel listing open comms
@@ -29,7 +29,7 @@ pub struct CommInfoTargetName {
     pub target_name: String,
 }
 
-impl MessageType for CommInfoReply {
+impl Describe for CommInfoReply {
     fn message_type() -> String {
         String::from("comm_info_reply")
     }

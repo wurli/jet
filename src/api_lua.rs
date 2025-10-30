@@ -5,7 +5,7 @@ use mlua::prelude::*;
 
 use crate::api;
 use crate::msg::wire::jupyter_message::Message;
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 pub fn execute_code(
     lua: &Lua,
@@ -59,7 +59,7 @@ pub fn get_completions(lua: &Lua, (code, cursor_pos): (String, u32)) -> LuaResul
 ///     data = { <message data> }
 /// }
 /// ```
-fn to_lua<T: MessageType + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
+fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
     let _ = out.set("type", x.kind());
     let _ = out.set("data", lua.to_value(x).unwrap());

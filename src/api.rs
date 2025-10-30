@@ -4,7 +4,7 @@ use crate::{
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
         is_complete_request::IsCompleteRequest,
-        jupyter_message::{Message, MessageType},
+        jupyter_message::{Message, Describe},
         status::ExecutionState,
     },
     supervisor::frontend::Frontend,

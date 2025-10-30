@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a message the frontend to communicate kernel status. These
 /// messages are sent before/after handling every request.
@@ -18,7 +18,7 @@ pub struct KernelStatus {
     pub execution_state: ExecutionState,
 }
 
-impl MessageType for KernelStatus {
+impl Describe for KernelStatus {
     fn message_type() -> String {
         String::from("status")
     }

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::msg::wire::help_link::HelpLink;
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::kernel_info_reply;
 use crate::msg::wire::language_info::LanguageInfo;
@@ -44,7 +44,7 @@ pub struct KernelInfoReply {
     pub help_links: Vec<HelpLink>,
 }
 
-impl MessageType for KernelInfoReply {
+impl Describe for KernelInfoReply {
     fn message_type() -> String {
         String::from("kernel_info_reply")
     }

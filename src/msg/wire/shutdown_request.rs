@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents request from the frontend to the kernel to get information
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -17,7 +17,7 @@ pub struct ShutdownRequest {
     pub restart: bool,
 }
 
-impl MessageType for ShutdownRequest {
+impl Describe for ShutdownRequest {
     fn message_type() -> String {
         String::from("shutdown_request")
     }

@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request to open a custom comm
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -18,7 +18,7 @@ pub struct CommOpen {
     pub data: serde_json::Value,
 }
 
-impl MessageType for CommOpen {
+impl Describe for CommOpen {
     fn message_type() -> String {
         String::from("comm_open")
     }

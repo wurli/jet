@@ -68,7 +68,7 @@ pub struct JupyterMessage<T> {
 }
 
 /// Trait used to extract the wire message type from a Jupyter message
-pub trait MessageType {
+pub trait Describe {
     fn message_type() -> String;
     fn kind(&self) -> String {
         Self::message_type()
@@ -77,8 +77,8 @@ pub trait MessageType {
 
 /// Convenience trait for grouping traits that must be present on all Jupyter
 /// protocol messages
-pub trait ProtocolMessage: MessageType + Serialize + std::fmt::Debug + Clone {}
-impl<T> ProtocolMessage for T where T: MessageType + Serialize + std::fmt::Debug + Clone {}
+pub trait ProtocolMessage: Describe + Serialize + std::fmt::Debug + Clone {}
+impl<T> ProtocolMessage for T where T: Describe + Serialize + std::fmt::Debug + Clone {}
 
 /// List of all known/implemented messages
 #[derive(Debug, Clone)]

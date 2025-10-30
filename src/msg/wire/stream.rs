@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a message from the frontend to indicate stream output
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -20,7 +20,7 @@ pub struct StreamOutput {
     pub text: String,
 }
 
-impl MessageType for StreamOutput {
+impl Describe for StreamOutput {
     fn message_type() -> String {
         String::from("stream")
     }

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::msg::wire::exception::Exception;
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents an exception that occurred while executing code.
 /// This is sent to IOPub. Not to be confused with `ExecuteReplyException`
@@ -22,7 +22,7 @@ pub struct ExecuteError {
     pub exception: Exception,
 }
 
-impl MessageType for ExecuteError {
+impl Describe for ExecuteError {
     fn message_type() -> String {
         String::from("error")
     }

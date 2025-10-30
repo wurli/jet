@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 
 /// Represents a reply from an execute_request message
@@ -25,7 +25,7 @@ pub struct ExecuteReply {
     pub user_expressions: Value,
 }
 
-impl MessageType for ExecuteReply {
+impl Describe for ExecuteReply {
     fn message_type() -> String {
         String::from("execute_reply")
     }

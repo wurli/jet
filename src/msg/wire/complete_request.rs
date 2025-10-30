@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request from the frontend to show possibilities for completing
 /// a code fragment.
@@ -20,7 +20,7 @@ pub struct CompleteRequest {
     pub cursor_pos: u32,
 }
 
-impl MessageType for CompleteRequest {
+impl Describe for CompleteRequest {
     fn message_type() -> String {
         String::from("complete_request")
     }

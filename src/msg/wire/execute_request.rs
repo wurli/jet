@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request from the frontend to execute code
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -35,7 +35,7 @@ pub struct ExecuteRequest {
     pub stop_on_error: bool,
 }
 
-impl MessageType for ExecuteRequest {
+impl Describe for ExecuteRequest {
     fn message_type() -> String {
         String::from("execute_request")
     }

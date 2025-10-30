@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a reply to an is_complete_request.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,7 +36,7 @@ pub enum IsComplete {
     Unknown,
 }
 
-impl MessageType for IsCompleteReply {
+impl Describe for IsCompleteReply {
     fn message_type() -> String {
         String::from("is_complete_reply")
     }

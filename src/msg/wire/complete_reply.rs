@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 
 /// Represents completion possibilities for a code fragment supplied by the frontend.
@@ -31,7 +31,7 @@ pub struct CompleteReply {
     pub metadata: Value,
 }
 
-impl MessageType for CompleteReply {
+impl Describe for CompleteReply {
     fn message_type() -> String {
         String::from("complete_reply")
     }

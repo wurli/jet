@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::originator::Originator;
 // use crate::comm::base_comm::JsonRpcReply;
 // use crate::comm::ui_comm::UiFrontendRequest;
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request from the kernel to the frontend to prompt the user for
 /// input
@@ -35,7 +35,7 @@ pub struct ShellInputRequest {
     pub request: InputRequest,
 }
 
-impl MessageType for InputRequest {
+impl Describe for InputRequest {
     fn message_type() -> String {
         String::from("input_request")
     }

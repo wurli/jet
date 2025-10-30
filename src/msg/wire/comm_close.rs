@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request to close a Jupyter communication channel that was
 /// previously opened with a comm_open message.
@@ -19,7 +19,7 @@ pub struct CommClose {
     pub comm_id: String,
 }
 
-impl MessageType for CommClose {
+impl Describe for CommClose {
     fn message_type() -> String {
         String::from("comm_close")
     }

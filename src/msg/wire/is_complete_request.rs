@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request from the frontend to test a code fragment to for
 /// completeness.
@@ -17,7 +17,7 @@ pub struct IsCompleteRequest {
     pub code: String,
 }
 
-impl MessageType for IsCompleteRequest {
+impl Describe for IsCompleteRequest {
     fn message_type() -> String {
         String::from("is_complete_request")
     }

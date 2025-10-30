@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 
 /// Represents a reply to a handshake_request
@@ -18,7 +18,7 @@ pub struct HandshakeReply {
     pub status: Status,
 }
 
-impl MessageType for HandshakeReply {
+impl Describe for HandshakeReply {
     fn message_type() -> String {
         String::from("handshake_reply")
     }

@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request from the frontend to execute code
 ///
@@ -30,7 +30,7 @@ pub struct ExecuteResult {
     pub metadata: HashMap<String, Value>,
 }
 
-impl MessageType for ExecuteResult {
+impl Describe for ExecuteResult {
     fn message_type() -> String {
         String::from("execute_result")
     }

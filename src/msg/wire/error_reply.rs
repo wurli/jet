@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::msg::wire::exception::Exception;
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 
 /// Represents an error that occurred after processing a request on a
@@ -32,7 +32,7 @@ pub struct ErrorReply {
 /// its request type (e.g. foo_request => foo_reply). The message type
 /// implemented here is only a placeholder and should not appear in any
 /// serialized/deserialized message.
-impl MessageType for ErrorReply {
+impl Describe for ErrorReply {
     fn message_type() -> String {
         String::from("*error payload*")
     }

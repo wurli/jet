@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a request from the frontend to inspect code
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -23,7 +23,7 @@ pub struct InspectRequest {
     pub detail_level: u32,
 }
 
-impl MessageType for InspectRequest {
+impl Describe for InspectRequest {
     fn message_type() -> String {
         String::from("inspect_request")
     }

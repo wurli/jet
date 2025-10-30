@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DisplayData {
@@ -25,7 +25,7 @@ pub struct DisplayData {
     pub transient: HashMap<String, Value>,
 }
 
-impl MessageType for DisplayData {
+impl Describe for DisplayData {
     fn message_type() -> String {
         String::from("display_data")
     }

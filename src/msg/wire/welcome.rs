@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// An IOPub message used for handshaking by modern clients.
 /// See JEP 65: https://github.com/jupyter/enhancement-proposals/pull/65
@@ -28,7 +28,7 @@ pub struct Welcome {
 // Message type comes from copying what xeus and jupyter_kernel_test use:
 // https://github.com/jupyter-xeus/xeus-zmq/pull/31
 // https://github.com/jupyter/jupyter_kernel_test/blob/5f2c65271b48dc95fc75a9585cb1d6db0bb55557/jupyter_kernel_test/__init__.py#L449-L450
-impl MessageType for Welcome {
+impl Describe for Welcome {
     fn message_type() -> String {
         String::from("iopub_welcome")
     }

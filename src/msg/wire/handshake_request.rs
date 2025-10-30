@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a handshake_request
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,7 +29,7 @@ pub struct HandshakeRequest {
     pub hb_port: u16,
 }
 
-impl MessageType for HandshakeRequest {
+impl Describe for HandshakeRequest {
     fn message_type() -> String {
         String::from("handshake_request")
     }

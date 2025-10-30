@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateDisplayData {
@@ -36,7 +36,7 @@ pub struct TransientValue {
     pub data: Option<Value>,
 }
 
-impl MessageType for UpdateDisplayData {
+impl Describe for UpdateDisplayData {
     fn message_type() -> String {
         String::from("update_display_data")
     }

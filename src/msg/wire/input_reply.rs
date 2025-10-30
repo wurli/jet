@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a reply from the frontend to the kernel delivering the response
 /// to an `input_request`
@@ -18,7 +18,7 @@ pub struct InputReply {
     pub value: String,
 }
 
-impl MessageType for InputReply {
+impl Describe for InputReply {
     fn message_type() -> String {
         String::from("input_reply")
     }

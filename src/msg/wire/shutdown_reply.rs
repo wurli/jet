@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use super::jupyter_message::Status;
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents reply from the kernel to a shutdown request.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -21,7 +21,7 @@ pub struct ShutdownReply {
     pub restart: bool,
 }
 
-impl MessageType for ShutdownReply {
+impl Describe for ShutdownReply {
     fn message_type() -> String {
         String::from("shutdown_reply")
     }

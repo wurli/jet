@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Status;
 
 /// Represents an exception that occurred while executing code
@@ -18,7 +18,7 @@ pub struct InterruptReply {
     pub status: Status,
 }
 
-impl MessageType for InterruptReply {
+impl Describe for InterruptReply {
     fn message_type() -> String {
         String::from("interrupt_reply")
     }

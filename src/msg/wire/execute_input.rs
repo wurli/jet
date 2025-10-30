@@ -8,7 +8,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::msg::wire::jupyter_message::MessageType;
+use crate::msg::wire::jupyter_message::Describe;
 
 /// Represents a rebroadcast of code input; used by the IOPUb channel so all
 /// frontends can see what's being executed
@@ -21,7 +21,7 @@ pub struct ExecuteInput {
     pub execution_count: u32,
 }
 
-impl MessageType for ExecuteInput {
+impl Describe for ExecuteInput {
     fn message_type() -> String {
         String::from("execute_input")
     }
