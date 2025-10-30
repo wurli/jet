@@ -44,11 +44,12 @@ impl Frontend {
         KERNEL_MANAGER.get_or_init(|| KernelManager::new())
     }
 
-    pub fn start_kernel(spec_path: String, spec: KernelSpec) -> anyhow::Result<KernelId> {
+    pub fn start_kernel(spec_path: String, spec: KernelSpec) -> anyhow::Result<(KernelId, KernelInfo)> {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = uuid::Uuid::new_v4().to_string();
-        let connection_file_path = format!(".connection_files/carpo_connection_file_{}.json", kernel_id);
+        let connection_file_path =
+            format!(".connection_files/carpo_connection_file_{}.json", kernel_id);
         let kernel_cmd = spec.build_command(&connection_file_path);
 
         let connection = match spec.get_connection_method() {
@@ -72,20 +73,22 @@ impl Frontend {
             stdin: Mutex::new(connection.stdin),
         };
 
-        let kernel_info = Self::subscribe(
+        let kernel_info_reply = Self::subscribe(
             &input_channels,
             Arc::clone(&iopub_broker),
             Arc::clone(&shell_broker),
         );
 
+        let info = KernelInfo {
+            spec_path: spec_path,
+            display_name: spec.display_name.clone(),
+            banner: kernel_info_reply.banner.clone(),
+            language: kernel_info_reply.language_info.clone(),
+        };
+
         let kernel_state = KernelState {
             id: kernel_id.clone(),
-            info: KernelInfo {
-                spec_path: spec_path,
-                display_name: spec.display_name.clone(),
-                banner: kernel_info.banner.clone(),
-                language: kernel_info.language_info.clone(),
-            },
+            info: info.clone(),
             connection: input_channels,
             iopub_broker,
             shell_broker,
@@ -94,7 +97,7 @@ impl Frontend {
 
         Self::kernel_manager().add_kernel(kernel_id.clone(), kernel_state)?;
 
-        Ok(kernel_id)
+        Ok((kernel_id, info))
     }
 
     fn subscribe(

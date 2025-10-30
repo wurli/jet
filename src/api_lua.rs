@@ -21,6 +21,7 @@ pub fn execute_code(
             Some(Message::ExecuteError(msg)) => to_lua(lua, &msg.content),
             Some(Message::Stream(msg)) => to_lua(lua, &msg.content),
             Some(Message::InputRequest(msg)) => to_lua(lua, &msg.content),
+            Some(Message::DisplayData(msg)) => to_lua(lua, &msg.content),
             Some(msg) => Err(LuaError::external(format!(
                 "Received unexpected message type {}",
                 msg.kind()
@@ -84,9 +85,9 @@ pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
     Ok(kernels_table)
 }
 
-pub fn start_kernel(_lua: &Lua, spec_path: String) -> LuaResult<String> {
+pub fn start_kernel(lua: &Lua, spec_path: String) -> LuaResult<(String, LuaValue)> {
     match api::start_kernel(spec_path) {
-        Ok(kernel_id) => Ok(kernel_id),
+        Ok((kernel_id, info)) => Ok((kernel_id, lua.to_value(&info).unwrap())),
         Err(e) => Err(LuaError::external(e)),
     }
 }

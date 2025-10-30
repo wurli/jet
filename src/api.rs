@@ -18,7 +18,7 @@ pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
 }
 
-pub fn start_kernel(spec_path: String) -> anyhow::Result<KernelId> {
+pub fn start_kernel(spec_path: String) -> anyhow::Result<(KernelId, KernelInfo)> {
     let matched_spec = KernelSpecFull::get_all()
         .into_iter()
         .filter(|x| x.path.to_string_lossy() == spec_path)
@@ -77,7 +77,10 @@ pub fn execute_code(
             if let Ok(reply) = request.iopub.try_recv() {
                 log::trace!("Receiving message from iopub: {}", reply.describe());
                 match reply {
-                    Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::Stream(_) => {
+                    Message::ExecuteResult(_)
+                    | Message::ExecuteError(_)
+                    | Message::Stream(_)
+                    | Message::DisplayData(_) => {
                         return Some(reply);
                     }
                     Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
