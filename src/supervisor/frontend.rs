@@ -7,10 +7,7 @@ use assert_matches::assert_matches;
 
 use crate::{
     connection::{connection::Connection, shell::Shell, stdin::Stdin},
-    kernel::{
-        kernel_spec::{KernelSpec, KernelSpecFull},
-        startup_method::ConnectionMethod,
-    },
+    kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod},
     msg::wire::{
         jupyter_message::{Message, ProtocolMessage},
         kernel_info_reply::KernelInfoReply,
@@ -25,12 +22,18 @@ use crate::{
 
 // When we call lua functions we can only pass args from Lua. So, in order to access global state
 // within these funcions, we need to use static values.
-pub static KERNEL_INFO: OnceLock<(KernelSpec, KernelInfoReply)> = OnceLock::new();
+pub static KERNEL_INFO: OnceLock<KernelInfo> = OnceLock::new();
 pub static SHELL: OnceLock<Mutex<Shell>> = OnceLock::new();
 pub static STDIN: OnceLock<Mutex<Stdin>> = OnceLock::new();
 pub static IOPUB_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static SHELL_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static STDIN_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
+
+#[derive(Debug)]
+pub struct KernelInfo {
+    pub spec: KernelSpec,
+    pub info: KernelInfoReply,
+}
 
 /// When you send a request on stdin, any replies which come back from the kernel will be routed
 /// via these sockets. This allows you to handle replies _only_ related to the original request,
@@ -49,22 +52,7 @@ pub struct RequestChannels {
 pub struct Frontend {}
 
 impl Frontend {
-    pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
-        if let Some(info) = KERNEL_INFO.get() {
-            return Err(anyhow::anyhow!(
-                "Kernel '{}' is already running",
-                info.0.display_name
-            ));
-        };
-
-        let matched_spec = KernelSpecFull::get_all()
-            .into_iter()
-            .filter(|x| x.path.to_string_lossy() == spec_path)
-            .nth(0);
-
-        let spec_full = matched_spec.expect(&format!("No kernel found with name '{}'", spec_path));
-        let spec = spec_full.spec?;
-
+    pub fn start_kernel(spec: KernelSpec) -> anyhow::Result<String> {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let connection_file_path = String::from("carpo_connection_file.json");
@@ -97,7 +85,12 @@ impl Frontend {
         // Subscribe, possibly blocking until startup messages have been received
         let kernel_info = Self::subscribe();
 
-        KERNEL_INFO.get_or_init(|| (spec, kernel_info.clone()));
+        KERNEL_INFO
+            .set(KernelInfo {
+                spec: spec,
+                info: kernel_info.clone(),
+            })
+            .unwrap();
 
         Ok(kernel_info.banner)
     }
@@ -129,9 +122,9 @@ impl Frontend {
             _ => panic!("Expected kernel_info_reply but got {:#?}", reply),
         };
 
-        if let Some(version) = &kernel_info.protocol_version {
-            log::info!("Kernel is using protocol version: {}", version);
+        log::info!("Kernel info reply: {:#?}", kernel_info);
 
+        if let Some(version) = &kernel_info.protocol_version {
             // Receive the Welcome message for kernels which support it
             // Unfortunately, although JEP 65 is accepted, I can't find the version of the jupyter protocol
             // in which it becomes effective. Ark _does_ support it and is 5.4, ipython doesn't and is 5.3.
@@ -180,6 +173,10 @@ impl Frontend {
 
     pub fn stdin_broker() -> &'static Arc<Broker> {
         STDIN_BROKER.get_or_init(|| unreachable!())
+    }
+
+    pub fn kernel_info() -> Option<&'static KernelInfo> {
+        KERNEL_INFO.get()
     }
 
     pub fn provide_stdin(value: String) {
