@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::msg::wire::jupyter_message::Message;
+use crate::msg::wire::status::ExecutionState;
 
 /// Uniquely identifies a request-response cycle using the request's msg_id
 pub type RequestId = String;
@@ -97,27 +98,42 @@ impl Broker {
     /// Route a message to a specific request's channels
     /// Returns whether the message was successfully routed (and consumed)
     /// If routing fails, the message is buffered as an orphan
-    fn route_to_request(&self, parent_id: &str, msg: Message) -> bool {
+    fn route_to_request(&self, parent_id: &str, msg: Message) {
         let active = self.active_requests.read().unwrap();
 
         if let Some(ctx) = active.get(parent_id) {
-            let result = ctx.channel.send(msg);
+            match &msg {
+                // Unregister requests with iopub broker when we get an idle status
+                Message::Status(m) if m.content.execution_state == ExecutionState::Idle => {
+                    self.unregister_request(&String::from(parent_id), "received idle status");
+                }
+                // Unregister requests with shell broker when we get a reply
+                Message::InterruptReply(_)
+                | Message::CommInfoReply(_)
+                | Message::ExecuteReply(_)
+                | Message::ExecuteReplyException(_)
+                | Message::HandshakeReply(_)
+                | Message::InputReply(_)
+                | Message::InspectReply(_)
+                | Message::IsCompleteReply(_)
+                | Message::KernelInfoReply(_) => {
+                    self.unregister_request(&String::from(parent_id), "reply received");
+                }
+                _ => {}
+            }
 
-            if result.is_err() {
+            if let Err(_) = ctx.channel.send(msg) {
                 log::warn!(
                     "{}: Failed to send message to request {}: receiver dropped",
                     self.name,
                     parent_id
                 );
             }
-
-            true // Message was sent (or attempted to send)
         } else {
             // No matching request found - buffer as orphan
             drop(active); // Release lock before calling handle_orphan
             self.handle_orphan(msg);
-            true // Message consumed
-        }
+        };
     }
 
     /// Handle a message that doesn't match any active request
@@ -158,8 +174,13 @@ impl Broker {
     }
 
     /// Unregister a completed request
-    pub fn unregister_request(&self, request_id: &RequestId) {
-        log::trace!("{}: Unregistering request: {}", self.name, request_id);
+    pub fn unregister_request(&self, request_id: &RequestId, reason: &str) {
+        log::trace!(
+            "{}: Unregistering request {}: {:?}",
+            self.name,
+            request_id,
+            reason
+        );
         self.active_requests.write().unwrap().remove(request_id);
     }
 

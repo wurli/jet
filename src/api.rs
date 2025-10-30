@@ -1,4 +1,5 @@
 use assert_matches::assert_matches;
+use log::trace;
 
 use crate::{
     frontend::{frontend::Frontend, shell::Shell, stdin::Stdin},
@@ -9,6 +10,7 @@ use crate::{
     msg::wire::{
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
+        is_complete_request::IsCompleteRequest,
         jupyter_message::{Message, MessageType, ProtocolMessage},
         kernel_info_full_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
@@ -36,15 +38,16 @@ pub static IOPUB_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static SHELL_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static STDIN_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 
-struct Channels {
+struct RequestChannels {
+    id: String,
     iopub: Receiver<Message>,
     shell: Receiver<Message>,
     stdin: Receiver<Message>,
 }
 
-struct Frontend {}
+struct FrontendMeta {}
 
-impl Frontend {
+impl FrontendMeta {
     pub fn get() -> Self {
         Self {}
     }
@@ -69,7 +72,7 @@ impl Frontend {
         STDIN_BROKER.get_or_init(|| unreachable!())
     }
 
-    pub fn register_request<T: ProtocolMessage>(&self, message: T) -> Channels {
+    pub fn send_request<T: ProtocolMessage>(&self, message: T) -> RequestChannels {
         let request_id = self.lock_shell().send(message);
         let (iopub_tx, iopub_rx) = channel();
         let (stdin_tx, stdin_rx) = channel();
@@ -82,14 +85,26 @@ impl Frontend {
         self.shell_broker()
             .register_request(request_id.clone(), shell_tx);
 
-        return Channels {
+        return RequestChannels {
+            id: request_id,
             iopub: iopub_rx,
             shell: shell_rx,
             stdin: stdin_rx,
         };
     }
 
-    pub fn flush_shell(&self) {
+    pub fn is_request_active(&self, request_id: &String) -> bool {
+        self.shell_broker().is_active(request_id)
+    }
+
+    /// Blocks until a message is received on the shell channel
+    pub fn route_shell(&self) {
+        let msg = self.lock_shell().recv();
+        self.shell_broker().route(msg);
+    }
+
+    /// Drains the shell channel of all incoming messages and routes them
+    pub fn recv_all_incoming_shell(&self) {
         loop {
             match self.lock_shell().try_recv() {
                 Ok(msg) => self.shell_broker().route(msg),
@@ -99,7 +114,8 @@ impl Frontend {
         }
     }
 
-    pub fn flush_stdin(&self) {
+    /// Drains the stdin channel of all incoming messages and routes them
+    pub fn recv_all_incoming_stdin(&self) {
         loop {
             match self.lock_stdin().try_recv() {
                 Ok(msg) => self.stdin_broker().route(msg),
@@ -159,26 +175,27 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     listen_iopub(frontend.iopub, Arc::clone(&iopub_broker));
     // listen_shell(frontend.shell, Arc::clone(&shell_broker));
 
-    let kernel_info = subscribe(&frontend.shell, Arc::clone(&iopub_broker));
-
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Initialise global state
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // log::info!("{}", kernel_info.banner);
 
-    KERNEL_INFO.get_or_init(|| (spec, kernel_info.clone()));
     SHELL.get_or_init(|| Mutex::new(frontend.shell));
     STDIN.get_or_init(|| Mutex::new(frontend.stdin));
     IOPUB_BROKER.get_or_init(|| iopub_broker);
     SHELL_BROKER.get_or_init(|| shell_broker);
     STDIN_BROKER.get_or_init(|| stdin_broker);
 
+    let kernel_info = subscribe();
+
+    KERNEL_INFO.get_or_init(|| (spec, kernel_info.clone()));
+
     Ok(kernel_info.banner)
 }
 
 // TODO: write a framework for sending arbitrary requests and waiting for replies
 // and use it here.
-pub fn subscribe(shell: &Shell, iopub_broker: Arc<Broker>) -> KernelInfoReply {
+pub fn subscribe() -> KernelInfoReply {
     // Not all kernels implement the XPUB socket which provides the welcome message which confirms
     // the connection is established. PEP 65 recommends dealing with this by:
     // 1. Sending a kernel info request
@@ -186,28 +203,24 @@ pub fn subscribe(shell: &Shell, iopub_broker: Arc<Broker>) -> KernelInfoReply {
     // 3. Waiting for the welcome message if the protocol supports it
     //
     // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
-    let (request_tx, request_rx) = channel();
-    let (unparent_tx, unparent_rx) = channel();
+    let frontend = FrontendMeta::get();
+    let (welcome_tx, welcome_rx) = channel();
 
-    iopub_broker.register_request(String::from("unparented"), unparent_tx);
+    frontend
+        .iopub_broker()
+        .register_request(String::from("unparented"), welcome_tx);
 
-    log::info!("[kernel info] Sending the startup kernel info request");
-    let request_id = shell.send(KernelInfoRequest {});
+    log::info!("Sending kernel info request for subscription");
+    let request = frontend.send_request(KernelInfoRequest {});
 
-    iopub_broker.register_request(request_id, request_tx);
+    // Block until we get the info reply
+    frontend.route_shell();
+    let reply = request.shell.recv().unwrap();
+    log::info!("Received reply on the shell");
 
-    log::info!("[kernel info] Waiting for the busy status");
-    assert_matches!(request_rx.recv().unwrap(), Message::Status(data) => {
-        assert_eq!(data.content.execution_state, ExecutionState::Busy);
-    });
-
-    log::info!("[kernel info] Waiting for the reply on the shell");
-    let reply = shell.recv();
-
-    log::info!("[kernel info] Waiting for the reply on iopub");
     let kernel_info = match reply {
         Message::KernelInfoReply(reply) => reply.content,
-        _ => panic!("Expected kernel_info_reply, but got {:#?}", reply),
+        _ => panic!("Expected kernel_info_reply but got {:#?}", reply),
     };
 
     log::info!(
@@ -223,27 +236,24 @@ pub fn subscribe(shell: &Shell, iopub_broker: Arc<Broker>) -> KernelInfoReply {
         // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
         // IOPub messages that a server may send if we start to perform requests immediately (in
         // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
-        log::info!("[kernel info] Waiting for the welcome message");
-        assert_matches!(unparent_rx.recv().unwrap(), Message::Welcome(data) => {
+        assert_matches!(welcome_rx.recv().unwrap(), Message::Welcome(data) => {
             assert_eq!(data.content.subscription, String::from(""));
+            log::info!("Received the welcome message from the kernel");
         });
         // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
         // from the kernel right after the `Welcome` message.
-        log::info!("[kernel info] Waiting for the starting message");
-        assert_matches!(unparent_rx.recv().unwrap(), Message::Status(data) => {
+        assert_matches!(welcome_rx.recv().unwrap(), Message::Status(data) => {
             assert_eq!(data.content.execution_state, ExecutionState::Starting);
+            log::info!("Received the starting message from the kernel");
         });
     }
 
-    iopub_broker.unregister_request(&String::from("unparented"));
+    frontend.iopub_broker().unregister_request(
+        &String::from("unparented"),
+        "all expected startup messages received",
+    );
 
-    // Consume the Idle status
-    log::info!("[kernel info] Waiting for the idle status");
-    assert_matches!(request_rx.recv().unwrap(), Message::Status(data) => {
-        assert_eq!(data.content.execution_state, ExecutionState::Idle);
-    });
-
-    log::info!("[kernel info] Subscription complete");
+    log::info!("Subscription complete");
     kernel_info
 }
 
@@ -253,40 +263,19 @@ pub fn execute_code(
 ) -> impl Fn() -> Option<Message> {
     log::trace!("Sending execute request `{}`", code);
 
-    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
-    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+    let frontend = FrontendMeta::get();
 
     // First let's try routing any incoming messages from the shell.
-    if let Ok(msg) = SHELL
-        .get_or_init(|| unreachable!())
-        .lock()
-        .unwrap()
-        .try_recv()
-    {
-        shell_broker.route(msg);
-    };
+    frontend.recv_all_incoming_shell();
 
-    // Send the execute request and get its message ID
-    let request_id = {
-        let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-        shell.send(ExecuteRequest {
-            code: code.clone(),
-            silent: false,
-            store_history: true,
-            allow_stdin: true,
-            stop_on_error: true,
-            user_expressions: serde_json::to_value(user_expressions).unwrap(),
-        })
-    };
-
-    let (iopub_tx, iopub_rx) = channel();
-    let (shell_tx, shell_rx) = channel();
-    let (stdin_tx, stdin_rx) = channel();
-
-    shell_broker.register_request(request_id.clone(), shell_tx);
-    iopub_broker.register_request(request_id.clone(), iopub_tx);
-    stdin_broker.register_request(request_id.clone(), stdin_tx);
+    let request = frontend.send_request(ExecuteRequest {
+        code: code.clone(),
+        silent: false,
+        store_history: true,
+        allow_stdin: true,
+        stop_on_error: true,
+        user_expressions: serde_json::to_value(user_expressions).unwrap(),
+    });
 
     // We return a closure which can be repeatedly called as a function from Lua to get the
     // response from the kernel
@@ -296,27 +285,20 @@ pub fn execute_code(
         // ------------------------------------------------------------------------------------------------------------
         // If the request id is no longer registered as active then we've evidently already
         // received the reply and we can just return an empty result.
-        if !shell_broker.is_active(&request_id) {
+        if !frontend.is_request_active(&request.id) {
             return None;
         }
 
         // First let's try routing any incoming messages from the shell. In theory there should
         // be only one - the reply to this execute request. However there may be more, e.g.
         // late responses to previous requests.
-        if let Ok(msg) = SHELL
-            .get_or_init(|| unreachable!())
-            .lock()
-            .unwrap()
-            .try_recv()
-        {
-            shell_broker.route(msg);
-        };
+        frontend.recv_all_incoming_shell();
 
         loop {
             // --------------------------------------------------------------------------------------------------------
             // The request _is_ active, so let's see if there's anything on iopub
             // --------------------------------------------------------------------------------------------------------
-            if let Ok(reply) = iopub_rx.try_recv() {
+            if let Ok(reply) = request.iopub.try_recv() {
                 log::trace!("Receiving message from iopub: {}", reply.kind());
                 match reply {
                     // These are the message types we want to surface in Lua
@@ -327,7 +309,6 @@ pub fn execute_code(
                     // a busy status. However, I don't see any reason to confirm that the kernel is
                     // conforming to this pattern, so I'm not going to for now.
                     Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                        iopub_broker.unregister_request(&request_id);
                         return None;
                     }
                     // Here we can just add a sense check to ensure the code matches what we sent
@@ -350,16 +331,9 @@ pub fn execute_code(
             // --------------------------------------------------------------------------------------------------------
             // Since there was nothing on iopub, let's see if the kernel wants input from the user
             // --------------------------------------------------------------------------------------------------------
-            while let Ok(msg) = STDIN
-                .get_or_init(|| unreachable!())
-                .lock()
-                .unwrap()
-                .try_recv()
-            {
-                stdin_broker.route(msg);
-            }
+            frontend.recv_all_incoming_stdin();
 
-            if let Ok(msg) = stdin_rx.try_recv() {
+            if let Ok(msg) = request.stdin.try_recv() {
                 log::trace!("Received message from stdin: {}", msg.kind());
                 if let Message::InputRequest(_) = msg {
                     return Some(msg);
@@ -372,13 +346,14 @@ pub fn execute_code(
             // --------------------------------------------------------------------------------------------------------
             // Now let's check any shell replies related to this execute request. In theory there
             // should only be one, the final execute reply.
-            while let Ok(msg) = shell_rx.try_recv() {
+            while let Ok(msg) = request.shell.try_recv() {
                 match msg {
                     Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
                     _ => log::warn!("Unexpected reply received on shell: {}", msg.kind()),
                 }
-                shell_broker.unregister_request(&request_id);
-                stdin_broker.unregister_request(&request_id);
+                frontend
+                    .stdin_broker()
+                    .unregister_request(&request.id, "reply received");
                 return None;
             }
             // If we couldn't get a reply from the shell then let's try looping again
@@ -389,42 +364,22 @@ pub fn execute_code(
 pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message> {
     log::trace!("Sending is completion request `{}`", code);
 
-    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
-    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+    let frontend = FrontendMeta::get();
 
     // First let's try routing any incoming messages from the shell.
-    if let Ok(msg) = SHELL
-        .get_or_init(|| unreachable!())
-        .lock()
-        .unwrap()
-        .try_recv()
-    {
-        shell_broker.route(msg);
-    };
+    frontend.recv_all_incoming_shell();
 
-    // Send the execute request and get its message ID
-    let request_id = {
-        let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-        shell.send(CompleteRequest { code, cursor_pos })
-    };
-
-    let (iopub_tx, iopub_rx) = channel();
-    let (shell_tx, shell_rx) = channel();
-
-    shell_broker.register_request(request_id.clone(), shell_tx);
-    iopub_broker.register_request(request_id.clone(), iopub_tx);
+    let request = frontend.send_request(CompleteRequest { code, cursor_pos });
 
     let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
 
-    while let Ok(reply) = iopub_rx.recv() {
+    while let Ok(reply) = request.iopub.recv() {
         match reply {
             Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
                 log::trace!("Received iopub busy status for completion_request");
             }
             Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
                 log::trace!("Received iopub idle status for completion_request");
-                iopub_broker.unregister_request(&request_id);
                 break;
             }
             _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
@@ -434,9 +389,9 @@ pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message>
     // First let's try routing any incoming messages from the shell. In theory there should
     // be only one - the reply to this execute request. However there may be more, e.g.
     // late responses to previous requests.
-    shell_broker.route(SHELL.get_or_init(|| unreachable!()).lock().unwrap().recv());
+    frontend.route_shell();
 
-    if let Ok(reply) = shell_rx.recv() {
+    if let Ok(reply) = request.shell.recv() {
         match reply {
             Message::CompleteReply(_) => {
                 log::trace!("Received completion_reply on the shell");
@@ -444,8 +399,9 @@ pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message>
             }
             _ => log::warn!("Unexpected reply received on shell: {}", reply.kind()),
         }
-        shell_broker.unregister_request(&request_id);
-        stdin_broker.unregister_request(&request_id);
+        frontend
+            .stdin_broker()
+            .unregister_request(&request.id, "reply received");
     } else {
         log::warn!("Failed to obtain completion_reply from the shell");
     }
@@ -461,42 +417,21 @@ pub fn provide_stdin(value: String) {
 pub fn is_complete(code: String) -> anyhow::Result<Message> {
     log::trace!("Sending is complete request `{}`", code);
 
-    let iopub_broker = IOPUB_BROKER.get_or_init(|| unreachable!());
-    let shell_broker = SHELL_BROKER.get_or_init(|| unreachable!());
-    let stdin_broker = STDIN_BROKER.get_or_init(|| unreachable!());
+    let frontend = FrontendMeta::get();
 
-    // First let's try routing any incoming messages from the shell.
-    if let Ok(msg) = SHELL
-        .get_or_init(|| unreachable!())
-        .lock()
-        .unwrap()
-        .try_recv()
-    {
-        shell_broker.route(msg);
-    };
+    frontend.recv_all_incoming_shell();
 
-    // Send the execute request and get its message ID
-    let request_id = {
-        let shell = SHELL.get_or_init(|| unreachable!()).lock().unwrap();
-        shell.send_is_complete_request(&code)
-    };
-
-    let (iopub_tx, iopub_rx) = channel();
-    let (shell_tx, shell_rx) = channel();
-
-    shell_broker.register_request(request_id.clone(), shell_tx);
-    iopub_broker.register_request(request_id.clone(), iopub_tx);
+    let request = frontend.send_request(IsCompleteRequest { code: code.clone() });
 
     let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
 
-    while let Ok(reply) = iopub_rx.recv() {
+    while let Ok(reply) = request.iopub.recv() {
         match reply {
             Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
                 log::trace!("Received iopub busy status for is_complete_request");
             }
             Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
                 log::trace!("Received iopub idle status for is_complete_request");
-                iopub_broker.unregister_request(&request_id);
                 break;
             }
             _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
@@ -506,9 +441,9 @@ pub fn is_complete(code: String) -> anyhow::Result<Message> {
     // First let's try routing any incoming messages from the shell. In theory there should
     // be only one - the reply to this execute request. However there may be more, e.g.
     // late responses to previous requests.
-    shell_broker.route(SHELL.get_or_init(|| unreachable!()).lock().unwrap().recv());
+    frontend.route_shell();
 
-    if let Ok(reply) = shell_rx.recv() {
+    if let Ok(reply) = request.shell.recv() {
         match reply {
             Message::IsCompleteReply(_) => {
                 log::trace!("Received is_complete_reply on the shell");
@@ -516,8 +451,9 @@ pub fn is_complete(code: String) -> anyhow::Result<Message> {
             }
             _ => log::warn!("Unexpected reply received on shell: {}", reply.kind()),
         }
-        shell_broker.unregister_request(&request_id);
-        stdin_broker.unregister_request(&request_id);
+        frontend
+            .stdin_broker()
+            .unregister_request(&request.id, "reply received");
     } else {
         log::warn!("Failed to obtain is_complete_reply from the shell");
     }
