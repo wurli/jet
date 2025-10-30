@@ -59,17 +59,44 @@ M.cat_header = function(x, pad)
 end
 
 --- Execute code in the carpo kernel and print results until the execution finishes
-function M.execute(carpo, code, user_expressions)
+function M.execute(carpo, kernel_id_or_code, code_or_user_expressions, user_expressions_or_nil)
+    -- Support both old and new API: execute(carpo, code) and execute(carpo, kernel_id, code)
+    local kernel_id, code, user_expressions
+    
+    if type(kernel_id_or_code) == "string" and code_or_user_expressions ~= nil and type(code_or_user_expressions) == "string" then
+        -- New API: execute(carpo, kernel_id, code, user_expressions)
+        kernel_id = kernel_id_or_code
+        code = code_or_user_expressions
+        user_expressions = user_expressions_or_nil or {}
+    else
+        -- Old API: execute(carpo, code, user_expressions) - will fail at runtime if no kernel exists
+        kernel_id = nil
+        code = kernel_id_or_code
+        user_expressions = code_or_user_expressions or {}
+    end
+    
     M.cat_header(nil, "=")
-    print("Executing code")
-    if M.tbl_len(user_expressions or {}) > 0 then
+    if kernel_id then
+        print("Executing code in kernel: " .. kernel_id)
+    else
+        print("Executing code")
+    end
+    if M.tbl_len(user_expressions) > 0 then
         print("User expressions: " .. M.dump(user_expressions))
     end
     M.cat_header(nil, "=")
     print("```")
     print(code)
     print("```")
-    local callback = carpo.execute_code(code, user_expressions or {})
+    
+    local callback
+    if kernel_id then
+        callback = carpo.execute_code(kernel_id, code, user_expressions)
+    else
+        -- This will be an error with the new API, but we maintain backwards compatibility in the function signature
+        error("execute() requires a kernel_id parameter")
+    end
+    
     local i = 0
     while true do
         i = i + 1
@@ -81,14 +108,28 @@ function M.execute(carpo, code, user_expressions)
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"
             M.cat_header(("Sending dummy val '%s'"):format(stdin), ".")
-            carpo.provide_stdin(stdin)
+            if kernel_id then
+                carpo.provide_stdin(kernel_id, stdin)
+            else
+                carpo.provide_stdin(stdin)
+            end
         end
 
         os.execute("sleep 0.1")
     end
 end
 
-function M.is_complete(carpo, code)
+function M.is_complete(carpo, kernel_id_or_code, code_or_nil)
+    local kernel_id, code
+    
+    if code_or_nil ~= nil then
+        kernel_id = kernel_id_or_code
+        code = code_or_nil
+    else
+        kernel_id = nil
+        code = kernel_id_or_code
+    end
+    
     M.cat_header(nil, "=")
     print("Testing completeness")
     M.cat_header(nil, "=")
@@ -96,10 +137,26 @@ function M.is_complete(carpo, code)
     print(code)
     print("```")
 
-    print(M.dump(carpo.is_complete(code)))
+    if kernel_id then
+        print(M.dump(carpo.is_complete(kernel_id, code)))
+    else
+        error("is_complete() requires a kernel_id parameter")
+    end
 end
 
-function M.get_completions(carpo, code, cursor_pos)
+function M.get_completions(carpo, kernel_id_or_code, code_or_cursor_pos, cursor_pos_or_nil)
+    local kernel_id, code, cursor_pos
+    
+    if cursor_pos_or_nil ~= nil then
+        kernel_id = kernel_id_or_code
+        code = code_or_cursor_pos
+        cursor_pos = cursor_pos_or_nil
+    else
+        kernel_id = nil
+        code = kernel_id_or_code
+        cursor_pos = code_or_cursor_pos
+    end
+    
     M.cat_header(nil, "=")
     print("Getting completions")
     M.cat_header(nil, "=")
@@ -108,7 +165,11 @@ function M.get_completions(carpo, code, cursor_pos)
     print(code)
     print("```")
 
-    print(M.dump(carpo.get_completions(code, cursor_pos)))
+    if kernel_id then
+        print(M.dump(carpo.get_completions(kernel_id, code, cursor_pos)))
+    else
+        error("get_completions() requires a kernel_id parameter")
+    end
 end
 
 return M

@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use crate::kernel::discover::discover_kernels;
 use crate::kernel::startup_method::ConnectionMethod;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum InterruptMode {
     Signal,
@@ -18,7 +18,7 @@ pub enum InterruptMode {
 
 /// docs: https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs
 /// spec: https://github.com/jupyter/enhancement-proposals/blob/master/105-kernelspec-spec/kernelspec.schema.json
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KernelSpec {
     /// A list of command line arguments used to start the kernel. The text {connection_file} in
     /// any argument will be replaced with the path to the connection file.

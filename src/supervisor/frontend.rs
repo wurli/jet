@@ -6,7 +6,7 @@ use std::sync::{
 use assert_matches::assert_matches;
 
 use crate::{
-    connection::{connection::Connection, shell::Shell, stdin::Stdin},
+    connection::connection::Connection,
     kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod},
     msg::wire::{
         jupyter_message::{Message, ProtocolMessage},
@@ -17,23 +17,11 @@ use crate::{
     supervisor::{
         broker::Broker,
         listeners::{listen_iopub, loop_heartbeat},
+        manager::{KernelConnection, KernelId, KernelInfo, KernelManager, KernelState},
     },
 };
 
-// When we call lua functions we can only pass args from Lua. So, in order to access global state
-// within these funcions, we need to use static values.
-pub static KERNEL_INFO: OnceLock<KernelInfo> = OnceLock::new();
-pub static SHELL: OnceLock<Mutex<Shell>> = OnceLock::new();
-pub static STDIN: OnceLock<Mutex<Stdin>> = OnceLock::new();
-pub static IOPUB_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
-pub static SHELL_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
-pub static STDIN_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
-
-#[derive(Debug)]
-pub struct KernelInfo {
-    pub spec: KernelSpec,
-    pub info: KernelInfoReply,
-}
+pub static KERNEL_MANAGER: OnceLock<KernelManager> = OnceLock::new();
 
 /// When you send a request on stdin, any replies which come back from the kernel will be routed
 /// via these sockets. This allows you to handle replies _only_ related to the original request,
@@ -52,10 +40,15 @@ pub struct RequestChannels {
 pub struct Frontend {}
 
 impl Frontend {
-    pub fn start_kernel(spec: KernelSpec) -> anyhow::Result<String> {
+    pub fn kernel_manager() -> &'static KernelManager {
+        KERNEL_MANAGER.get_or_init(|| KernelManager::new())
+    }
+
+    pub fn start_kernel(spec: KernelSpec) -> anyhow::Result<KernelId> {
         log::info!("Using kernel '{}'", spec.display_name);
 
-        let connection_file_path = String::from("carpo_connection_file.json");
+        let kernel_id = uuid::Uuid::new_v4().to_string();
+        let connection_file_path = format!("carpo_connection_file_{}.json", kernel_id);
         let kernel_cmd = spec.build_command(&connection_file_path);
 
         let connection = match spec.get_connection_method() {
@@ -68,52 +61,59 @@ impl Frontend {
         };
 
         loop_heartbeat(connection.heartbeat);
-        let iopub_broker = Arc::new(Broker::new(String::from("IOPub")));
-        let shell_broker = Arc::new(Broker::new(String::from("Shell")));
-        let stdin_broker = Arc::new(Broker::new(String::from("Control")));
+        let iopub_broker = Arc::new(Broker::new(format!("IOPub-{}", kernel_id)));
+        let shell_broker = Arc::new(Broker::new(format!("Shell-{}", kernel_id)));
+        let stdin_broker = Arc::new(Broker::new(format!("Stdin-{}", kernel_id)));
 
-        // Start the iopub/shell processing threads
         listen_iopub(connection.iopub, Arc::clone(&iopub_broker));
 
-        // Initialise global state
-        SHELL.get_or_init(|| Mutex::new(connection.shell));
-        STDIN.get_or_init(|| Mutex::new(connection.stdin));
-        IOPUB_BROKER.get_or_init(|| iopub_broker);
-        SHELL_BROKER.get_or_init(|| shell_broker);
-        STDIN_BROKER.get_or_init(|| stdin_broker);
+        let kernel_connection = KernelConnection {
+            shell: Mutex::new(connection.shell),
+            stdin: Mutex::new(connection.stdin),
+        };
 
-        // Subscribe, possibly blocking until startup messages have been received
-        let kernel_info = Self::subscribe();
+        let kernel_info = Self::subscribe(
+            &kernel_connection,
+            Arc::clone(&iopub_broker),
+            Arc::clone(&shell_broker),
+        );
 
-        KERNEL_INFO
-            .set(KernelInfo {
-                spec: spec,
+        let kernel_state = KernelState {
+            id: kernel_id.clone(),
+            info: KernelInfo {
+                spec,
                 info: kernel_info.clone(),
-            })
-            .unwrap();
+            },
+            connection: kernel_connection,
+            iopub_broker,
+            shell_broker,
+            stdin_broker,
+        };
 
-        Ok(kernel_info.banner)
+        Self::kernel_manager().add_kernel(kernel_id.clone(), kernel_state)?;
+
+        Ok(kernel_id)
     }
 
-    /// Receive a welcome message if the kernel supports it
-    ///
-    /// Not all kernels implement the XPUB socket which provides the welcome message which confirms
-    /// the connection is established. PEP 65 recommends dealing with this by:
-    /// 1. Sending a kernel info request
-    /// 2. Checking the protocol version in the reply
-    /// 3. Waiting for the welcome message if the protocol supports it
-    ///
-    /// Docs: <https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations>
-    fn subscribe() -> KernelInfoReply {
+    fn subscribe(
+        connection: &KernelConnection,
+        iopub_broker: Arc<Broker>,
+        shell_broker: Arc<Broker>,
+    ) -> KernelInfoReply {
         let (welcome_tx, welcome_rx) = channel();
 
-        Self::iopub_broker().register_request(String::from("unparented"), welcome_tx);
+        iopub_broker.register_request(String::from("unparented"), welcome_tx);
 
         log::info!("Sending kernel info request for subscription");
-        let request = Self::send_request(KernelInfoRequest {});
+        let request = Self::send_request_with_connection(
+            connection,
+            KernelInfoRequest {},
+            Arc::clone(&iopub_broker),
+            Arc::clone(&shell_broker),
+            Arc::new(Broker::new(String::from("Stdin-temp"))),
+        );
 
-        // Block until we get the info reply
-        Self::route_shell_reply(&request.id);
+        Self::route_shell_reply_with_connection(connection, Arc::clone(&shell_broker), &request.id);
         let reply = request.shell.recv().unwrap();
         log::info!("Received reply on the shell");
 
@@ -125,20 +125,11 @@ impl Frontend {
         log::info!("Kernel info reply: {:#?}", kernel_info);
 
         if let Some(version) = &kernel_info.protocol_version {
-            // Receive the Welcome message for kernels which support it
-            // Unfortunately, although JEP 65 is accepted, I can't find the version of the jupyter protocol
-            // in which it becomes effective. Ark _does_ support it and is 5.4, ipython doesn't and is 5.3.
             if version >= &String::from("5.4") {
-                // Immediately block until we've received the IOPub welcome message from the XPUB server side
-                // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
-                // IOPub messages that a server may send if we start to perform requests immediately (in
-                // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
                 assert_matches!(welcome_rx.recv().unwrap(), Message::Welcome(data) => {
                     assert_eq!(data.content.subscription, String::from(""));
                     log::info!("Received the welcome message from the kernel");
                 });
-                // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
-                // from the kernel right after the `Welcome` message.
                 assert_matches!(welcome_rx.recv().unwrap(), Message::Status(data) => {
                     assert_eq!(data.content.execution_state, ExecutionState::Starting);
                     log::info!("Received the starting message from the kernel");
@@ -146,7 +137,7 @@ impl Frontend {
             }
         }
 
-        Self::iopub_broker().unregister_request(
+        iopub_broker.unregister_request(
             &String::from("unparented"),
             "all expected startup messages received",
         );
@@ -155,100 +146,135 @@ impl Frontend {
         kernel_info
     }
 
-    pub fn lock_shell() -> std::sync::MutexGuard<'static, Shell> {
-        SHELL.get_or_init(|| unreachable!()).lock().unwrap()
+    pub fn get_kernel_info(kernel_id: &KernelId) -> anyhow::Result<KernelInfo> {
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            KernelInfo {
+                spec: kernel.info.spec.clone(),
+                info: kernel.info.info.clone(),
+            }
+        })
     }
 
-    pub fn lock_stdin() -> std::sync::MutexGuard<'static, Stdin> {
-        STDIN.get_or_init(|| unreachable!()).lock().unwrap()
+    pub fn provide_stdin(kernel_id: &KernelId, value: String) -> anyhow::Result<()> {
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            kernel.connection.stdin.lock().unwrap().send_input_reply(value);
+        })
     }
 
-    pub fn iopub_broker() -> &'static Arc<Broker> {
-        IOPUB_BROKER.get_or_init(|| unreachable!())
-    }
+    pub fn send_request<T: ProtocolMessage>(
+        kernel_id: &KernelId,
+        message: T,
+    ) -> anyhow::Result<RequestChannels> {
+        let kernel = Self::kernel_manager()
+            .get_kernel(kernel_id)
+            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
 
-    pub fn shell_broker() -> &'static Arc<Broker> {
-        SHELL_BROKER.get_or_init(|| unreachable!())
-    }
-
-    pub fn stdin_broker() -> &'static Arc<Broker> {
-        STDIN_BROKER.get_or_init(|| unreachable!())
-    }
-
-    pub fn kernel_info() -> Option<&'static KernelInfo> {
-        KERNEL_INFO.get()
-    }
-
-    pub fn provide_stdin(value: String) {
-        Self::lock_stdin().send_input_reply(value);
-    }
-
-    /// Send a request on the shell, register it with the message brokers, and return channels that
-    /// will receive any replies.
-    pub fn send_request<T: ProtocolMessage>(message: T) -> RequestChannels {
-        let request_id = Self::lock_shell().send(message);
+        let request_id = kernel.connection.shell.lock().unwrap().send(message);
         let (iopub_tx, iopub_rx) = channel();
         let (stdin_tx, stdin_rx) = channel();
         let (shell_tx, shell_rx) = channel();
 
-        Self::iopub_broker().register_request(request_id.clone(), iopub_tx);
-        Self::stdin_broker().register_request(request_id.clone(), stdin_tx);
-        Self::shell_broker().register_request(request_id.clone(), shell_tx);
+        kernel.iopub_broker.register_request(request_id.clone(), iopub_tx);
+        kernel.stdin_broker.register_request(request_id.clone(), stdin_tx);
+        kernel.shell_broker.register_request(request_id.clone(), shell_tx);
 
-        return RequestChannels {
+        Ok(RequestChannels {
             id: request_id,
             iopub: iopub_rx,
             shell: shell_rx,
             stdin: stdin_rx,
-        };
+        })
     }
 
-    /// Check if a reply to `request_id` has been received yet
-    pub fn is_request_active(request_id: &String) -> bool {
-        Self::shell_broker().is_active(request_id)
+    fn send_request_with_connection<T: ProtocolMessage>(
+        connection: &KernelConnection,
+        message: T,
+        iopub_broker: Arc<Broker>,
+        shell_broker: Arc<Broker>,
+        stdin_broker: Arc<Broker>,
+    ) -> RequestChannels {
+        let request_id = connection.shell.lock().unwrap().send(message);
+        let (iopub_tx, iopub_rx) = channel();
+        let (stdin_tx, stdin_rx) = channel();
+        let (shell_tx, shell_rx) = channel();
+
+        iopub_broker.register_request(request_id.clone(), iopub_tx);
+        stdin_broker.register_request(request_id.clone(), stdin_tx);
+        shell_broker.register_request(request_id.clone(), shell_tx);
+
+        RequestChannels {
+            id: request_id,
+            iopub: iopub_rx,
+            shell: shell_rx,
+            stdin: stdin_rx,
+        }
     }
 
-    /// Block until a reply to a given message is received on the shell. This can be helpful, e.g.
-    /// for long-running operations where the shell reply contains the information we want to
-    /// surface to the user.
-    pub fn route_shell_reply(request_id: &String) {
+    pub fn is_request_active(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<bool> {
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            kernel.shell_broker.is_active(request_id)
+        })
+    }
+
+    pub fn route_shell_reply(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<()> {
+        let kernel = Self::kernel_manager()
+            .get_kernel(kernel_id)
+            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
+
+        Self::route_shell_reply_with_connection(&kernel.connection, kernel.shell_broker.clone(), request_id);
+        Ok(())
+    }
+
+    fn route_shell_reply_with_connection(
+        connection: &KernelConnection,
+        shell_broker: Arc<Broker>,
+        request_id: &String,
+    ) {
         loop {
-            let msg = Self::lock_shell().recv();
+            let msg = connection.shell.lock().unwrap().recv();
             let is_reply = match msg.parent_id() {
                 Some(parent_id) => *request_id == parent_id,
                 None => *request_id == String::from("unparented"),
             };
-            Self::shell_broker().route(msg);
+            shell_broker.route(msg);
             if is_reply {
                 break;
             }
         }
     }
 
-    // pub fn route_shell() {
-    //     let msg = Self::lock_shell().recv();
-    //     Self::shell_broker().route(msg);
-    // }
+    pub fn recv_all_incoming_shell(kernel_id: &KernelId) -> anyhow::Result<()> {
+        let kernel = Self::kernel_manager()
+            .get_kernel(kernel_id)
+            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
 
-    /// Drain the shell channel of all incoming messages and routes them
-    pub fn recv_all_incoming_shell() {
         loop {
-            match Self::lock_shell().try_recv() {
-                Ok(msg) => Self::shell_broker().route(msg),
-                // TODO: distinguish between no messages and error
+            match kernel.connection.shell.lock().unwrap().try_recv() {
+                Ok(msg) => kernel.shell_broker.route(msg),
                 Err(_) => break,
             }
         }
+        Ok(())
     }
 
-    /// Drain the stdin channel of all incoming messages and routes them
-    pub fn recv_all_incoming_stdin() {
+    pub fn recv_all_incoming_stdin(kernel_id: &KernelId) -> anyhow::Result<()> {
+        let kernel = Self::kernel_manager()
+            .get_kernel(kernel_id)
+            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
+
         loop {
-            match Self::lock_stdin().try_recv() {
-                Ok(msg) => Self::stdin_broker().route(msg),
-                // TODO: distinguish between no messages and error
+            match kernel.connection.stdin.lock().unwrap().try_recv() {
+                Ok(msg) => kernel.stdin_broker.route(msg),
                 Err(_) => break,
             }
         }
+        Ok(())
+    }
+
+    pub fn get_stdin_broker(kernel_id: &KernelId) -> anyhow::Result<Arc<Broker>> {
+        let kernel = Self::kernel_manager()
+            .get_kernel(kernel_id)
+            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
+        Ok(Arc::clone(&kernel.stdin_broker))
     }
 }
