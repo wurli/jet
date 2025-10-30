@@ -1,3 +1,4 @@
 /target
 connection_file*.json
 carpo.log
+carpo_connection_file*.json

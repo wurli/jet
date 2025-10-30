@@ -59,17 +59,21 @@ M.cat_header = function(x, pad)
 end
 
 --- Execute code in the carpo kernel and print results until the execution finishes
-function M.execute(carpo, code, user_expressions)
+function M.execute(carpo, kernel_id, code, user_expressions)
+    user_expressions = user_expressions or {}
+
     M.cat_header(nil, "=")
-    print("Executing code")
-    if M.tbl_len(user_expressions or {}) > 0 then
+    print("Executing code in kernel: " .. kernel_id)
+    if M.tbl_len(user_expressions) > 0 then
         print("User expressions: " .. M.dump(user_expressions))
     end
     M.cat_header(nil, "=")
     print("```")
     print(code)
     print("```")
-    local callback = carpo.execute_code(code, user_expressions or {})
+
+    local callback = carpo.execute_code(kernel_id, code, user_expressions)
+
     local i = 0
     while true do
         i = i + 1
@@ -81,14 +85,28 @@ function M.execute(carpo, code, user_expressions)
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"
             M.cat_header(("Sending dummy val '%s'"):format(stdin), ".")
-            carpo.provide_stdin(stdin)
+            if kernel_id then
+                carpo.provide_stdin(kernel_id, stdin)
+            else
+                carpo.provide_stdin(stdin)
+            end
         end
 
         os.execute("sleep 0.1")
     end
 end
 
-function M.is_complete(carpo, code)
+function M.is_complete(carpo, kernel_id_or_code, code_or_nil)
+    local kernel_id, code
+
+    if code_or_nil ~= nil then
+        kernel_id = kernel_id_or_code
+        code = code_or_nil
+    else
+        kernel_id = nil
+        code = kernel_id_or_code
+    end
+
     M.cat_header(nil, "=")
     print("Testing completeness")
     M.cat_header(nil, "=")
@@ -96,10 +114,14 @@ function M.is_complete(carpo, code)
     print(code)
     print("```")
 
-    print(M.dump(carpo.is_complete(code)))
+    if kernel_id then
+        print(M.dump(carpo.is_complete(kernel_id, code)))
+    else
+        error("is_complete() requires a kernel_id parameter")
+    end
 end
 
-function M.get_completions(carpo, code, cursor_pos)
+function M.get_completions(carpo, kernel_id, code, cursor_pos)
     M.cat_header(nil, "=")
     print("Getting completions")
     M.cat_header(nil, "=")
@@ -108,7 +130,11 @@ function M.get_completions(carpo, code, cursor_pos)
     print(code)
     print("```")
 
-    print(M.dump(carpo.get_completions(code, cursor_pos)))
+    if kernel_id then
+        print(M.dump(carpo.get_completions(kernel_id, code, cursor_pos)))
+    else
+        error("get_completions() requires a kernel_id parameter")
+    end
 end
 
 return M

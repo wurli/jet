@@ -9,9 +9,9 @@ use crate::msg::wire::jupyter_message::Describe;
 
 pub fn execute_code(
     lua: &Lua,
-    (code, user_expressions): (String, HashMap<String, String>),
+    (kernel_id, code, user_expressions): (String, String, HashMap<String, String>),
 ) -> LuaResult<LuaFunction> {
-    let callback = api::execute_code(code, user_expressions);
+    let callback = api::execute_code(kernel_id, code, user_expressions);
 
     lua.create_function_mut(move |lua, (): ()| -> LuaResult<LuaTable> {
         let result = callback();
@@ -30,8 +30,8 @@ pub fn execute_code(
     })
 }
 
-pub fn is_complete(lua: &Lua, code: String) -> LuaResult<LuaTable> {
-    match api::is_complete(code) {
+pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaTable> {
+    match api::is_complete(kernel_id, code) {
         Ok(Message::IsCompleteReply(msg)) => to_lua(lua, &msg.content),
         Ok(msg) => Err(LuaError::external(format!(
             "Received unexpected message type {}",
@@ -41,8 +41,11 @@ pub fn is_complete(lua: &Lua, code: String) -> LuaResult<LuaTable> {
     }
 }
 
-pub fn get_completions(lua: &Lua, (code, cursor_pos): (String, u32)) -> LuaResult<LuaTable> {
-    match api::get_completions(code, cursor_pos) {
+pub fn get_completions(
+    lua: &Lua,
+    (kernel_id, code, cursor_pos): (String, String, u32),
+) -> LuaResult<LuaTable> {
+    match api::get_completions(kernel_id, code, cursor_pos) {
         Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
         Ok(msg) => Err(LuaError::external(format!(
             "Received unexpected message type {}",
@@ -52,13 +55,6 @@ pub fn get_completions(lua: &Lua, (code, cursor_pos): (String, u32)) -> LuaResul
     }
 }
 
-/// Converts a message into a Lua table like this:
-/// ``` lua
-/// {
-///     type = "<message type>",
-///     data = { <message data> }
-/// }
-/// ```
 fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
     let _ = out.set("type", x.kind());
@@ -66,8 +62,8 @@ fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTabl
     Ok(out)
 }
 
-pub fn provide_stdin(_: &Lua, value: String) -> LuaResult<()> {
-    api::provide_stdin(value);
+pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult<()> {
+    api::provide_stdin(kernel_id, value).into_lua_err()?;
     Ok(())
 }
 
@@ -90,7 +86,18 @@ pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
 
 pub fn start_kernel(_lua: &Lua, spec_path: String) -> LuaResult<String> {
     match api::start_kernel(spec_path) {
-        Ok(result) => Ok(result),
+        Ok(kernel_id) => Ok(kernel_id),
         Err(e) => Err(LuaError::external(e)),
     }
+}
+
+pub fn list_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
+    let kernels = api::list_kernels();
+    let table = lua.create_table()?;
+
+    for (k, v) in kernels.iter() {
+        table.set(String::from(k), lua.to_value(v).unwrap())?;
+    }
+
+    Ok(table)
 }
