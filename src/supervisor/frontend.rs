@@ -177,8 +177,11 @@ impl Frontend {
     fn request_shutdown_impl(kernel_id: &KernelId, restart: bool) -> anyhow::Result<Message> {
         Self::kernel_manager()
             .with_kernel(kernel_id, |kernel| {
-                let control = kernel.connection.control.lock().unwrap();
-                let request_id = control.send(ShutdownRequest { restart });
+                let request_id = {
+                    let control = kernel.connection.control.lock().unwrap();
+                    let request_id = control.send(ShutdownRequest { restart });
+                    request_id
+                };
                 log::info!(
                     "Sent shutdown_request <{}>",
                     request_id.chars().take(8).collect::<String>()
@@ -193,22 +196,27 @@ impl Frontend {
                     .control_broker
                     .register_request(&request_id, control_tx);
 
+                log::info!("Entering shutdown reply wait loop");
                 loop {
                     match iopub_rx.try_recv() {
-                        Ok(msg @ Message::ShutdownReply(_)) => {
-                            log::trace!("Received shutdown_reply");
-                            return Ok(msg);
-                        }
-                        Ok(Message::Status(msg))
-                            if msg.content.execution_state == ExecutionState::Idle =>
-                        {
-                            kernel
-                                .control_broker
-                                .unregister_request(&request_id, "idle status received");
-                            log::trace!("Received idle status; breaking");
-                        }
-                        Ok(other) => {
-                            log::trace!("Received unexpeted message {}", other.describe())
+                        Ok(msg) => {
+                            match msg {
+                                Message::ShutdownReply(_) => {
+                                    log::info!("Received shutdown_reply on iopub (non-standard)");
+                                    return Ok(msg);
+                                }
+                                Message::Status(status_msg)
+                                    if status_msg.content.execution_state == ExecutionState::Idle =>
+                                {
+                                    kernel
+                                        .iopub_broker
+                                        .unregister_request(&request_id, "idle status received");
+                                    log::trace!("Received idle status");
+                                }
+                                _ => {
+                                    log::trace!("Received unexpected message on iopub: {}", msg.describe())
+                                }
+                            }
                         }
                         Err(_) => {}
                     }
@@ -225,7 +233,7 @@ impl Frontend {
 
                     match control_rx.try_recv() {
                         Ok(reply @ Message::ShutdownReply(_)) => {
-                            log::info!("Received shutdown_reply");
+                            log::info!("Received shutdown_reply on control (standard)");
                             kernel
                                 .control_broker
                                 .unregister_request(&request_id, "reply received");
@@ -243,6 +251,8 @@ impl Frontend {
                         }
                         Err(_) => {}
                     }
+
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             })
             .unwrap()

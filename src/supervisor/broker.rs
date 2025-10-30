@@ -120,7 +120,8 @@ impl Broker {
                     | Message::InputReply(_)
                     | Message::InspectReply(_)
                     | Message::IsCompleteReply(_)
-                    | Message::KernelInfoReply(_) => Some("reply received on shell"),
+                    | Message::KernelInfoReply(_)
+                    | Message::ShutdownReply(_) => Some("reply received"),
                     _ => None,
                 };
 
