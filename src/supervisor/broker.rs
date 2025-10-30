@@ -125,10 +125,13 @@ impl Broker {
                     _ => None,
                 };
 
+                let kind = msg.kind();
+
                 if let Err(_) = request.channel.send(msg) {
                     log::warn!(
-                        "{}: Failed to send message to request {}: receiver dropped",
+                        "{}: Failed to route {} for request {}: receiver dropped",
                         self.name,
+                        kind,
                         parent_id
                     );
                 }

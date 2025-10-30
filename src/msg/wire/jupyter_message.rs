@@ -11,7 +11,7 @@ use serde::Serialize;
 use super::display_data::DisplayData;
 use super::handshake_reply::HandshakeReply;
 use super::handshake_request::HandshakeRequest;
-use super::kernel_info_full_reply::KernelInfoReply;
+use super::kernel_info_reply::KernelInfoReply;
 use super::stream::StreamOutput;
 use super::update_display_data::UpdateDisplayData;
 use super::welcome::Welcome;

@@ -13,7 +13,7 @@ use crate::{
     },
     msg::wire::{
         jupyter_message::{Message, ProtocolMessage},
-        kernel_info_full_reply::KernelInfoReply,
+        kernel_info_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
         status::ExecutionState,
     },
@@ -112,8 +112,7 @@ impl Frontend {
         // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
         let (welcome_tx, welcome_rx) = channel();
 
-        Self::iopub_broker()
-            .register_request(String::from("unparented"), welcome_tx);
+        Self::iopub_broker().register_request(String::from("unparented"), welcome_tx);
 
         log::info!("Sending kernel info request for subscription");
         let request = Self::send_request(KernelInfoRequest {});
@@ -128,29 +127,28 @@ impl Frontend {
             _ => panic!("Expected kernel_info_reply but got {:#?}", reply),
         };
 
-        log::info!(
-            "Kernel is using protocol version: {}",
-            kernel_info.protocol_version
-        );
+        if let Some(version) = &kernel_info.protocol_version {
+            log::info!("Kernel is using protocol version: {}", version);
 
-        // Receive the Welcome message for kernels which support it
-        // Unfortunately, although JEP 65 is accepted, I can't find the version of the jupyter protocol
-        // in which it becomes effective. Ark _does_ support it and is 5.4, ipython doesn't and is 5.3.
-        if kernel_info.protocol_version >= String::from("5.4") {
-            // Immediately block until we've received the IOPub welcome message from the XPUB server side
-            // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
-            // IOPub messages that a server may send if we start to perform requests immediately (in
-            // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
-            assert_matches!(welcome_rx.recv().unwrap(), Message::Welcome(data) => {
-                assert_eq!(data.content.subscription, String::from(""));
-                log::info!("Received the welcome message from the kernel");
-            });
-            // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
-            // from the kernel right after the `Welcome` message.
-            assert_matches!(welcome_rx.recv().unwrap(), Message::Status(data) => {
-                assert_eq!(data.content.execution_state, ExecutionState::Starting);
-                log::info!("Received the starting message from the kernel");
-            });
+            // Receive the Welcome message for kernels which support it
+            // Unfortunately, although JEP 65 is accepted, I can't find the version of the jupyter protocol
+            // in which it becomes effective. Ark _does_ support it and is 5.4, ipython doesn't and is 5.3.
+            if version >= &String::from("5.4") {
+                // Immediately block until we've received the IOPub welcome message from the XPUB server side
+                // socket. This confirms that we've fully subscribed and avoids dropping any of the initial
+                // IOPub messages that a server may send if we start to perform requests immediately (in
+                // particular, busy/idle messages). https://github.com/posit-dev/ark/pull/577
+                assert_matches!(welcome_rx.recv().unwrap(), Message::Welcome(data) => {
+                    assert_eq!(data.content.subscription, String::from(""));
+                    log::info!("Received the welcome message from the kernel");
+                });
+                // We also go ahead and handle the `ExecutionState::Starting` status that we know is coming
+                // from the kernel right after the `Welcome` message.
+                assert_matches!(welcome_rx.recv().unwrap(), Message::Status(data) => {
+                    assert_eq!(data.content.execution_state, ExecutionState::Starting);
+                    log::info!("Received the starting message from the kernel");
+                });
+            }
         }
 
         Self::iopub_broker().unregister_request(
@@ -194,12 +192,9 @@ impl Frontend {
         let (stdin_tx, stdin_rx) = channel();
         let (shell_tx, shell_rx) = channel();
 
-        Self::iopub_broker()
-            .register_request(request_id.clone(), iopub_tx);
-        Self::stdin_broker()
-            .register_request(request_id.clone(), stdin_tx);
-        Self::shell_broker()
-            .register_request(request_id.clone(), shell_tx);
+        Self::iopub_broker().register_request(request_id.clone(), iopub_tx);
+        Self::stdin_broker().register_request(request_id.clone(), stdin_tx);
+        Self::shell_broker().register_request(request_id.clone(), shell_tx);
 
         return RequestChannels {
             id: request_id,
