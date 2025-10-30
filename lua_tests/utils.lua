@@ -80,16 +80,15 @@ function M.execute(carpo, kernel_id, code, user_expressions)
         M.cat_header("Result " .. i)
         local result = callback()
         print(M.dump(result))
-        if M.tbl_len(result) == 0 then break end
+        if M.tbl_len(result) == 0 then
+        -- if i > 10 then
+            break
+        end
 
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"
             M.cat_header(("Sending dummy val '%s'"):format(stdin), ".")
-            if kernel_id then
-                carpo.provide_stdin(kernel_id, stdin)
-            else
-                carpo.provide_stdin(stdin)
-            end
+            carpo.provide_stdin(kernel_id, stdin)
         end
 
         os.execute("sleep 0.1")

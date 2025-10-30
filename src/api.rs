@@ -68,6 +68,7 @@ pub fn execute_code(
     Ok(move || {
         loop {
             if let Ok(false) = Frontend::is_request_active(&kernel_id, &request.id) {
+                log::trace!("Request {} is no longer active, returning None", request.id);
                 return None;
             }
 
@@ -115,7 +116,6 @@ pub fn execute_code(
                 if let Ok(stdin_broker) = Frontend::get_stdin_broker(&kernel_id) {
                     stdin_broker.unregister_request(&request.id, "reply received");
                 }
-                return None;
             }
         }
     })

@@ -31,8 +31,8 @@ utils.execute(
     carpo,
     kernel_id,
     [[import pandas as pd
-df = pd.DataFrame(dict(foo = [1, 2, 3], bar = ["a", "b", "c"]))]]
+df = pd.DataFrame(dict(my_inconveniently_named_col = [1, 2, 3], bar = ["a", "b", "c"]))]]
 )
 
 -- Try getting completions (ark doesn't do these)
-utils.get_completions(carpo, kernel_id, "df.f", 4)
+utils.get_completions(carpo, kernel_id, "df.my_inconv", 12)
