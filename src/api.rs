@@ -1,5 +1,4 @@
 use assert_matches::assert_matches;
-use log::trace;
 
 use crate::{
     frontend::{frontend::Frontend, shell::Shell, stdin::Stdin},
@@ -38,10 +37,18 @@ pub static IOPUB_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static SHELL_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 pub static STDIN_BROKER: OnceLock<Arc<Broker>> = OnceLock::new();
 
+/// When you send a request on stdin via `FrontEndMeta`, any replies which come
+/// back from the kernel will be routed via these sockets. This allows you to
+/// handle replies _only_ related to the original request, without worrying
+/// about dropping any unrelated messages.
 struct RequestChannels {
+    /// The ID of the original request message
     id: String,
+    /// A receiver for replies to `id` on the iopub socket
     iopub: Receiver<Message>,
+    /// A receiver for replies to `id` on the shell socket
     shell: Receiver<Message>,
+    /// A receiver for replies to `id` on the stdin socket
     stdin: Receiver<Message>,
 }
 
@@ -72,6 +79,8 @@ impl FrontendMeta {
         STDIN_BROKER.get_or_init(|| unreachable!())
     }
 
+    /// Send a request on the shell, register it with the message brokers, and return channels that
+    /// will receive any replies.
     pub fn send_request<T: ProtocolMessage>(&self, message: T) -> RequestChannels {
         let request_id = self.lock_shell().send(message);
         let (iopub_tx, iopub_rx) = channel();
@@ -93,17 +102,21 @@ impl FrontendMeta {
         };
     }
 
+    /// Check if a reply to `request_id` has been received yet
     pub fn is_request_active(&self, request_id: &String) -> bool {
         self.shell_broker().is_active(request_id)
     }
 
-    /// Blocks until a message is received on the shell channel
+    /// Block until a message is received on the shell. This can be helpful, e.g. for long-running
+    /// operations where the shell reply contains the information we want to surface to the user.
+    ///
+    /// TODO: if the reply isn't related to the original request, keep routing.
     pub fn route_shell(&self) {
         let msg = self.lock_shell().recv();
         self.shell_broker().route(msg);
     }
 
-    /// Drains the shell channel of all incoming messages and routes them
+    /// Drain the shell channel of all incoming messages and routes them
     pub fn recv_all_incoming_shell(&self) {
         loop {
             match self.lock_shell().try_recv() {
@@ -114,7 +127,7 @@ impl FrontendMeta {
         }
     }
 
-    /// Drains the stdin channel of all incoming messages and routes them
+    /// Drain the stdin channel of all incoming messages and routes them
     pub fn recv_all_incoming_stdin(&self) {
         loop {
             match self.lock_stdin().try_recv() {
@@ -193,8 +206,6 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     Ok(kernel_info.banner)
 }
 
-// TODO: write a framework for sending arbitrary requests and waiting for replies
-// and use it here.
 pub fn subscribe() -> KernelInfoReply {
     // Not all kernels implement the XPUB socket which provides the welcome message which confirms
     // the connection is established. PEP 65 recommends dealing with this by:
@@ -280,21 +291,21 @@ pub fn execute_code(
     // We return a closure which can be repeatedly called as a function from Lua to get the
     // response from the kernel
     move || {
-        // ------------------------------------------------------------------------------------------------------------
-        // First we check if the request is still active. If not we return an empty result.
-        // ------------------------------------------------------------------------------------------------------------
-        // If the request id is no longer registered as active then we've evidently already
-        // received the reply and we can just return an empty result.
-        if !frontend.is_request_active(&request.id) {
-            return None;
-        }
-
-        // First let's try routing any incoming messages from the shell. In theory there should
-        // be only one - the reply to this execute request. However there may be more, e.g.
-        // late responses to previous requests.
-        frontend.recv_all_incoming_shell();
-
         loop {
+            // --------------------------------------------------------------------------------------------------------
+            // First we check if the request is still active. If not we return an empty result.
+            // --------------------------------------------------------------------------------------------------------
+            // If the request id is no longer registered as active then we've evidently already
+            // received the reply and we can just return an empty result.
+            if !frontend.is_request_active(&request.id) {
+                return None;
+            }
+
+            // First let's try routing any incoming messages from the shell. In theory there should
+            // be only one - the reply to this execute request. However there may be more, e.g.
+            // late responses to previous requests.
+            frontend.recv_all_incoming_shell();
+
             // --------------------------------------------------------------------------------------------------------
             // The request _is_ active, so let's see if there's anything on iopub
             // --------------------------------------------------------------------------------------------------------
@@ -356,7 +367,7 @@ pub fn execute_code(
                     .unregister_request(&request.id, "reply received");
                 return None;
             }
-            // If we couldn't get a reply from the shell then let's try looping again
+            // If we didn't get a reply from the shell then let's try looping again
         }
     }
 }
