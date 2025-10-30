@@ -95,52 +95,46 @@ impl Broker {
         }
     }
 
-    /// Route a message to a specific request's channels
-    /// Returns whether the message was successfully routed (and consumed)
-    /// If routing fails, the message is buffered as an orphan
+    /// Route a message to a specific request's channels, or buffer it as an orphan
     fn route_to_request(&self, parent_id: &str, msg: Message) {
-        let active_requests = self.active_requests.read().unwrap();
+        // Right now we have no reason to drop the request as completed, but we might in a minute.
+        let mut unregister_reason = None;
 
-        // TODO: clean up this nasty thing
-        let should_unregister = if let Some(ctx) = active_requests.get(parent_id) {
-            let complete_status = match &msg {
-                // Unregister requests with iopub broker when we get an idle status
-                Message::Status(m) if m.content.execution_state == ExecutionState::Idle => {
-                    Some("received idle status")
-                }
-                // Unregister requests with shell broker when we get a reply
-                Message::InterruptReply(_)
-                | Message::CommInfoReply(_)
-                | Message::ExecuteReply(_)
-                | Message::ExecuteReplyException(_)
-                | Message::HandshakeReply(_)
-                | Message::InputReply(_)
-                | Message::InspectReply(_)
-                | Message::IsCompleteReply(_)
-                | Message::KernelInfoReply(_) => {
-                    Some("reply received")
-                }
-                _ => None
-            };
+        // Route the reply
+        match self.active_requests.read().unwrap().get(parent_id) {
+            // If there's no corresponding active request, the reply is an orphan
+            None => self.handle_orphan(msg),
+            // If there _is_ a corresponding active request, try routing to the corresponding
+            // receiver
+            Some(request) => {
+                unregister_reason = match &msg {
+                    Message::Status(m) if m.content.execution_state == ExecutionState::Idle => {
+                        Some("received idle status on iopub")
+                    }
+                    Message::InterruptReply(_)
+                    | Message::CommInfoReply(_)
+                    | Message::ExecuteReply(_)
+                    | Message::ExecuteReplyException(_)
+                    | Message::HandshakeReply(_)
+                    | Message::InputReply(_)
+                    | Message::InspectReply(_)
+                    | Message::IsCompleteReply(_)
+                    | Message::KernelInfoReply(_) => Some("reply received on shell"),
+                    _ => None,
+                };
 
-            if let Err(_) = ctx.channel.send(msg) {
-                log::warn!(
-                    "{}: Failed to send message to request {}: receiver dropped",
-                    self.name,
-                    parent_id
-                );
+                if let Err(_) = request.channel.send(msg) {
+                    log::warn!(
+                        "{}: Failed to send message to request {}: receiver dropped",
+                        self.name,
+                        parent_id
+                    );
+                }
             }
+        }
 
-            complete_status
-        } else {
-            // No matching request found - buffer as orphan
-            self.handle_orphan(msg);
-            None
-        };
-
-        // Now unregister if needed (requires write lock)
-        if let Some(reason) = should_unregister {
-            drop(active_requests);
+        // We have to unregister after `active_requests` has gone out of scope to avoid a deadlock
+        if let Some(reason) = unregister_reason {
             self.unregister_request(&String::from(parent_id), reason);
         }
     }
