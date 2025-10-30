@@ -1,6 +1,6 @@
 use carpo::connection::connection::{ExecuteRequestOptions, Connection};
 use carpo::kernel::kernel_spec::KernelSpecFull;
-use carpo::kernel::startup_method::StartupMethod;
+use carpo::kernel::startup_method::ConnectionMethod;
 
 use carpo::connection::connection;
 use carpo::msg::wire::jupyter_message::Message;
@@ -29,12 +29,12 @@ fn get_frontend(kernel: String) -> anyhow::Result<Connection> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Start the frontend
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let frontend = match spec.get_startup_method() {
-        StartupMethod::RegistrationFile => {
+    let frontend = match spec.get_connection_method() {
+        ConnectionMethod::RegistrationFile => {
             println!("Starting with registration file");
             Connection::init_with_registration_file(kernel_cmd, connection_file_path.into())
         }
-        StartupMethod::ConnectionFile => {
+        ConnectionMethod::ConnectionFile => {
             println!("Starting with connection file");
             Connection::init_with_connection_file(kernel_cmd, connection_file_path.into())
         }

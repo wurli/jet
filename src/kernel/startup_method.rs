@@ -1,4 +1,4 @@
-pub enum StartupMethod {
+pub enum ConnectionMethod {
     ConnectionFile,
     RegistrationFile
 }

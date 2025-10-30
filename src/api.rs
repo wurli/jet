@@ -4,7 +4,7 @@ use crate::{
     connection::{connection::Connection, shell::Shell, stdin::Stdin},
     kernel::{
         kernel_spec::{KernelSpec, KernelSpecFull},
-        startup_method::StartupMethod,
+        startup_method::ConnectionMethod,
     },
     msg::wire::{
         complete_request::CompleteRequest,
@@ -52,9 +52,9 @@ struct RequestChannels {
     stdin: Receiver<Message>,
 }
 
-struct FrontendMeta {}
+struct Frontend {}
 
-impl FrontendMeta {
+impl Frontend {
     pub fn get() -> Self {
         Self {}
     }
@@ -170,22 +170,22 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Start the frontend
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    let frontend = match spec.get_startup_method() {
-        StartupMethod::RegistrationFile => {
+    let connection = match spec.get_connection_method() {
+        ConnectionMethod::RegistrationFile => {
             Connection::init_with_registration_file(kernel_cmd, connection_file_path.into())
         }
-        StartupMethod::ConnectionFile => {
+        ConnectionMethod::ConnectionFile => {
             Connection::init_with_connection_file(kernel_cmd, connection_file_path.into())
         }
     };
 
-    loop_heartbeat(frontend.heartbeat);
+    loop_heartbeat(connection.heartbeat);
     let iopub_broker = Arc::new(Broker::new(String::from("IOPub")));
     let shell_broker = Arc::new(Broker::new(String::from("Shell")));
     let stdin_broker = Arc::new(Broker::new(String::from("Control")));
 
     // Start the iopub/shell processing threads
-    listen_iopub(frontend.iopub, Arc::clone(&iopub_broker));
+    listen_iopub(connection.iopub, Arc::clone(&iopub_broker));
     // listen_shell(frontend.shell, Arc::clone(&shell_broker));
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -193,8 +193,8 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<String> {
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // log::info!("{}", kernel_info.banner);
 
-    SHELL.get_or_init(|| Mutex::new(frontend.shell));
-    STDIN.get_or_init(|| Mutex::new(frontend.stdin));
+    SHELL.get_or_init(|| Mutex::new(connection.shell));
+    STDIN.get_or_init(|| Mutex::new(connection.stdin));
     IOPUB_BROKER.get_or_init(|| iopub_broker);
     SHELL_BROKER.get_or_init(|| shell_broker);
     STDIN_BROKER.get_or_init(|| stdin_broker);
@@ -214,7 +214,7 @@ pub fn subscribe() -> KernelInfoReply {
     // 3. Waiting for the welcome message if the protocol supports it
     //
     // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
-    let frontend = FrontendMeta::get();
+    let frontend = Frontend::get();
     let (welcome_tx, welcome_rx) = channel();
 
     frontend
@@ -274,7 +274,7 @@ pub fn execute_code(
 ) -> impl Fn() -> Option<Message> {
     log::trace!("Sending execute request `{}`", code);
 
-    let frontend = FrontendMeta::get();
+    let frontend = Frontend::get();
 
     // First let's try routing any incoming messages from the shell.
     frontend.recv_all_incoming_shell();
@@ -375,7 +375,7 @@ pub fn execute_code(
 pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message> {
     log::trace!("Sending is completion request `{}`", code);
 
-    let frontend = FrontendMeta::get();
+    let frontend = Frontend::get();
 
     // First let's try routing any incoming messages from the shell.
     frontend.recv_all_incoming_shell();
@@ -428,7 +428,7 @@ pub fn provide_stdin(value: String) {
 pub fn is_complete(code: String) -> anyhow::Result<Message> {
     log::trace!("Sending is complete request `{}`", code);
 
-    let frontend = FrontendMeta::get();
+    let frontend = Frontend::get();
 
     frontend.recv_all_incoming_shell();
 
