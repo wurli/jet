@@ -99,13 +99,14 @@ impl Broker {
     /// Returns whether the message was successfully routed (and consumed)
     /// If routing fails, the message is buffered as an orphan
     fn route_to_request(&self, parent_id: &str, msg: Message) {
-        let active = self.active_requests.read().unwrap();
+        let active_requests = self.active_requests.read().unwrap();
 
-        if let Some(ctx) = active.get(parent_id) {
-            match &msg {
+        // TODO: clean up this nasty thing
+        let should_unregister = if let Some(ctx) = active_requests.get(parent_id) {
+            let complete_status = match &msg {
                 // Unregister requests with iopub broker when we get an idle status
                 Message::Status(m) if m.content.execution_state == ExecutionState::Idle => {
-                    self.unregister_request(&String::from(parent_id), "received idle status");
+                    Some("received idle status")
                 }
                 // Unregister requests with shell broker when we get a reply
                 Message::InterruptReply(_)
@@ -117,10 +118,10 @@ impl Broker {
                 | Message::InspectReply(_)
                 | Message::IsCompleteReply(_)
                 | Message::KernelInfoReply(_) => {
-                    self.unregister_request(&String::from(parent_id), "reply received");
+                    Some("reply received")
                 }
-                _ => {}
-            }
+                _ => None
+            };
 
             if let Err(_) = ctx.channel.send(msg) {
                 log::warn!(
@@ -129,11 +130,19 @@ impl Broker {
                     parent_id
                 );
             }
+
+            complete_status
         } else {
             // No matching request found - buffer as orphan
-            drop(active); // Release lock before calling handle_orphan
             self.handle_orphan(msg);
+            None
         };
+
+        // Now unregister if needed (requires write lock)
+        if let Some(reason) = should_unregister {
+            drop(active_requests);
+            self.unregister_request(&String::from(parent_id), reason);
+        }
     }
 
     /// Handle a message that doesn't match any active request
