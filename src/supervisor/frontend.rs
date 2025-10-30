@@ -48,7 +48,7 @@ impl Frontend {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = uuid::Uuid::new_v4().to_string();
-        let connection_file_path = format!("carpo_connection_file_{}.json", kernel_id);
+        let connection_file_path = format!(".connection_files/carpo_connection_file_{}.json", kernel_id);
         let kernel_cmd = spec.build_command(&connection_file_path);
 
         let connection = match spec.get_connection_method() {
@@ -222,6 +222,8 @@ impl Frontend {
     pub fn is_request_active(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<bool> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             kernel.shell_broker.is_active(request_id)
+                | kernel.iopub_broker.is_active(request_id)
+                | kernel.stdin_broker.is_active(request_id)
         })
     }
 

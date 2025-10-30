@@ -11,7 +11,7 @@ pub fn execute_code(
     lua: &Lua,
     (kernel_id, code, user_expressions): (String, String, HashMap<String, String>),
 ) -> LuaResult<LuaFunction> {
-    let callback = api::execute_code(kernel_id, code, user_expressions);
+    let callback = api::execute_code(kernel_id, code, user_expressions).into_lua_err()?;
 
     lua.create_function_mut(move |lua, (): ()| -> LuaResult<LuaTable> {
         let result = callback();
