@@ -30,6 +30,10 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<(KernelId, KernelInfo)>
     Frontend::start_kernel(spec_path, spec)
 }
 
+pub fn request_shutdown(kernel_id: KernelId) -> anyhow::Result<Message> {
+    Frontend::request_shutdown(&kernel_id)
+}
+
 pub fn list_kernels() -> HashMap<KernelId, KernelInfo> {
     Frontend::kernel_manager().list_kernels()
 }

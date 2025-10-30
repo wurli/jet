@@ -23,11 +23,13 @@ pub struct KernelState {
     pub iopub_broker: Arc<Broker>,
     pub shell_broker: Arc<Broker>,
     pub stdin_broker: Arc<Broker>,
+    pub control_broker: Arc<Broker>,
 }
 
 pub struct InputChannels {
     pub shell: Mutex<crate::connection::shell::Shell>,
     pub stdin: Mutex<crate::connection::stdin::Stdin>,
+    pub control: Mutex<crate::connection::control::Control>,
 }
 
 pub struct KernelManager {

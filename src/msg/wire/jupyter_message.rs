@@ -45,6 +45,7 @@ use crate::msg::wire::interrupt_request::InterruptRequest;
 use crate::msg::wire::is_complete_reply::IsCompleteReply;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
+use crate::msg::wire::shutdown_reply::ShutdownReply;
 // use crate::msg::wire::originator::Originator;
 use crate::msg::wire::shutdown_request::ShutdownRequest;
 use crate::msg::wire::status::KernelStatus;
@@ -111,6 +112,7 @@ pub enum Message {
     InterruptReply(JupyterMessage<InterruptReply>),
     InterruptRequest(JupyterMessage<InterruptRequest>),
     ShutdownRequest(JupyterMessage<ShutdownRequest>),
+    ShutdownReply(JupyterMessage<ShutdownReply>),
     // Registration
     HandshakeRequest(JupyterMessage<HandshakeRequest>),
     HandshakeReply(JupyterMessage<HandshakeReply>),
@@ -173,6 +175,7 @@ impl TryFrom<&Message> for WireMessage {
             Message::KernelInfoReply(msg) => WireMessage::try_from(msg),
             Message::KernelInfoRequest(msg) => WireMessage::try_from(msg),
             Message::ShutdownRequest(msg) => WireMessage::try_from(msg),
+            Message::ShutdownReply(msg) => WireMessage::try_from(msg),
             Message::Status(msg) => WireMessage::try_from(msg),
             Message::CommInfoReply(msg) => WireMessage::try_from(msg),
             Message::CommInfoRequest(msg) => WireMessage::try_from(msg),
@@ -256,6 +259,9 @@ impl TryFrom<&WireMessage> for Message {
         }
         if kind == ShutdownRequest::message_type() {
             return Ok(Message::ShutdownRequest(JupyterMessage::try_from(msg)?));
+        }
+        if kind == ShutdownReply::message_type() {
+            return Ok(Message::ShutdownReply(JupyterMessage::try_from(msg)?));
         }
         if kind == KernelStatus::message_type() {
             return Ok(Message::Status(JupyterMessage::try_from(msg)?));
@@ -343,6 +349,7 @@ impl Message {
             Message::InterruptReply(m) => &m.parent_header,
             Message::InterruptRequest(m) => &m.parent_header,
             Message::ShutdownRequest(m) => &m.parent_header,
+            Message::ShutdownReply(m) => &m.parent_header,
             Message::HandshakeRequest(m) => &m.parent_header,
             Message::HandshakeReply(m) => &m.parent_header,
             Message::Status(m) => &m.parent_header,
@@ -379,6 +386,7 @@ impl Message {
             Message::InterruptReply(msg) => msg.content.kind(),
             Message::InterruptRequest(msg) => msg.content.kind(),
             Message::ShutdownRequest(msg) => msg.content.kind(),
+            Message::ShutdownReply(msg) => msg.content.kind(),
             Message::HandshakeRequest(msg) => msg.content.kind(),
             Message::HandshakeReply(msg) => msg.content.kind(),
             Message::Status(msg) => msg.content.kind(),
@@ -417,6 +425,7 @@ impl Message {
             Message::InterruptReply(msg) => msg.content.info(),
             Message::InterruptRequest(msg) => msg.content.info(),
             Message::ShutdownRequest(msg) => msg.content.info(),
+            Message::ShutdownReply(msg) => msg.content.info(),
             Message::HandshakeRequest(msg) => msg.content.info(),
             Message::HandshakeReply(msg) => msg.content.info(),
             Message::Status(msg) => msg.content.info(),

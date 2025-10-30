@@ -94,7 +94,7 @@ impl RegistrationSockets {
 }
 
 pub struct Connection {
-    pub _control: Control,
+    pub control: Control,
     pub shell: Shell,
     pub iopub: Iopub,
     pub stdin: Stdin,
@@ -127,7 +127,7 @@ impl Connection {
         let heartbeat_endpoint = connection_file.endpoint(connection_file.hb_port);
 
         Self {
-            _control: Control::init(&opts, control_endpoint),
+            control: Control::init(&opts, control_endpoint),
             shell: Shell::init(&opts, shell_endpoint),
             iopub: Iopub::init(&opts, iopub_endpoint),
             stdin: Stdin::init(&opts, stdin_endpoint),
@@ -161,7 +161,7 @@ impl Connection {
         reply_msg.send(&sockets.registration).unwrap();
 
         Self {
-            _control: Control::init(&opts, opts.endpoint(handshake.control_port)),
+            control: Control::init(&opts, opts.endpoint(handshake.control_port)),
             shell: Shell::init(&opts, opts.endpoint(handshake.shell_port)),
             iopub: Iopub::init(&opts, opts.endpoint(handshake.iopub_port)),
             stdin: Stdin::init(&opts, opts.endpoint(handshake.stdin_port)),

@@ -6,19 +6,17 @@ use std::sync::{
 use assert_matches::assert_matches;
 
 use crate::{
-    connection::connection::Connection,
-    kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod},
-    msg::wire::{
+    connection::connection::Connection, kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod}, msg::wire::{
         jupyter_message::{Message, ProtocolMessage},
         kernel_info_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
+        shutdown_request::ShutdownRequest,
         status::ExecutionState,
-    },
-    supervisor::{
+    }, supervisor::{
         broker::Broker,
         listeners::{listen_iopub, loop_heartbeat},
         manager::{InputChannels, KernelId, KernelInfo, KernelManager, KernelState},
-    },
+    }
 };
 
 pub static KERNEL_MANAGER: OnceLock<KernelManager> = OnceLock::new();
@@ -44,7 +42,10 @@ impl Frontend {
         KERNEL_MANAGER.get_or_init(|| KernelManager::new())
     }
 
-    pub fn start_kernel(spec_path: String, spec: KernelSpec) -> anyhow::Result<(KernelId, KernelInfo)> {
+    pub fn start_kernel(
+        spec_path: String,
+        spec: KernelSpec,
+    ) -> anyhow::Result<(KernelId, KernelInfo)> {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = uuid::Uuid::new_v4().to_string();
@@ -65,12 +66,14 @@ impl Frontend {
         let iopub_broker = Arc::new(Broker::new(format!("IOPub-{}", kernel_id)));
         let shell_broker = Arc::new(Broker::new(format!("Shell-{}", kernel_id)));
         let stdin_broker = Arc::new(Broker::new(format!("Stdin-{}", kernel_id)));
+        let control_broker = Arc::new(Broker::new(format!("Control-{}", kernel_id)));
 
         listen_iopub(connection.iopub, Arc::clone(&iopub_broker));
 
         let input_channels = InputChannels {
             shell: Mutex::new(connection.shell),
             stdin: Mutex::new(connection.stdin),
+            control: Mutex::new(connection.control),
         };
 
         let kernel_info_reply = Self::subscribe(
@@ -93,6 +96,7 @@ impl Frontend {
             iopub_broker,
             shell_broker,
             stdin_broker,
+            control_broker,
         };
 
         Self::kernel_manager().add_kernel(kernel_id.clone(), kernel_state)?;
@@ -107,7 +111,7 @@ impl Frontend {
     ) -> KernelInfoReply {
         let (welcome_tx, welcome_rx) = channel();
 
-        iopub_broker.register_request(String::from("unparented"), welcome_tx);
+        iopub_broker.register_request(&String::from("unparented"), welcome_tx);
 
         log::info!("Sending kernel info request for subscription");
         let request = Self::send_request_with_connection(
@@ -118,7 +122,11 @@ impl Frontend {
             Arc::new(Broker::new(String::from("Stdin-temp"))),
         );
 
-        Self::route_shell_reply_with_connection(connection, Arc::clone(&shell_broker), &request.id);
+        Self::route_reply_impl(
+            || connection.shell.lock().unwrap().recv(),
+            Arc::clone(&shell_broker),
+            &request.id,
+        );
         let reply = request.shell.recv().unwrap();
         log::info!("Received reply on the shell");
 
@@ -151,6 +159,47 @@ impl Frontend {
         kernel_info
     }
 
+    pub fn request_shutdown(kernel_id: &KernelId) -> anyhow::Result<Message> {
+        Self::request_shutdown_impl(kernel_id, false)
+    }
+
+    pub fn request_restart(kernel_id: &KernelId) -> anyhow::Result<Message> {
+        Self::request_shutdown_impl(kernel_id, true)
+    }
+
+    fn request_shutdown_impl(kernel_id: &KernelId, restart: bool) -> anyhow::Result<Message> {
+        Self::kernel_manager()
+            .with_kernel(kernel_id, |kernel| {
+                let control = kernel.connection.control.lock().unwrap();
+                let request_id = control.send(ShutdownRequest { restart });
+                log::info!("Sent shutdown_request <{request_id}>");
+                let (tx, rx) = channel();
+                kernel.control_broker.register_request(&request_id, tx);
+                let _ = Self::route_control_reply(&kernel_id, &request_id);
+
+                match rx.recv().unwrap() {
+                    reply @ Message::ShutdownReply(_) => {
+                        log::info!("Received shutdown_reply");
+                        kernel
+                            .control_broker
+                            .unregister_request(&request_id, "reply received");
+                        return Ok(reply);
+                    }
+                    other => {
+                        log::warn!(
+                            "Expected shutdown_reply but received unexpected message: {:#?}",
+                            other
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Expected shutdown_reply but received unexpected message: {:#?}",
+                            other
+                        ));
+                    }
+                }
+            })
+            .unwrap()
+    }
+
     pub fn get_kernel_info(kernel_id: &KernelId) -> anyhow::Result<KernelInfo> {
         let kernel = Self::kernel_manager().get_kernel(kernel_id).unwrap();
         Ok(kernel.info.clone())
@@ -180,15 +229,9 @@ impl Frontend {
         let (stdin_tx, stdin_rx) = channel();
         let (shell_tx, shell_rx) = channel();
 
-        kernel
-            .iopub_broker
-            .register_request(request_id.clone(), iopub_tx);
-        kernel
-            .stdin_broker
-            .register_request(request_id.clone(), stdin_tx);
-        kernel
-            .shell_broker
-            .register_request(request_id.clone(), shell_tx);
+        kernel.iopub_broker.register_request(&request_id, iopub_tx);
+        kernel.stdin_broker.register_request(&request_id, stdin_tx);
+        kernel.shell_broker.register_request(&request_id, shell_tx);
 
         Ok(RequestChannels {
             id: request_id,
@@ -210,9 +253,9 @@ impl Frontend {
         let (stdin_tx, stdin_rx) = channel();
         let (shell_tx, shell_rx) = channel();
 
-        iopub_broker.register_request(request_id.clone(), iopub_tx);
-        stdin_broker.register_request(request_id.clone(), stdin_tx);
-        shell_broker.register_request(request_id.clone(), shell_tx);
+        iopub_broker.register_request(&request_id, iopub_tx);
+        stdin_broker.register_request(&request_id, stdin_tx);
+        shell_broker.register_request(&request_id, shell_tx);
 
         RequestChannels {
             id: request_id,
@@ -231,30 +274,35 @@ impl Frontend {
     }
 
     pub fn route_shell_reply(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<()> {
-        let kernel = Self::kernel_manager()
-            .get_kernel(kernel_id)
-            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
-
-        Self::route_shell_reply_with_connection(
-            &kernel.connection,
-            kernel.shell_broker.clone(),
-            request_id,
-        );
-        Ok(())
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            Self::route_reply_impl(
+                || kernel.connection.shell.lock().unwrap().recv(),
+                kernel.shell_broker.clone(),
+                request_id,
+            );
+        })
     }
 
-    fn route_shell_reply_with_connection(
-        connection: &InputChannels,
-        shell_broker: Arc<Broker>,
-        request_id: &String,
-    ) {
+    pub fn route_control_reply(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<()> {
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            Self::route_reply_impl(
+                || kernel.connection.control.lock().unwrap().recv(),
+                kernel.control_broker.clone(),
+                request_id,
+            );
+        })
+    }
+
+    /// NB, this is currently in its own function because we also use it in `subscribe()`, which
+    /// needs to be run before the kernel is added to the manager.
+    fn route_reply_impl(receiver: impl Fn() -> Message, broker: Arc<Broker>, request_id: &String) {
         loop {
-            let msg = connection.shell.lock().unwrap().recv();
+            let msg = receiver();
             let is_reply = match msg.parent_id() {
                 Some(parent_id) => *request_id == parent_id,
                 None => *request_id == String::from("unparented"),
             };
-            shell_broker.route(msg);
+            broker.route(msg);
             if is_reply {
                 break;
             }
@@ -262,17 +310,14 @@ impl Frontend {
     }
 
     pub fn recv_all_incoming_shell(kernel_id: &KernelId) -> anyhow::Result<()> {
-        let kernel = Self::kernel_manager()
-            .get_kernel(kernel_id)
-            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
-
-        loop {
-            match kernel.connection.shell.lock().unwrap().try_recv() {
-                Ok(msg) => kernel.shell_broker.route(msg),
-                Err(_) => break,
+        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
+            loop {
+                match kernel.connection.shell.lock().unwrap().try_recv() {
+                    Ok(msg) => kernel.shell_broker.route(msg),
+                    Err(_) => break,
+                }
             }
-        }
-        Ok(())
+        })
     }
 
     pub fn recv_all_incoming_stdin(kernel_id: &KernelId) -> anyhow::Result<()> {

@@ -39,6 +39,10 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
         "discover_kernels",
         lua.create_function(api_lua::discover_kernels)?,
     )?;
+    exports.set(
+        "request_shutdown",
+        lua.create_function(api_lua::request_shutdown)?,
+    )?;
 
     Ok(exports)
 }

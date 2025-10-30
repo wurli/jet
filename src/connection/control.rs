@@ -1,10 +1,15 @@
 use crate::{
     connection::connection::ConnectionOptions,
-    msg::{socket::Socket, wire::jupyter_message::Message},
+    msg::{
+        session::Session,
+        socket::Socket,
+        wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage},
+    },
 };
 
 pub struct Control {
     socket: Socket,
+    session: Session,
 }
 
 impl Control {
@@ -19,10 +24,20 @@ impl Control {
         )
         .unwrap();
 
-        Self { socket }
+        Self {
+            socket,
+            session: opts.session.clone(),
+        }
     }
 
     pub fn recv(&self) -> Message {
         Message::read_from_socket(&self.socket).unwrap()
+    }
+
+    pub fn send<T: ProtocolMessage>(&self, msg: T) -> String {
+        let message = JupyterMessage::create(msg, None, &self.session);
+        let id = message.header.msg_id.clone();
+        message.send(&self.socket).unwrap();
+        id
     }
 }

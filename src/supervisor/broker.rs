@@ -169,7 +169,7 @@ impl Broker {
     }
 
     /// Register a new request that expects messages
-    pub fn register_request(&self, request_id: RequestId, channel: Sender<Message>) {
+    pub fn register_request(&self, request_id: &RequestId, channel: Sender<Message>) {
         log::trace!("{}: Registering request: <{}>", self.name, request_id);
         self.active_requests.write().unwrap().insert(
             request_id.clone(),
