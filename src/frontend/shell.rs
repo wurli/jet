@@ -31,15 +31,6 @@ impl Shell {
         }
     }
 
-    // fn flush_incoming(&self, name: &str) {
-    //     eprintln!("{name} has incoming data:");
-    //
-    //     while self.socket.has_incoming_data().unwrap() {
-    //         dbg!(WireMessage::read_from_socket(&self.socket).unwrap());
-    //         eprintln!("---");
-    //     }
-    // }
-
     pub fn recv(&self) -> Message {
         let msg = Message::read_from_socket(&self.socket).unwrap();
         log::trace!("Shell: received {}", msg.kind());

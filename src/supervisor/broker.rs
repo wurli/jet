@@ -55,6 +55,8 @@ pub struct Broker {
     active_requests: Arc<RwLock<HashMap<RequestId, RequestContext>>>,
 
     /// Buffer for "orphan" messages (no matching request)
+    /// TODO: do we really need this? I think if we _are_ getting orphan messages we should
+    /// probably change the code so this doesn't happen?
     orphan_buffer: Arc<Mutex<VecDeque<(Message, Instant)>>>,
 
     /// Configuration
