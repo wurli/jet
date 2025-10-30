@@ -4,8 +4,8 @@ use mlua::LuaSerdeExt;
 use mlua::prelude::*;
 
 use crate::api;
-use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::jupyter_message::Describe;
+use crate::msg::wire::jupyter_message::Message;
 
 pub fn execute_code(
     lua: &Lua,
