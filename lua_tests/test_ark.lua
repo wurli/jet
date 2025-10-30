@@ -15,6 +15,10 @@ utils.execute(carpo, kernel_id, "Sys.sleep(1); 1 + 1")
 -- Try user expressions
 utils.execute(carpo, kernel_id, "1 + 1", { test = "2^2" })
 
+
+utils.execute(carpo, kernel_id, "x <- 2 + 2")
+utils.execute(carpo, kernel_id, "cat('Result:', x, '\\n')")
+
 -- Try testing completeness
 utils.is_complete(carpo, kernel_id, "1 +")
 utils.is_complete(carpo, kernel_id, "1 + 1")
@@ -22,3 +26,4 @@ utils.is_complete(carpo, kernel_id, "_")
 
 -- Try getting completions (ark doesn't do these)
 utils.get_completions(carpo, kernel_id, "iris$", 4)
+
