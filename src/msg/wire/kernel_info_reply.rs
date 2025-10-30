@@ -35,7 +35,7 @@ pub struct KernelInfoReply {
     pub banner: String,
 
     /// Whether debugging is supported
-    pub debugger: bool,
+    pub debugger: Option<bool>,
 
     /// A list of help links
     pub help_links: Vec<HelpLink>,

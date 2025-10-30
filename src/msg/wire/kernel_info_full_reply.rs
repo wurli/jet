@@ -62,7 +62,7 @@ impl From<kernel_info_reply::KernelInfoReply> for KernelInfoReply {
             status: value.status,
             language_info: value.language_info,
             banner: value.banner,
-            debugger: Some(value.debugger),
+            debugger: value.debugger,
             help_links: value.help_links,
         }
     }
