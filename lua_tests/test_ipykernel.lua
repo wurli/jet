@@ -19,7 +19,7 @@ time.sleep(1)
 ]])
 
 -- User expressions
-utils.execute(carpo, kernel_id, "1 + 1", { test = "2 ** 2" })
+utils.execute(carpo, kernel_id, "1 + 1", info.display_name, { test = "2 ** 2" })
 
 -- Try testing completeness
 -- These seem brittle... Often this hangs.
@@ -36,3 +36,6 @@ df = pd.DataFrame(dict(my_inconveniently_named_col = [1, 2, 3], bar = ["a", "b",
 
 -- Try getting completions (ark doesn't do these)
 utils.get_completions(carpo, kernel_id, "df.my_inconv", 12)
+
+-- Try getting completions (ark doesn't do these)
+utils.request_shudown(carpo, kernel_id)

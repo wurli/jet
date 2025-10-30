@@ -451,14 +451,17 @@ impl Message {
         }
     }
 
+    /// Used for logging
+    pub fn parent_id_short(&self) -> Option<String> {
+        match self.parent_id() {
+            Some(id) => Some(id.chars().take(8).collect()),
+            None => None,
+        }
+    }
+
     /// Gives the message kind, the parent id, and possibly additional info
     pub fn describe(&self) -> String {
-        let id = if let Some(id) = self.parent_id() {
-            id
-        } else {
-            String::from("unparented")
-        };
-
+        let id = self.parent_id_short().unwrap_or(String::from("unparented"));
         let info = if let Some(info) = self.info() {
             format!("[{}]", info)
         } else {

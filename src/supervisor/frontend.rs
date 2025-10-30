@@ -6,17 +6,20 @@ use std::sync::{
 use assert_matches::assert_matches;
 
 use crate::{
-    connection::connection::Connection, kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod}, msg::wire::{
+    connection::connection::Connection,
+    kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod},
+    msg::wire::{
         jupyter_message::{Message, ProtocolMessage},
         kernel_info_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
         shutdown_request::ShutdownRequest,
         status::ExecutionState,
-    }, supervisor::{
+    },
+    supervisor::{
         broker::Broker,
         listeners::{listen_iopub, loop_heartbeat},
         manager::{InputChannels, KernelId, KernelInfo, KernelManager, KernelState},
-    }
+    },
 };
 
 pub static KERNEL_MANAGER: OnceLock<KernelManager> = OnceLock::new();
@@ -63,10 +66,12 @@ impl Frontend {
         };
 
         loop_heartbeat(connection.heartbeat);
-        let iopub_broker = Arc::new(Broker::new(format!("IOPub-{}", kernel_id)));
-        let shell_broker = Arc::new(Broker::new(format!("Shell-{}", kernel_id)));
-        let stdin_broker = Arc::new(Broker::new(format!("Stdin-{}", kernel_id)));
-        let control_broker = Arc::new(Broker::new(format!("Control-{}", kernel_id)));
+        // This is only used in log messages
+        let id_short = kernel_id.chars().take(8).collect::<String>();
+        let iopub_broker = Arc::new(Broker::new(format!("IOPub-{}", id_short)));
+        let shell_broker = Arc::new(Broker::new(format!("Shell-{}", id_short)));
+        let stdin_broker = Arc::new(Broker::new(format!("Stdin-{}", id_short)));
+        let control_broker = Arc::new(Broker::new(format!("Control-{}", id_short)));
 
         listen_iopub(connection.iopub, Arc::clone(&iopub_broker));
 
@@ -172,12 +177,39 @@ impl Frontend {
             .with_kernel(kernel_id, |kernel| {
                 let control = kernel.connection.control.lock().unwrap();
                 let request_id = control.send(ShutdownRequest { restart });
-                log::info!("Sent shutdown_request <{request_id}>");
-                let (tx, rx) = channel();
-                kernel.control_broker.register_request(&request_id, tx);
+                log::info!(
+                    "Sent shutdown_request <{}>",
+                    request_id.chars().take(8).collect::<String>()
+                );
+                let (control_tx, control_rx) = channel();
+                let (iopub_tx, iopub_rx) = channel();
+
+                kernel.iopub_broker.register_request(&request_id, iopub_tx);
+                kernel
+                    .control_broker
+                    .register_request(&request_id, control_tx);
+
                 let _ = Self::route_control_reply(&kernel_id, &request_id);
 
-                match rx.recv().unwrap() {
+                loop {
+                    match iopub_rx.recv().unwrap() {
+                        msg @ Message::ShutdownReply(_) => {
+                            log::info!("Received shutdown_reply");
+                            return Ok(msg);
+                        }
+                        Message::Status(msg)
+                            if msg.content.execution_state == ExecutionState::Idle =>
+                        {
+                            kernel
+                                .control_broker
+                                .unregister_request(&request_id, "idle status received");
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+
+                match control_rx.recv().unwrap() {
                     reply @ Message::ShutdownReply(_) => {
                         log::info!("Received shutdown_reply");
                         kernel

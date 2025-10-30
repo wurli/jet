@@ -34,6 +34,8 @@ impl Control {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
+    /// TODO: do we need to register ids with brokers _before_ sending the message to avoid
+    /// orphaned requests? This might be a good idea :'(
     pub fn send<T: ProtocolMessage>(&self, msg: T) -> String {
         let message = JupyterMessage::create(msg, None, &self.session);
         let id = message.header.msg_id.clone();

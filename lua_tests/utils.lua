@@ -82,7 +82,7 @@ function M.execute(carpo, kernel_id, code, name, user_expressions)
         local result = callback()
         print(M.dump(result))
         if M.tbl_len(result) == 0 then
-        -- if i > 10 then
+            -- if i > 10 then
             break
         end
 
@@ -129,12 +129,14 @@ function M.get_completions(carpo, kernel_id, code, cursor_pos)
     print("```")
     print(code)
     print("```")
+    print(M.dump(carpo.get_completions(kernel_id, code, cursor_pos)))
+end
 
-    if kernel_id then
-        print(M.dump(carpo.get_completions(kernel_id, code, cursor_pos)))
-    else
-        error("get_completions() requires a kernel_id parameter")
-    end
+function M.request_shudown(carpo, kernel_id)
+    M.cat_header(nil, "=")
+    print("Requesting shutdown")
+    M.cat_header(nil, "=")
+    print(M.dump(carpo.request_shutdown(kernel_id)))
 end
 
 return M

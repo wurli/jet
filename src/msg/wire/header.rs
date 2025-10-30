@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JupyterHeader {
     /// The message identifier; must be unique per message
+    /// TODO: add a proper struct where we can get the short version
     pub msg_id: String,
 
     /// Session ID; must be unique per session

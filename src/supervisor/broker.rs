@@ -131,7 +131,7 @@ impl Broker {
                         "{}: Failed to route {} for request {}: receiver dropped",
                         self.name,
                         description,
-                        parent_id
+                        parent_id.chars().take(8).collect::<String>()
                     );
                 }
             }
@@ -170,7 +170,7 @@ impl Broker {
 
     /// Register a new request that expects messages
     pub fn register_request(&self, request_id: &RequestId, channel: Sender<Message>) {
-        log::trace!("{}: Registering request: <{}>", self.name, request_id);
+        log::trace!("{}: Registering request: <{}>", self.name, request_id.chars().take(8).collect::<String>());
         self.active_requests.write().unwrap().insert(
             request_id.clone(),
             RequestContext {
@@ -185,7 +185,7 @@ impl Broker {
         log::trace!(
             "{}: Unregistering request <{}>: {:?}",
             self.name,
-            request_id,
+            request_id.chars().take(8).collect::<String>(),
             reason
         );
         self.active_requests.write().unwrap().remove(request_id);

@@ -47,7 +47,11 @@ pub fn execute_code(
     code: String,
     user_expressions: HashMap<String, String>,
 ) -> anyhow::Result<impl Fn() -> Option<Message>> {
-    log::trace!("Sending execute request `{}` to kernel {}", code, kernel_id);
+    log::trace!(
+        "Sending execute request `{}` to kernel {}",
+        code,
+        kernel_id.chars().take(8).collect::<String>()
+    );
 
     Frontend::recv_all_incoming_shell(&kernel_id).ok();
 
