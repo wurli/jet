@@ -102,14 +102,16 @@ impl Frontend {
         Ok(kernel_info.banner)
     }
 
+    /// Receive a welcome message if the kernel supports it
+    ///
+    /// Not all kernels implement the XPUB socket which provides the welcome message which confirms
+    /// the connection is established. PEP 65 recommends dealing with this by:
+    /// 1. Sending a kernel info request
+    /// 2. Checking the protocol version in the reply
+    /// 3. Waiting for the welcome message if the protocol supports it
+    ///
+    /// Docs: <https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations>
     fn subscribe() -> KernelInfoReply {
-        // Not all kernels implement the XPUB socket which provides the welcome message which confirms
-        // the connection is established. PEP 65 recommends dealing with this by:
-        // 1. Sending a kernel info request
-        // 2. Checking the protocol version in the reply
-        // 3. Waiting for the welcome message if the protocol supports it
-        //
-        // Docs: https://jupyter.org/enhancement-proposals/65-jupyter-xpub/jupyter-xpub.html#impact-on-existing-implementations
         let (welcome_tx, welcome_rx) = channel();
 
         Self::iopub_broker().register_request(String::from("unparented"), welcome_tx);
