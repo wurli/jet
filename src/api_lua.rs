@@ -92,12 +92,12 @@ pub fn start_kernel(_lua: &Lua, spec_path: String) -> LuaResult<String> {
 }
 
 pub fn list_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
-    let kernel_ids = api::list_kernels();
+    let kernels = api::list_kernels();
     let table = lua.create_table()?;
-    
-    for (i, id) in kernel_ids.iter().enumerate() {
-        table.set(i + 1, id.clone())?;
+
+    for (k, v) in kernels.iter() {
+        table.set(String::from(k), lua.to_value(v).unwrap())?;
     }
-    
+
     Ok(table)
 }

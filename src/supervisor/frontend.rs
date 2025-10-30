@@ -17,7 +17,7 @@ use crate::{
     supervisor::{
         broker::Broker,
         listeners::{listen_iopub, loop_heartbeat},
-        manager::{KernelConnection, KernelId, KernelInfo, KernelManager, KernelState},
+        manager::{InputChannels, KernelId, KernelInfo, KernelManager, KernelState},
     },
 };
 
@@ -44,7 +44,7 @@ impl Frontend {
         KERNEL_MANAGER.get_or_init(|| KernelManager::new())
     }
 
-    pub fn start_kernel(spec: KernelSpec) -> anyhow::Result<KernelId> {
+    pub fn start_kernel(spec_path: String, spec: KernelSpec) -> anyhow::Result<KernelId> {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = uuid::Uuid::new_v4().to_string();
@@ -67,13 +67,13 @@ impl Frontend {
 
         listen_iopub(connection.iopub, Arc::clone(&iopub_broker));
 
-        let kernel_connection = KernelConnection {
+        let input_channels = InputChannels {
             shell: Mutex::new(connection.shell),
             stdin: Mutex::new(connection.stdin),
         };
 
         let kernel_info = Self::subscribe(
-            &kernel_connection,
+            &input_channels,
             Arc::clone(&iopub_broker),
             Arc::clone(&shell_broker),
         );
@@ -81,10 +81,12 @@ impl Frontend {
         let kernel_state = KernelState {
             id: kernel_id.clone(),
             info: KernelInfo {
-                spec,
-                info: kernel_info.clone(),
+                spec_path: spec_path,
+                display_name: spec.display_name.clone(),
+                banner: kernel_info.banner.clone(),
+                language: kernel_info.language_info.clone(),
             },
-            connection: kernel_connection,
+            connection: input_channels,
             iopub_broker,
             shell_broker,
             stdin_broker,
@@ -96,7 +98,7 @@ impl Frontend {
     }
 
     fn subscribe(
-        connection: &KernelConnection,
+        connection: &InputChannels,
         iopub_broker: Arc<Broker>,
         shell_broker: Arc<Broker>,
     ) -> KernelInfoReply {
@@ -147,17 +149,18 @@ impl Frontend {
     }
 
     pub fn get_kernel_info(kernel_id: &KernelId) -> anyhow::Result<KernelInfo> {
-        Self::kernel_manager().with_kernel(kernel_id, |kernel| {
-            KernelInfo {
-                spec: kernel.info.spec.clone(),
-                info: kernel.info.info.clone(),
-            }
-        })
+        let kernel = Self::kernel_manager().get_kernel(kernel_id).unwrap();
+        Ok(kernel.info.clone())
     }
 
     pub fn provide_stdin(kernel_id: &KernelId, value: String) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
-            kernel.connection.stdin.lock().unwrap().send_input_reply(value);
+            kernel
+                .connection
+                .stdin
+                .lock()
+                .unwrap()
+                .send_input_reply(value);
         })
     }
 
@@ -174,9 +177,15 @@ impl Frontend {
         let (stdin_tx, stdin_rx) = channel();
         let (shell_tx, shell_rx) = channel();
 
-        kernel.iopub_broker.register_request(request_id.clone(), iopub_tx);
-        kernel.stdin_broker.register_request(request_id.clone(), stdin_tx);
-        kernel.shell_broker.register_request(request_id.clone(), shell_tx);
+        kernel
+            .iopub_broker
+            .register_request(request_id.clone(), iopub_tx);
+        kernel
+            .stdin_broker
+            .register_request(request_id.clone(), stdin_tx);
+        kernel
+            .shell_broker
+            .register_request(request_id.clone(), shell_tx);
 
         Ok(RequestChannels {
             id: request_id,
@@ -187,7 +196,7 @@ impl Frontend {
     }
 
     fn send_request_with_connection<T: ProtocolMessage>(
-        connection: &KernelConnection,
+        connection: &InputChannels,
         message: T,
         iopub_broker: Arc<Broker>,
         shell_broker: Arc<Broker>,
@@ -221,12 +230,16 @@ impl Frontend {
             .get_kernel(kernel_id)
             .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
 
-        Self::route_shell_reply_with_connection(&kernel.connection, kernel.shell_broker.clone(), request_id);
+        Self::route_shell_reply_with_connection(
+            &kernel.connection,
+            kernel.shell_broker.clone(),
+            request_id,
+        );
         Ok(())
     }
 
     fn route_shell_reply_with_connection(
-        connection: &KernelConnection,
+        connection: &InputChannels,
         shell_broker: Arc<Broker>,
         request_id: &String,
     ) {
