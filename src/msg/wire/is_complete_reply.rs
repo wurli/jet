@@ -40,4 +40,8 @@ impl Describe for IsCompleteReply {
     fn message_type() -> String {
         String::from("is_complete_reply")
     }
+
+    fn info(&self) -> Option<String> {
+        Some(format!("{:?}", self.status))
+    }
 }

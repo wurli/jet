@@ -22,6 +22,9 @@ impl Describe for KernelStatus {
     fn message_type() -> String {
         String::from("status")
     }
+    fn info(&self) -> Option<String> {
+        Some(format!("{:?}", self.execution_state))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, Eq, PartialEq)]

@@ -33,7 +33,7 @@ impl Shell {
 
     pub fn recv(&self) -> Message {
         let msg = Message::read_from_socket(&self.socket).unwrap();
-        log::trace!("Shell: received {}", msg.kind());
+        log::trace!("Shell: received {}", msg.describe());
         msg
     }
 

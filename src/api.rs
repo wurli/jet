@@ -4,7 +4,7 @@ use crate::{
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
         is_complete_request::IsCompleteRequest,
-        jupyter_message::{Message, Describe},
+        jupyter_message::{Describe, Message},
         status::ExecutionState,
     },
     supervisor::frontend::Frontend,
@@ -63,7 +63,7 @@ pub fn execute_code(
             // The request _is_ active, so let's see if there's anything on iopub
             // --------------------------------------------------------------------------------------------------------
             if let Ok(reply) = request.iopub.try_recv() {
-                log::trace!("Receiving message from iopub: {}", reply.kind());
+                log::trace!("Receiving message from iopub: {}", reply.describe());
                 match reply {
                     // These are the message types we want to surface in Lua
                     Message::ExecuteResult(_) | Message::ExecuteError(_) | Message::Stream(_) => {
@@ -88,7 +88,7 @@ pub fn execute_code(
                     // This is expected immediately after sending the execute request.
                     Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
                     }
-                    _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
+                    _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
                 }
             }
 
@@ -98,11 +98,11 @@ pub fn execute_code(
             Frontend::recv_all_incoming_stdin();
 
             if let Ok(msg) = request.stdin.try_recv() {
-                log::trace!("Received message from stdin: {}", msg.kind());
+                log::trace!("Received message from stdin: {}", msg.describe());
                 if let Message::InputRequest(_) = msg {
                     return Some(msg);
                 }
-                log::warn!("Dropping unexpected stdin message {}", msg.kind());
+                log::warn!("Dropping unexpected stdin message {}", msg.describe());
             }
 
             // --------------------------------------------------------------------------------------------------------
@@ -113,7 +113,7 @@ pub fn execute_code(
             while let Ok(msg) = request.shell.try_recv() {
                 match msg {
                     Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
-                    _ => log::warn!("Unexpected reply received on shell: {}", msg.kind()),
+                    _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
                 }
                 Frontend::stdin_broker().unregister_request(&request.id, "reply received");
                 return None;
@@ -142,7 +142,7 @@ pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message>
                 log::trace!("Received iopub idle status for completion_request");
                 break;
             }
-            _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
+            _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
         }
     }
 
@@ -157,7 +157,7 @@ pub fn get_completions(code: String, cursor_pos: u32) -> anyhow::Result<Message>
                 log::trace!("Received completion_reply on the shell");
                 out = Ok(reply);
             }
-            _ => log::warn!("Unexpected reply received on shell: {}", reply.kind()),
+            _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
         }
         Frontend::stdin_broker().unregister_request(&request.id, "reply received");
     } else {
@@ -185,7 +185,7 @@ pub fn is_complete(code: String) -> anyhow::Result<Message> {
                 log::trace!("Received iopub idle status for is_complete_request");
                 break;
             }
-            _ => log::warn!("Dropping unexpected iopub message {}", reply.kind()),
+            _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
         }
     }
 
@@ -200,7 +200,7 @@ pub fn is_complete(code: String) -> anyhow::Result<Message> {
                 log::trace!("Received is_complete_reply on the shell");
                 out = Ok(reply);
             }
-            _ => log::warn!("Unexpected reply received on shell: {}", reply.kind()),
+            _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
         }
         Frontend::stdin_broker().unregister_request(&request.id, "reply received");
     } else {

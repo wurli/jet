@@ -25,11 +25,7 @@ pub fn listen_iopub(iopub: Iopub, broker: Arc<Broker>) -> JoinHandle<()> {
         loop {
             // Receive with a short timeout to allow periodic cleanup
             if let Some(msg) = iopub.recv_with_timeout(100) {
-                log::trace!(
-                    "Message received on iopub: {}<{}>",
-                    msg.kind(),
-                    msg.parent_id().unwrap_or(String::from("no parent"))
-                );
+                log::trace!("Message received on iopub: {}", msg.describe(),);
                 broker.route(msg);
             };
 

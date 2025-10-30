@@ -69,9 +69,15 @@ pub struct JupyterMessage<T> {
 
 /// Trait used to extract the wire message type from a Jupyter message
 pub trait Describe {
+    /// The type of message
     fn message_type() -> String;
+    /// Will always give the `message_type()`
     fn kind(&self) -> String {
         Self::message_type()
+    }
+    /// Any additional information about the message we want to display in logs
+    fn info(&self) -> Option<String> {
+        None
     }
 }
 
@@ -391,11 +397,66 @@ impl Message {
         String::from(msg_type)
     }
 
+    pub fn info(&self) -> Option<String> {
+        let msg_type = match self {
+            Message::KernelInfoReply(msg) => msg.content.info(),
+            Message::KernelInfoRequest(msg) => msg.content.info(),
+            Message::CompleteReply(msg) => msg.content.info(),
+            Message::CompleteRequest(msg) => msg.content.info(),
+            Message::ExecuteReply(msg) => msg.content.info(),
+            Message::ExecuteReplyException(msg) => msg.content.info(),
+            Message::ExecuteRequest(msg) => msg.content.info(),
+            Message::InspectReply(msg) => msg.content.info(),
+            Message::InspectRequest(msg) => msg.content.info(),
+            Message::IsCompleteReply(msg) => msg.content.info(),
+            Message::IsCompleteRequest(msg) => msg.content.info(),
+            Message::CommInfoReply(msg) => msg.content.info(),
+            Message::CommInfoRequest(msg) => msg.content.info(),
+            Message::InputReply(msg) => msg.content.info(),
+            Message::InputRequest(msg) => msg.content.info(),
+            Message::InterruptReply(msg) => msg.content.info(),
+            Message::InterruptRequest(msg) => msg.content.info(),
+            Message::ShutdownRequest(msg) => msg.content.info(),
+            Message::HandshakeRequest(msg) => msg.content.info(),
+            Message::HandshakeReply(msg) => msg.content.info(),
+            Message::Status(msg) => msg.content.info(),
+            Message::ExecuteResult(msg) => msg.content.info(),
+            Message::ExecuteError(msg) => msg.content.info(),
+            Message::ExecuteInput(msg) => msg.content.info(),
+            Message::Stream(msg) => msg.content.info(),
+            Message::DisplayData(msg) => msg.content.info(),
+            Message::UpdateDisplayData(msg) => msg.content.info(),
+            Message::Welcome(msg) => msg.content.info(),
+            Message::CommMsg(msg) => msg.content.info(),
+            Message::CommOpen(msg) => msg.content.info(),
+            Message::CommClose(msg) => msg.content.info(),
+        };
+
+        msg_type
+    }
+
     pub fn parent_id(&self) -> Option<String> {
         match self.parent_header() {
             Some(msg) => Some(msg.msg_id.clone()),
             None => None,
         }
+    }
+
+    /// Gives the message kind, the parent id, and possibly additional info
+    pub fn describe(&self) -> String {
+        let id = if let Some(id) = self.parent_id() {
+            id
+        } else {
+            String::from("unparented")
+        };
+
+        let info = if let Some(info) = self.info() {
+            format!("[{}]", info)
+        } else {
+            String::from("")
+        };
+
+        format!("{}{}<{}>", self.kind(), info, id)
     }
 }
 

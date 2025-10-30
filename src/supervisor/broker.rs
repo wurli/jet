@@ -81,18 +81,17 @@ impl Broker {
 
     /// Route an incoming message to the appropriate handler(s)
     pub fn route(&self, msg: Message) {
-        log::trace!(
-            "{}: Routing message: {}<{}>",
-            self.name,
-            msg.kind(),
-            msg.parent_id().unwrap_or(String::from("unparented"))
-        );
+        log::trace!("{}: Routing message: {}", self.name, msg.describe(),);
 
         if let Some(parent_id) = msg.parent_id() {
             self.route_to_request(&parent_id, msg);
         } else {
             // No parent ID, handle as orphan
-            log::trace!("{}: Routing unparented message: {}", self.name, msg.kind());
+            log::trace!(
+                "{}: Routing unparented message: {}",
+                self.name,
+                msg.describe()
+            );
             self.route_to_request("unparented", msg);
         }
     }
@@ -125,13 +124,13 @@ impl Broker {
                     _ => None,
                 };
 
-                let kind = msg.kind();
+                let description = msg.describe();
 
                 if let Err(_) = request.channel.send(msg) {
                     log::warn!(
                         "{}: Failed to route {} for request {}: receiver dropped",
                         self.name,
-                        kind,
+                        description,
                         parent_id
                     );
                 }
@@ -149,7 +148,7 @@ impl Broker {
         log::trace!(
             "{}: Orphan {} message {:#?}: no matching request found",
             self.name,
-            msg.kind(),
+            msg.describe(),
             &msg
         );
 
@@ -162,7 +161,7 @@ impl Broker {
                 log::trace!(
                     "{}: Dropped old {} orphan message {:#?} due to buffer limit",
                     self.name,
-                    dropped_msg.kind(),
+                    dropped_msg.describe(),
                     &dropped_msg
                 );
             }
@@ -171,7 +170,7 @@ impl Broker {
 
     /// Register a new request that expects messages
     pub fn register_request(&self, request_id: RequestId, channel: Sender<Message>) {
-        log::trace!("{}: Registering request: {}", self.name, request_id);
+        log::trace!("{}: Registering request: <{}>", self.name, request_id);
         self.active_requests.write().unwrap().insert(
             request_id.clone(),
             RequestContext {
@@ -184,7 +183,7 @@ impl Broker {
     /// Unregister a completed request
     pub fn unregister_request(&self, request_id: &RequestId, reason: &str) {
         log::trace!(
-            "{}: Unregistering request {}: {:?}",
+            "{}: Unregistering request <{}>: {:?}",
             self.name,
             request_id,
             reason
