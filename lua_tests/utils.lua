@@ -59,11 +59,12 @@ M.cat_header = function(x, pad)
 end
 
 --- Execute code in the carpo kernel and print results until the execution finishes
-function M.execute(carpo, kernel_id, code, user_expressions)
+function M.execute(carpo, kernel_id, code, name, user_expressions)
     user_expressions = user_expressions or {}
+    name = name or kernel_id
 
     M.cat_header(nil, "=")
-    print("Executing code in kernel: " .. kernel_id)
+    print("Executing code in kernel: " .. name)
     if M.tbl_len(user_expressions) > 0 then
         print("User expressions: " .. M.dump(user_expressions))
     end

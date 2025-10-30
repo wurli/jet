@@ -1,11 +1,11 @@
 local utils = require("./lua_tests/utils")
 local carpo = utils.carpo_loader()
 
-local kernel_id = carpo.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/rust/kernel.json")
+local kernel_id, info = carpo.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/rust/kernel.json")
 
 -- Print the startup message
--- utils.cat_header("startup message", "=")
--- print(startup_message)
+utils.cat_header("startup message", "=")
+print(info.banner)
 
 -- Try running some code
 utils.execute(carpo, kernel_id, "1 + 1")
