@@ -12,6 +12,7 @@ use crate::{
         jupyter_message::{Message, ProtocolMessage},
         kernel_info_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
+        message_id::Id,
         shutdown_request::ShutdownRequest,
         status::ExecutionState,
     },
@@ -29,7 +30,7 @@ pub static KERNEL_MANAGER: OnceLock<KernelManager> = OnceLock::new();
 /// without worrying about dropping any unrelated messages.
 pub struct RequestChannels {
     /// The ID of the original request message
-    pub id: String,
+    pub id: Id,
     /// A receiver for replies to `id` on the iopub socket
     pub iopub: Receiver<Message>,
     /// A receiver for replies to `id` on the shell socket
@@ -48,12 +49,12 @@ impl Frontend {
     pub fn start_kernel(
         spec_path: String,
         spec: KernelSpec,
-    ) -> anyhow::Result<(String, KernelInfo)> {
+    ) -> anyhow::Result<(Id, KernelInfo)> {
         log::info!("Using kernel '{}'", spec.display_name);
 
-        let kernel_id = uuid::Uuid::new_v4().to_string();
+        let kernel_id = Id::new();
         let connection_file_path =
-            format!(".connection_files/carpo_connection_file_{}.json", kernel_id);
+            format!(".connection_files/carpo_connection_file_{}.json", String::from(kernel_id.clone()));
         let kernel_cmd = spec.build_command(&connection_file_path);
 
         let connection = match spec.get_connection_method() {
@@ -67,11 +68,10 @@ impl Frontend {
 
         loop_heartbeat(connection.heartbeat);
         // This is only used in log messages
-        let id_short = kernel_id.chars().take(8).collect::<String>();
-        let iopub_broker = Arc::new(Broker::new(format!("IOPub-{}", id_short)));
-        let shell_broker = Arc::new(Broker::new(format!("Shell-{}", id_short)));
-        let stdin_broker = Arc::new(Broker::new(format!("Stdin-{}", id_short)));
-        let control_broker = Arc::new(Broker::new(format!("Control-{}", id_short)));
+        let iopub_broker = Arc::new(Broker::new(format!("IOPub{}", kernel_id)));
+        let shell_broker = Arc::new(Broker::new(format!("Shell{}", kernel_id)));
+        let stdin_broker = Arc::new(Broker::new(format!("Stdin{}", kernel_id)));
+        let control_broker = Arc::new(Broker::new(format!("Control{}", kernel_id)));
 
         listen_iopub(connection.iopub, Arc::clone(&iopub_broker));
 
@@ -116,7 +116,7 @@ impl Frontend {
     ) -> KernelInfoReply {
         let (welcome_tx, welcome_rx) = channel();
 
-        iopub_broker.register_request(&String::from("unparented"), welcome_tx);
+        iopub_broker.register_request(&Id::unparented(), welcome_tx);
 
         log::info!("Sending kernel info request for subscription");
         let request = Self::send_request_with_connection(
@@ -156,7 +156,7 @@ impl Frontend {
         }
 
         iopub_broker.unregister_request(
-            &String::from("unparented"),
+            &Id::unparented(),
             "all expected startup messages received",
         );
 
@@ -181,10 +181,7 @@ impl Frontend {
                     let request_id = control.send(ShutdownRequest { restart });
                     request_id
                 };
-                log::info!(
-                    "Sent shutdown_request <{}>",
-                    request_id.chars().take(8).collect::<String>()
-                );
+                log::info!("Sent shutdown_request {}", request_id);
                 let (control_tx, control_rx) = channel();
                 let (iopub_tx, iopub_rx) = channel();
                 let (stdin_tx, stdin_rx) = channel();
@@ -198,25 +195,26 @@ impl Frontend {
                 log::info!("Entering shutdown reply wait loop");
                 loop {
                     match iopub_rx.try_recv() {
-                        Ok(msg) => {
-                            match msg {
-                                Message::ShutdownReply(_) => {
-                                    log::info!("Received shutdown_reply on iopub (non-standard)");
-                                    return Ok(msg);
-                                }
-                                Message::Status(status_msg)
-                                    if status_msg.content.execution_state == ExecutionState::Idle =>
-                                {
-                                    kernel
-                                        .iopub_broker
-                                        .unregister_request(&request_id, "idle status received");
-                                    log::trace!("Received idle status");
-                                }
-                                _ => {
-                                    log::trace!("Received unexpected message on iopub: {}", msg.describe())
-                                }
+                        Ok(msg) => match msg {
+                            Message::ShutdownReply(_) => {
+                                log::info!("Received shutdown_reply on iopub (non-standard)");
+                                return Ok(msg);
                             }
-                        }
+                            Message::Status(status_msg)
+                                if status_msg.content.execution_state == ExecutionState::Idle =>
+                            {
+                                kernel
+                                    .iopub_broker
+                                    .unregister_request(&request_id, "idle status received");
+                                log::trace!("Received idle status");
+                            }
+                            _ => {
+                                log::trace!(
+                                    "Received unexpected message on iopub: {}",
+                                    msg.describe()
+                                )
+                            }
+                        },
                         Err(_) => {}
                     }
 
@@ -274,7 +272,7 @@ impl Frontend {
     }
 
     pub fn send_request<T: ProtocolMessage>(
-        kernel_id: &String,
+        kernel_id: &Id,
         message: T,
     ) -> anyhow::Result<RequestChannels> {
         let kernel = Self::kernel_manager()
@@ -322,7 +320,7 @@ impl Frontend {
         }
     }
 
-    pub fn is_request_active(kernel_id: &String, request_id: &String) -> anyhow::Result<bool> {
+    pub fn is_request_active(kernel_id: &String, request_id: &Id) -> anyhow::Result<bool> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             kernel.shell_broker.is_active(request_id)
                 | kernel.iopub_broker.is_active(request_id)
@@ -330,7 +328,7 @@ impl Frontend {
         })
     }
 
-    pub fn route_shell_reply(kernel_id: &String, request_id: &String) -> anyhow::Result<()> {
+    pub fn route_shell_reply(kernel_id: &String, request_id: &Id) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             Self::route_reply_impl(
                 || kernel.connection.shell.lock().unwrap().recv(),
@@ -340,7 +338,7 @@ impl Frontend {
         })
     }
 
-    pub fn route_control_reply(kernel_id: &String, request_id: &String) -> anyhow::Result<()> {
+    pub fn route_control_reply(kernel_id: &String, request_id: &Id) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             Self::route_reply_impl(
                 || kernel.connection.control.lock().unwrap().recv(),
@@ -352,12 +350,12 @@ impl Frontend {
 
     /// NB, this is currently in its own function because we also use it in `subscribe()`, which
     /// needs to be run before the kernel is added to the manager.
-    fn route_reply_impl(receiver: impl Fn() -> Message, broker: Arc<Broker>, request_id: &String) {
+    fn route_reply_impl(receiver: impl Fn() -> Message, broker: Arc<Broker>, request_id: &Id) {
         loop {
             let msg = receiver();
             let is_reply = match msg.parent_id() {
                 Some(parent_id) => *request_id == parent_id,
-                None => *request_id == String::from("unparented"),
+                None => *request_id == Id::unparented(),
             };
             broker.route(msg);
             if is_reply {

@@ -6,12 +6,13 @@ use mlua::prelude::*;
 use crate::api;
 use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Message;
+use crate::msg::wire::message_id::Id;
 
 pub fn execute_code(
     lua: &Lua,
     (kernel_id, code, user_expressions): (String, String, HashMap<String, String>),
 ) -> LuaResult<LuaFunction> {
-    let callback = api::execute_code(kernel_id, code, user_expressions).into_lua_err()?;
+    let callback = api::execute_code(Id::from(kernel_id), code, user_expressions).into_lua_err()?;
 
     lua.create_function_mut(move |lua, (): ()| -> LuaResult<LuaTable> {
         let result = callback();
@@ -32,7 +33,7 @@ pub fn execute_code(
 }
 
 pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaTable> {
-    match api::is_complete(kernel_id, code) {
+    match api::is_complete(Id::from(kernel_id), code) {
         Ok(Message::IsCompleteReply(msg)) => to_lua(lua, &msg.content),
         Ok(msg) => Err(LuaError::external(format!(
             "Received unexpected message type {}",
@@ -46,7 +47,7 @@ pub fn get_completions(
     lua: &Lua,
     (kernel_id, code, cursor_pos): (String, String, u32),
 ) -> LuaResult<LuaTable> {
-    match api::get_completions(kernel_id, code, cursor_pos) {
+    match api::get_completions(Id::from(kernel_id), code, cursor_pos) {
         Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
         Ok(msg) => Err(LuaError::external(format!(
             "Received unexpected message type {}",
@@ -98,7 +99,7 @@ pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
 
 pub fn start_kernel(lua: &Lua, spec_path: String) -> LuaResult<(String, LuaValue)> {
     match api::start_kernel(spec_path) {
-        Ok((kernel_id, info)) => Ok((kernel_id, lua.to_value(&info).unwrap())),
+        Ok((kernel_id, info)) => Ok((String::from(kernel_id), lua.to_value(&info).unwrap())),
         Err(e) => Err(LuaError::external(e)),
     }
 }

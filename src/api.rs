@@ -5,6 +5,7 @@ use crate::{
         execute_request::ExecuteRequest,
         is_complete_request::IsCompleteRequest,
         jupyter_message::{Describe, Message},
+        message_id::Id,
         status::ExecutionState,
     },
     supervisor::{frontend::Frontend, manager::KernelInfo},
@@ -15,7 +16,7 @@ pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
 }
 
-pub fn start_kernel(spec_path: String) -> anyhow::Result<(String, KernelInfo)> {
+pub fn start_kernel(spec_path: String) -> anyhow::Result<(Id, KernelInfo)> {
     let matched_spec = KernelSpecFull::get_all()
         .into_iter()
         .filter(|x| x.path.to_string_lossy() == spec_path)
@@ -42,15 +43,11 @@ pub fn provide_stdin(kernel_id: String, value: String) -> anyhow::Result<()> {
 /// Long term this should maybe return a coroutine (i.e. generator) once they're stable:
 /// https://doc.rust-lang.org/beta/unstable-book/language-features/coroutines.html
 pub fn execute_code(
-    kernel_id: String,
+    kernel_id: Id,
     code: String,
     user_expressions: HashMap<String, String>,
 ) -> anyhow::Result<impl Fn() -> Option<Message>> {
-    log::trace!(
-        "Sending execute request `{}` to kernel {}",
-        code,
-        kernel_id.chars().take(8).collect::<String>()
-    );
+    log::trace!("Sending execute request `{}` to kernel {}", code, kernel_id);
 
     Frontend::recv_all_incoming_shell(&kernel_id).ok();
 
@@ -131,11 +128,7 @@ pub fn execute_code(
     })
 }
 
-pub fn get_completions(
-    kernel_id: String,
-    code: String,
-    cursor_pos: u32,
-) -> anyhow::Result<Message> {
+pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::Result<Message> {
     log::trace!(
         "Sending completion request `{}` to kernel {}",
         code,
@@ -181,7 +174,7 @@ pub fn get_completions(
     out
 }
 
-pub fn is_complete(kernel_id: String, code: String) -> anyhow::Result<Message> {
+pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
     log::trace!(
         "Sending is complete request `{}` to kernel {}",
         code,

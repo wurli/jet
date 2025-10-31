@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::msg::wire::language_info::LanguageInfo;
+use crate::msg::wire::message_id::Id;
 use crate::supervisor::broker::Broker;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -15,7 +16,7 @@ pub struct KernelInfo {
 }
 
 pub struct KernelState {
-    pub id: String,
+    pub id: Id,
     pub info: KernelInfo,
     pub connection: InputChannels,
     pub iopub_broker: Arc<Broker>,
@@ -41,12 +42,12 @@ impl KernelManager {
         }
     }
 
-    pub fn add_kernel(&self, id: String, state: KernelState) -> anyhow::Result<()> {
+    pub fn add_kernel(&self, id: Id, state: KernelState) -> anyhow::Result<()> {
         let mut kernels = self.kernels.write().unwrap();
-        if kernels.contains_key(&id) {
+        if kernels.contains_key(&String::from(id.clone())) {
             return Err(anyhow::anyhow!("Kernel with id '{}' already exists", id));
         }
-        kernels.insert(id, Arc::new(state));
+        kernels.insert(String::from(id), Arc::new(state));
         Ok(())
     }
 

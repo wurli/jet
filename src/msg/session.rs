@@ -8,9 +8,9 @@
 use hmac::Hmac;
 use hmac::Mac;
 use sha2::Sha256;
-use uuid::Uuid;
 
 use crate::msg::error::Error;
+use crate::msg::wire::message_id::Id;
 
 /// A Jupyter kernel session; unique to a process.
 #[derive(Clone)]
@@ -25,7 +25,7 @@ pub struct Session {
 
     /// The unique session ID. This is specifically the kernel's session ID, not
     /// the client's.
-    pub session_id: String,
+    pub session_id: Id,
 }
 
 impl Session {
@@ -45,7 +45,7 @@ impl Session {
         };
         Ok(Self {
             hmac: hmac_key,
-            session_id: Uuid::new_v4().to_string(),
+            session_id: Id::new(),
             username: String::from("kernel"),
         })
     }

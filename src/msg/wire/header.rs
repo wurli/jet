@@ -8,17 +8,17 @@
 use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
-use uuid::Uuid;
+
+use crate::msg::wire::message_id::Id;
 
 /// Represents the header of a Jupyter message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JupyterHeader {
     /// The message identifier; must be unique per message
-    /// TODO: add a proper struct where we can get the short version
-    pub msg_id: String,
+    pub msg_id: Id,
 
     /// Session ID; must be unique per session
-    pub session: String,
+    pub session: Id,
 
     /// Username; must be unique per user
     pub username: String,
@@ -35,9 +35,9 @@ pub struct JupyterHeader {
 
 impl JupyterHeader {
     /// Creates a new Jupyter message header
-    pub fn create(msg_type: String, session: String, username: String) -> Self {
+    pub fn create(msg_type: String, session: Id, username: String) -> Self {
         Self {
-            msg_id: Uuid::new_v4().to_string(),
+            msg_id: Id::new(),
             session,
             username,
             msg_type,

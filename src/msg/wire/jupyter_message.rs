@@ -45,6 +45,7 @@ use crate::msg::wire::interrupt_request::InterruptRequest;
 use crate::msg::wire::is_complete_reply::IsCompleteReply;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
+use crate::msg::wire::message_id::Id;
 use crate::msg::wire::shutdown_reply::ShutdownReply;
 // use crate::msg::wire::originator::Originator;
 use crate::msg::wire::shutdown_request::ShutdownRequest;
@@ -444,31 +445,23 @@ impl Message {
         msg_type
     }
 
-    pub fn parent_id(&self) -> Option<String> {
+    pub fn parent_id(&self) -> Option<Id> {
         match self.parent_header() {
             Some(msg) => Some(msg.msg_id.clone()),
             None => None,
         }
     }
 
-    /// Used for logging
-    pub fn parent_id_short(&self) -> Option<String> {
-        match self.parent_id() {
-            Some(id) => Some(id.chars().take(8).collect()),
-            None => None,
-        }
-    }
-
     /// Gives the message kind, the parent id, and possibly additional info
     pub fn describe(&self) -> String {
-        let id = self.parent_id_short().unwrap_or(String::from("unparented"));
+        let id = self.parent_id().unwrap_or(Id::unparented());
         let info = if let Some(info) = self.info() {
             format!("[{}]", info)
         } else {
             String::from("")
         };
 
-        format!("{}{}<{}>", self.kind(), info, id)
+        format!("{}{}{}", self.kind(), info, id)
     }
 }
 
@@ -476,7 +469,7 @@ impl<T> JupyterMessage<T>
 where
     T: ProtocolMessage,
 {
-    pub fn parent_id(&self) -> Option<String> {
+    pub fn parent_id(&self) -> Option<Id> {
         match &self.parent_header {
             Some(header) => Some(header.msg_id.clone()),
             None => None,

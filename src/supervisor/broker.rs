@@ -12,10 +12,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::msg::wire::jupyter_message::Message;
+use crate::msg::wire::message_id::Id;
 use crate::msg::wire::status::ExecutionState;
-
-/// Uniquely identifies a request-response cycle using the request's msg_id
-pub type RequestId = String;
 
 /// Context for tracking an active request that expects messages to be returned from the kernel
 struct RequestContext {
@@ -52,7 +50,7 @@ pub struct Broker {
     name: String,
 
     /// Active requests waiting for messages
-    active_requests: Arc<RwLock<HashMap<RequestId, RequestContext>>>,
+    active_requests: Arc<RwLock<HashMap<Id, RequestContext>>>,
 
     /// Buffer for "orphan" messages (no matching request)
     /// TODO: do we really need this? I think if we _are_ getting orphan messages we should
@@ -92,12 +90,12 @@ impl Broker {
                 self.name,
                 msg.describe()
             );
-            self.route_to_request("unparented", msg);
+            self.route_to_request(&Id::unparented(), msg);
         }
     }
 
     /// Route a message to a specific request's channels, or buffer it as an orphan
-    fn route_to_request(&self, parent_id: &str, msg: Message) {
+    fn route_to_request(&self, parent_id: &Id, msg: Message) {
         // Right now we have no reason to drop the request as completed, but we might in a minute.
         let mut unregister_reason = None;
 
@@ -132,7 +130,7 @@ impl Broker {
                         "{}: Failed to route {} for request {}: receiver dropped",
                         self.name,
                         description,
-                        parent_id.chars().take(8).collect::<String>()
+                        parent_id
                     );
                 }
             }
@@ -140,7 +138,7 @@ impl Broker {
 
         // We have to unregister after `active_requests` has gone out of scope to avoid a deadlock
         if let Some(reason) = unregister_reason {
-            self.unregister_request(&String::from(parent_id), reason);
+            self.unregister_request(&parent_id, reason);
         }
     }
 
@@ -170,8 +168,8 @@ impl Broker {
     }
 
     /// Register a new request that expects messages
-    pub fn register_request(&self, request_id: &RequestId, channel: Sender<Message>) {
-        log::trace!("{}: Registering request: <{}>", self.name, request_id.chars().take(8).collect::<String>());
+    pub fn register_request(&self, request_id: &Id, channel: Sender<Message>) {
+        log::trace!("{}: Registering request: {}", self.name, request_id);
         self.active_requests.write().unwrap().insert(
             request_id.clone(),
             RequestContext {
@@ -182,17 +180,17 @@ impl Broker {
     }
 
     /// Unregister a completed request
-    pub fn unregister_request(&self, request_id: &RequestId, reason: &str) {
+    pub fn unregister_request(&self, request_id: &Id, reason: &str) {
         log::trace!(
-            "{}: Unregistering request <{}>: {:?}",
+            "{}: Unregistering request {}: {:?}",
             self.name,
-            request_id.chars().take(8).collect::<String>(),
+            request_id,
             reason
         );
         self.active_requests.write().unwrap().remove(request_id);
     }
 
-    pub fn is_active(&self, request_id: &RequestId) -> bool {
+    pub fn is_active(&self, request_id: &Id) -> bool {
         self.active_requests
             .read()
             .unwrap()

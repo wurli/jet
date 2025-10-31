@@ -3,7 +3,7 @@ use crate::{
     msg::{
         session::Session,
         socket::Socket,
-        wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage},
+        wire::{jupyter_message::{JupyterMessage, Message, ProtocolMessage}, message_id::Id},
     },
 };
 
@@ -47,7 +47,7 @@ impl Control {
 
     /// TODO: do we need to register ids with brokers _before_ sending the message to avoid
     /// orphaned requests? This might be a good idea :'(
-    pub fn send<T: ProtocolMessage>(&self, msg: T) -> String {
+    pub fn send<T: ProtocolMessage>(&self, msg: T) -> Id {
         let message = JupyterMessage::create(msg, None, &self.session);
         let id = message.header.msg_id.clone();
         message.send(&self.socket).unwrap();
