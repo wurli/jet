@@ -66,7 +66,7 @@ impl KernelManager {
         }
     }
 
-    pub fn remove_kernel(&self, id: Id) -> Option<Arc<KernelState>> {
+    pub fn remove_kernel(&self, id: &Id) -> Option<Arc<KernelState>> {
         let mut kernels = self.kernels.write().unwrap();
         let res = kernels.remove(&String::from(id.clone()));
         if let None = res {
