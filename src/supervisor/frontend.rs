@@ -7,6 +7,7 @@ use assert_matches::assert_matches;
 
 use crate::{
     connection::connection::Connection,
+    error::Error,
     kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod},
     msg::wire::{
         jupyter_message::{Message, ProtocolMessage},
@@ -46,15 +47,14 @@ impl Frontend {
         KERNEL_MANAGER.get_or_init(|| KernelManager::new())
     }
 
-    pub fn start_kernel(
-        spec_path: String,
-        spec: KernelSpec,
-    ) -> anyhow::Result<(Id, KernelInfo)> {
+    pub fn start_kernel(spec_path: String, spec: KernelSpec) -> anyhow::Result<(Id, KernelInfo)> {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = Id::new();
-        let connection_file_path =
-            format!(".connection_files/carpo_connection_file_{}.json", String::from(kernel_id.clone()));
+        let connection_file_path = format!(
+            ".connection_files/carpo_connection_file_{}.json",
+            String::from(kernel_id.clone())
+        );
         let kernel_cmd = spec.build_command(&connection_file_path);
 
         let connection = match spec.get_connection_method() {
@@ -155,10 +155,8 @@ impl Frontend {
             }
         }
 
-        iopub_broker.unregister_request(
-            &Id::unparented(),
-            "all expected startup messages received",
-        );
+        iopub_broker
+            .unregister_request(&Id::unparented(), "all expected startup messages received");
 
         log::info!("Subscription complete");
         kernel_info
@@ -255,8 +253,8 @@ impl Frontend {
             .unwrap()
     }
 
-    pub fn get_kernel_info(kernel_id: &String) -> anyhow::Result<KernelInfo> {
-        let kernel = Self::kernel_manager().get_kernel(kernel_id).unwrap();
+    pub fn get_kernel_info(kernel_id: Id) -> anyhow::Result<KernelInfo> {
+        let kernel = Self::kernel_manager().get_kernel(&kernel_id).unwrap();
         Ok(kernel.info.clone())
     }
 
@@ -274,10 +272,8 @@ impl Frontend {
     pub fn send_request<T: ProtocolMessage>(
         kernel_id: &Id,
         message: T,
-    ) -> anyhow::Result<RequestChannels> {
-        let kernel = Self::kernel_manager()
-            .get_kernel(kernel_id)
-            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
+    ) -> Result<RequestChannels, Error> {
+        let kernel = Self::kernel_manager().get_kernel(&kernel_id)?;
 
         let request_id = kernel.connection.shell.lock().unwrap().send(message);
         let (iopub_tx, iopub_rx) = channel();
@@ -397,10 +393,8 @@ impl Frontend {
         })
     }
 
-    pub fn get_stdin_broker(kernel_id: &String) -> anyhow::Result<Arc<Broker>> {
-        let kernel = Self::kernel_manager()
-            .get_kernel(kernel_id)
-            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
+    pub fn get_stdin_broker(kernel_id: &Id) -> Result<Arc<Broker>, Error> {
+        let kernel = Self::kernel_manager().get_kernel(&kernel_id)?;
         Ok(Arc::clone(&kernel.stdin_broker))
     }
 }

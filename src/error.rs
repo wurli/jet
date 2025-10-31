@@ -10,6 +10,7 @@ use std::sync::mpsc::SendError;
 
 use crate::msg::wire::exception::Exception;
 use crate::msg::wire::jupyter_message::Message;
+use crate::msg::wire::message_id::Id;
 
 /// Type representing all errors that can occur inside the Amalthea implementation.
 #[derive(Debug)]
@@ -49,6 +50,7 @@ pub enum Error {
     ShellErrorReply(Exception),
     /// Execute errors also include the execution count
     ShellErrorExecuteReply(Exception, u32),
+    KernelNotRunning(Id),
 }
 
 impl std::error::Error for Error {}
@@ -213,6 +215,9 @@ impl fmt::Display for Error {
                     f,
                     "Got an execute error reply on Shell for request {count}: {error:?}"
                 )
+            }
+            Error::KernelNotRunning(id) => {
+                write!(f, "No such running kernel {}", id)
             }
         }
     }

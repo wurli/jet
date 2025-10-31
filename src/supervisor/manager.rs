@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::Error;
 use crate::msg::wire::language_info::LanguageInfo;
 use crate::msg::wire::message_id::Id;
 use crate::supervisor::broker::Broker;
@@ -56,9 +57,13 @@ impl KernelManager {
         Ok(())
     }
 
-    pub fn get_kernel(&self, id: &String) -> Option<Arc<KernelState>> {
+    pub fn get_kernel(&self, id: &Id) -> Result<Arc<KernelState>, Error> {
         let kernels = self.kernels.read().unwrap();
-        kernels.get(id).map(Arc::clone)
+        if let Some(kernel) = kernels.get(&String::from(id.clone())) {
+            Ok(Arc::clone(kernel))
+        } else {
+            Err(Error::KernelNotRunning(id.clone()))
+        }
     }
 
     pub fn remove_kernel(&self, id: Id) -> Option<Arc<KernelState>> {
