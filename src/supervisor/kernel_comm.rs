@@ -140,6 +140,12 @@ impl KernelComm {
         }
     }
 
+    pub fn is_request_active(&self, request_id: &Id) -> bool {
+        self.is_request_active_shell(request_id)
+            | self.is_request_active_stdin(request_id)
+            | self.is_request_active_control(request_id)
+    }
+
     pub fn is_request_active_shell(&self, request_id: &Id) -> bool {
         self.shell_broker.is_active(request_id)
     }

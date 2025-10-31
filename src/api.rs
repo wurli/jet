@@ -72,7 +72,7 @@ pub fn execute_code(
 
     Ok(move || {
         loop {
-            if !kernel.comm.is_request_active_shell(&receivers.id) {
+            if !kernel.comm.is_request_active(&receivers.id) {
                 log::trace!(
                     "Request {} is no longer active, returning None",
                     receivers.id

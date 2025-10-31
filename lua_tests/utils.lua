@@ -78,13 +78,13 @@ function M.execute(carpo, kernel_id, code, name, user_expressions)
     local i = 0
     while true do
         i = i + 1
-        M.cat_header("Result " .. i)
         local result = callback()
-        print(M.dump(result))
         if M.tbl_len(result) == 0 then
             -- if i > 10 then
             break
         end
+        M.cat_header("Result " .. i)
+        print(M.dump(result))
 
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"
