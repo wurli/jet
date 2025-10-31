@@ -9,9 +9,13 @@ use crate::supervisor::broker::Broker;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KernelInfo {
+    /// The path to the kernel's spec file
     pub spec_path: String,
+    /// The spec file's `display_name`
     pub display_name: String,
+    /// The banner given by the kernel's `KernelInfoReply`
     pub banner: String,
+    /// The language info given by the kernel's `KernelInfoReply`
     pub language: LanguageInfo,
 }
 
@@ -25,6 +29,7 @@ pub struct KernelState {
     pub control_broker: Arc<Broker>,
 }
 
+/// These are the channels on which we might want to send data (as well as receive)
 pub struct InputChannels {
     pub shell: Mutex<crate::connection::shell::Shell>,
     pub stdin: Mutex<crate::connection::stdin::Stdin>,
@@ -56,9 +61,13 @@ impl KernelManager {
         kernels.get(id).map(Arc::clone)
     }
 
-    pub fn remove_kernel(&self, id: &String) -> Option<Arc<KernelState>> {
+    pub fn remove_kernel(&self, id: Id) -> Option<Arc<KernelState>> {
         let mut kernels = self.kernels.write().unwrap();
-        kernels.remove(id)
+        let res = kernels.remove(&String::from(id.clone()));
+        if let None = res {
+            log::warn!("Could not remove non-active kernel {}", id)
+        };
+        res
     }
 
     pub fn list_kernels(&self) -> HashMap<String, KernelInfo> {
@@ -85,11 +94,5 @@ impl KernelManager {
             .get(id)
             .map(|k| f(k.as_ref()))
             .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", id))
-    }
-}
-
-impl Default for KernelManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
