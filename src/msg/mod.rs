@@ -5,4 +5,3 @@ pub mod session;
 pub mod wire;
 pub mod socket;
 pub mod registration_file;
-pub mod error;

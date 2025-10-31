@@ -17,7 +17,7 @@ use super::update_display_data::UpdateDisplayData;
 use super::welcome::Welcome;
 // use crate::comm::base_comm::JsonRpcReply;
 // use crate::comm::ui_comm::UiFrontendRequest;
-use crate::msg::error::Error;
+use crate::error::Error;
 use crate::msg::session::Session;
 use crate::msg::socket::Socket;
 use crate::msg::wire::comm_close::CommClose;
@@ -153,7 +153,7 @@ pub enum Status {
 /// Conversion from a `Message` to a `WireMessage`; used to send messages over a
 /// socket
 impl TryFrom<&Message> for WireMessage {
-    type Error = crate::msg::error::Error;
+    type Error = crate::error::Error;
 
     fn try_from(msg: &Message) -> Result<Self, Error> {
         match msg {
@@ -196,7 +196,7 @@ impl TryFrom<&Message> for WireMessage {
 }
 
 impl TryFrom<&WireMessage> for Message {
-    type Error = crate::msg::error::Error;
+    type Error = crate::error::Error;
 
     /// Converts from a wire message to a Jupyter message by examining the message
     /// type and attempting to coerce the content into the appropriate

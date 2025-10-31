@@ -16,7 +16,7 @@ use serde_json::json;
 use serde_json::value::Value;
 use sha2::Sha256;
 
-use crate::msg::error::Error;
+use crate::error::Error;
 use crate::msg::socket::Socket;
 use crate::msg::wire::header::JupyterHeader;
 use crate::msg::wire::jupyter_message::JupyterMessage;
@@ -334,7 +334,7 @@ impl WireMessage {
 // Conversion: WireMessage (untyped) -> JupyterMessage (typed); used on
 // messages we receive over the wire to parse into the correct type.
 impl<T: ProtocolMessage + DeserializeOwned> TryFrom<&WireMessage> for JupyterMessage<T> {
-    type Error = crate::msg::error::Error;
+    type Error = crate::error::Error;
     fn try_from(msg: &WireMessage) -> Result<JupyterMessage<T>, Error> {
         let content = match serde_json::from_value(msg.content.clone()) {
             Ok(val) => val,
@@ -358,7 +358,7 @@ impl<T: ProtocolMessage + DeserializeOwned> TryFrom<&WireMessage> for JupyterMes
 // Conversion: JupyterMessage (typed) -> WireMessage (untyped); used prior to
 // sending messages to get them ready for dispatch.
 impl<T: ProtocolMessage> TryFrom<&JupyterMessage<T>> for WireMessage {
-    type Error = crate::msg::error::Error;
+    type Error = crate::error::Error;
 
     /// Convert a typed JupyterMessage into a WireMessage, preserving ZeroMQ
     /// socket identities.

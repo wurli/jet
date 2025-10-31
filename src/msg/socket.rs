@@ -5,7 +5,7 @@
  *
  */
 
-use crate::msg::error::Error;
+use crate::error::Error;
 use crate::msg::session::Session;
 
 /// Represents a socket that sends and receives messages that are optionally

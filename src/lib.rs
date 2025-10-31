@@ -4,9 +4,9 @@ pub mod connection;
 pub mod kernel;
 pub mod msg;
 pub mod supervisor;
+pub mod error;
 
 use mlua::prelude::*;
-use msg::error;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 

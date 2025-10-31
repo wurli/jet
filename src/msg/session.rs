@@ -9,7 +9,7 @@ use hmac::Hmac;
 use hmac::Mac;
 use sha2::Sha256;
 
-use crate::msg::error::Error;
+use crate::error::Error;
 use crate::msg::wire::message_id::Id;
 
 /// A Jupyter kernel session; unique to a process.
