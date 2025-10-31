@@ -28,7 +28,7 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<(Id, KernelInfo)> {
     Frontend::start_kernel(spec_path, spec)
 }
 
-pub fn request_shutdown(kernel_id: String) -> anyhow::Result<Message> {
+pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<Message> {
     Frontend::request_shutdown(&kernel_id)
 }
 
@@ -36,7 +36,7 @@ pub fn list_kernels() -> HashMap<String, KernelInfo> {
     Frontend::kernel_manager().list_kernels()
 }
 
-pub fn provide_stdin(kernel_id: String, value: String) -> anyhow::Result<()> {
+pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
     Frontend::provide_stdin(&kernel_id, value)
 }
 

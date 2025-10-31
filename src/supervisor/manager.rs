@@ -48,10 +48,10 @@ impl KernelManager {
         }
     }
 
-    pub fn add_kernel(&self, id: Id, state: KernelState) -> anyhow::Result<()> {
+    pub fn add_kernel(&self, id: Id, state: KernelState) -> Result<(), Error> {
         let mut kernels = self.kernels.write().unwrap();
         if kernels.contains_key(&String::from(id.clone())) {
-            return Err(anyhow::anyhow!("Kernel with id '{}' already exists", id));
+            return Err(Error::KernelAlreadyRunning(id));
         }
         kernels.insert(String::from(id), Arc::new(state));
         Ok(())
@@ -66,13 +66,15 @@ impl KernelManager {
         }
     }
 
-    pub fn remove_kernel(&self, id: &Id) -> Option<Arc<KernelState>> {
+    pub fn remove_kernel(&self, id: &Id) -> Result<(), Error> {
         let mut kernels = self.kernels.write().unwrap();
         let res = kernels.remove(&String::from(id.clone()));
-        if let None = res {
-            log::warn!("Could not remove non-active kernel {}", id)
-        };
-        res
+        if let Some(_) = res {
+            Ok(())
+        } else {
+            log::error!("Could not remove non-active kernel {}", id);
+            Err(Error::KernelNotRunning(id.clone()))
+        }
     }
 
     pub fn list_kernels(&self) -> HashMap<String, KernelInfo> {
@@ -90,14 +92,10 @@ impl KernelManager {
     }
 
     /// Call `f()` on kernel `id`
-    pub fn with_kernel<F, R>(&self, id: &String, f: F) -> anyhow::Result<R>
+    pub fn with_kernel<F, R>(&self, id: &Id, f: F) -> anyhow::Result<R>
     where
         F: FnOnce(&KernelState) -> R,
     {
-        let kernels = self.kernels.read().unwrap();
-        kernels
-            .get(id)
-            .map(|k| f(k.as_ref()))
-            .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", id))
+        Ok(f(self.get_kernel(id)?.as_ref()))
     }
 }

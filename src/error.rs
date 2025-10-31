@@ -50,6 +50,7 @@ pub enum Error {
     ShellErrorReply(Exception),
     /// Execute errors also include the execution count
     ShellErrorExecuteReply(Exception, u32),
+    KernelAlreadyRunning(Id),
     KernelNotRunning(Id),
 }
 
@@ -215,6 +216,9 @@ impl fmt::Display for Error {
                     f,
                     "Got an execute error reply on Shell for request {count}: {error:?}"
                 )
+            }
+            Error::KernelAlreadyRunning(id) => {
+                write!(f, "Kernel {} is already running", id)
             }
             Error::KernelNotRunning(id) => {
                 write!(f, "No such running kernel {}", id)

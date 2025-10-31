@@ -65,7 +65,7 @@ fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTabl
 }
 
 pub fn request_shutdown(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
-    let reply = api::request_shutdown(kernel_id).into_lua_err()?;
+    let reply = api::request_shutdown(&Id::from(kernel_id)).into_lua_err()?;
     match reply {
         Message::ShutdownReply(msg) => lua.to_value(&msg.content),
         other => Err(LuaError::external(format!(
@@ -76,7 +76,7 @@ pub fn request_shutdown(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
 }
 
 pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult<()> {
-    api::provide_stdin(kernel_id, value).into_lua_err()?;
+    api::provide_stdin(&Id::from(kernel_id), value).into_lua_err()?;
     Ok(())
 }
 
