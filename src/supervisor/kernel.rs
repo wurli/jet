@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
 use crate::connection::connection::JupyterChannels;
@@ -13,6 +14,12 @@ pub struct Kernel {
     pub id: Id,
     pub info: KernelInfo,
     pub comm: KernelComm,
+}
+
+impl Display for Kernel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{}'{}", self.info.display_name, self.id)
+    }
 }
 
 impl Kernel {

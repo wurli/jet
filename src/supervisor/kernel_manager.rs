@@ -5,7 +5,8 @@ use anyhow::Result;
 
 use crate::error::Error;
 use crate::msg::wire::message_id::Id;
-use crate::supervisor::kernel::{Kernel, KernelInfo};
+use crate::supervisor::kernel::Kernel;
+use crate::supervisor::kernel_info::KernelInfo;
 
 pub static KERNEL_MANAGER: OnceLock<KernelManager> = OnceLock::new();
 
@@ -14,9 +15,9 @@ pub struct KernelManager {
 }
 
 impl KernelManager {
-    // pub fn get() -> &'static Self {
-    //     KERNEL_MANAGER.get_or_init(|| KernelManager::new())
-    // }
+    pub fn manager() -> &'static Self {
+        KERNEL_MANAGER.get_or_init(|| KernelManager::new())
+    }
 
     fn new() -> Self {
         Self {
@@ -24,17 +25,19 @@ impl KernelManager {
         }
     }
 
-    pub fn add(&self, id: Id, kernel: Kernel) -> Result<(), Error> {
-        let mut kernels = self.kernels.write().unwrap();
-        if kernels.contains_key(&String::from(id.clone())) {
-            return Err(Error::KernelAlreadyRunning(id));
+    pub fn add(kernel: Kernel) -> Result<(), Error> {
+        let mut kernels = Self::manager().kernels.write().unwrap();
+        if kernels.contains_key(&String::from(kernel.id.clone())) {
+            log::warn!("Failed to add existing kernel {}", kernel);
+            return Err(Error::KernelAlreadyRunning(kernel.id.clone()));
         }
-        kernels.insert(String::from(id), Arc::new(kernel));
+        log::trace!("Failed to add existing kernel {}", kernel);
+        kernels.insert(String::from(kernel.id.clone()), Arc::new(kernel));
         Ok(())
     }
 
-    pub fn get(&self, id: &Id) -> Result<Arc<Kernel>, Error> {
-        let kernels = self.kernels.read().unwrap();
+    pub fn get(id: &Id) -> Result<Arc<Kernel>, Error> {
+        let kernels = Self::manager().kernels.read().unwrap();
         if let Some(kernel) = kernels.get(&String::from(id.clone())) {
             Ok(Arc::clone(kernel))
         } else {
@@ -42,8 +45,9 @@ impl KernelManager {
         }
     }
 
-    pub fn remove(&self, id: &Id) -> Result<(), Error> {
-        let mut kernels = self.kernels.write().unwrap();
+    pub fn remove(id: &Id) -> Result<(), Error> {
+        let mut kernels = Self::manager().kernels.write().unwrap();
+        // TODO: check that the kernel is not active
         let res = kernels.remove(&String::from(id.clone()));
         if let Some(_) = res {
             Ok(())
@@ -53,8 +57,8 @@ impl KernelManager {
         }
     }
 
-    pub fn list(&self) -> HashMap<String, KernelInfo> {
-        let kernels = self.kernels.read().unwrap();
+    pub fn list() -> HashMap<String, KernelInfo> {
+        let kernels = Self::manager().kernels.read().unwrap();
 
         kernels
             .iter()
@@ -62,8 +66,8 @@ impl KernelManager {
             .collect()
     }
 
-    pub fn has(&self, id: &Id) -> bool {
-        let kernels = self.kernels.read().unwrap();
+    pub fn has(id: &Id) -> bool {
+        let kernels = Self::manager().kernels.read().unwrap();
         kernels.contains_key(&String::from(id.clone()))
     }
 }

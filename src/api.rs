@@ -1,9 +1,15 @@
 use crate::{
     kernel::kernel_spec::KernelSpecFull,
     msg::wire::{
-        complete_request::CompleteRequest, execute_request::ExecuteRequest, input_reply::InputReply, is_complete_request::IsCompleteRequest, jupyter_message::{Describe, Message}, message_id::Id, status::ExecutionState
+        complete_request::CompleteRequest,
+        execute_request::ExecuteRequest,
+        input_reply::InputReply,
+        is_complete_request::IsCompleteRequest,
+        jupyter_message::{Describe, Message},
+        message_id::Id,
+        status::ExecutionState,
     },
-    supervisor::{frontend::Frontend, kernel_manager::KernelInfo},
+    supervisor::{frontend::Frontend, kernel_info::KernelInfo},
 };
 use std::collections::HashMap;
 
