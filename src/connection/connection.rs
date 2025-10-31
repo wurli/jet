@@ -93,7 +93,7 @@ impl RegistrationSockets {
     }
 }
 
-pub struct Connection {
+pub struct JupyterChannels {
     pub control: Control,
     pub shell: Shell,
     pub iopub: Iopub,
@@ -102,7 +102,7 @@ pub struct Connection {
     pub session: Session,
 }
 
-impl Connection {
+impl JupyterChannels {
     pub fn init_with_connection_file(
         mut kernel_cmd: std::process::Command,
         path: PathBuf,

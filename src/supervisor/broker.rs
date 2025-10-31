@@ -7,7 +7,7 @@
  */
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -168,15 +168,19 @@ impl Broker {
     }
 
     /// Register a new request that expects messages
-    pub fn register_request(&self, request_id: &Id, channel: Sender<Message>) {
+    pub fn register_request(&self, request_id: &Id) -> Receiver<Message> {
         log::trace!("{}: Registering request: {}", self.name, request_id);
+        let (tx, rx) = std::sync::mpsc::channel();
+
         self.active_requests.write().unwrap().insert(
             request_id.clone(),
             RequestContext {
                 started_at: Instant::now(),
-                channel,
+                channel: tx,
             },
         );
+
+        rx
     }
 
     /// Unregister a completed request

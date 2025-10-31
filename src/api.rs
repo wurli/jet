@@ -1,14 +1,9 @@
 use crate::{
     kernel::kernel_spec::KernelSpecFull,
     msg::wire::{
-        complete_request::CompleteRequest,
-        execute_request::ExecuteRequest,
-        is_complete_request::IsCompleteRequest,
-        jupyter_message::{Describe, Message},
-        message_id::Id,
-        status::ExecutionState,
+        complete_request::CompleteRequest, execute_request::ExecuteRequest, input_reply::InputReply, is_complete_request::IsCompleteRequest, jupyter_message::{Describe, Message}, message_id::Id, status::ExecutionState
     },
-    supervisor::{frontend::Frontend, manager::KernelInfo},
+    supervisor::{frontend::Frontend, kernel_manager::KernelInfo},
 };
 use std::collections::HashMap;
 
@@ -37,7 +32,7 @@ pub fn list_kernels() -> HashMap<String, KernelInfo> {
 }
 
 pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
-    Frontend::provide_stdin(&kernel_id, value)
+    Frontend::send_stdin(&kernel_id, InputReply { value })
 }
 
 /// Long term this should maybe return a coroutine (i.e. generator) once they're stable:
@@ -51,7 +46,7 @@ pub fn execute_code(
 
     Frontend::recv_all_incoming_shell(&kernel_id).ok();
 
-    let request = match Frontend::send_request(
+    let request = match Frontend::send_shell(
         &kernel_id,
         ExecuteRequest {
             code: code.clone(),
@@ -137,7 +132,7 @@ pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::
 
     Frontend::recv_all_incoming_shell(&kernel_id)?;
 
-    let request = Frontend::send_request(&kernel_id, CompleteRequest { code, cursor_pos })?;
+    let request = Frontend::send_shell(&kernel_id, CompleteRequest { code, cursor_pos })?;
 
     let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
 
@@ -183,7 +178,7 @@ pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
 
     Frontend::recv_all_incoming_shell(&kernel_id)?;
 
-    let request = Frontend::send_request(&kernel_id, IsCompleteRequest { code: code.clone() })?;
+    let request = Frontend::send_shell(&kernel_id, IsCompleteRequest { code: code.clone() })?;
 
     let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
 

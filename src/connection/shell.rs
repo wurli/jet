@@ -1,17 +1,11 @@
-use crate::connection::connection::ExecuteRequestOptions;
-use crate::msg::session::Session;
-use crate::msg::wire::execute_request::ExecuteRequest;
 use crate::msg::wire::is_complete_reply::IsCompleteReply;
-use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
-use crate::msg::wire::message_id::Id;
 use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 
 pub struct Shell {
     socket: Socket,
-    session: Session,
 }
 
 impl Shell {
@@ -26,10 +20,7 @@ impl Shell {
         )
         .unwrap();
 
-        Self {
-            socket: socket,
-            session: opts.session.clone(),
-        }
+        Self { socket: socket }
     }
 
     pub fn recv(&self) -> Message {
@@ -56,11 +47,8 @@ impl Shell {
         None
     }
 
-    pub fn send<T: ProtocolMessage>(&self, msg: T) -> Id {
-        let message = JupyterMessage::create(msg, None, &self.session);
-        let id = message.header.msg_id.clone();
-        message.send(&self.socket).unwrap();
-        id
+    pub fn send<T: ProtocolMessage>(&self, msg: JupyterMessage<T>) {
+        msg.send(&self.socket).unwrap();
     }
 
     /// Receive from Shell and assert `ExecuteReply` message.
@@ -90,24 +78,6 @@ impl Shell {
 
         assert_matches!(msg, Message::IsCompleteReply(data) => {
             data.content
-        })
-    }
-
-    pub fn send_is_complete_request(&self, code: &str) -> Id {
-        log::trace!("Sending is_complete_request {} on the shell", code);
-        self.send(IsCompleteRequest {
-            code: String::from(code),
-        })
-    }
-
-    pub fn send_execute_request(&self, code: &str, options: ExecuteRequestOptions) -> Id {
-        self.send(ExecuteRequest {
-            code: String::from(code),
-            silent: false,
-            store_history: true,
-            user_expressions: serde_json::Value::Null,
-            allow_stdin: options.allow_stdin,
-            stop_on_error: false,
         })
     }
 }

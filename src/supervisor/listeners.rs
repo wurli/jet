@@ -39,7 +39,8 @@ pub fn listen_iopub(iopub: Iopub, broker: Arc<Broker>) -> JoinHandle<()> {
     })
 }
 
-pub fn loop_heartbeat(heartbeat: Heartbeat) -> JoinHandle<()> {
+/// Spawn a thread that periodically send heartbeat messages and verify replies
+pub fn listen_heartbeat(heartbeat: Heartbeat) -> JoinHandle<()> {
     std::thread::spawn(move || {
         loop {
             let mut rng = rand::rng();

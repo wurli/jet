@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::Result;
 
@@ -8,12 +8,18 @@ use crate::msg::wire::message_id::Id;
 use crate::supervisor::kernel::Kernel;
 use crate::supervisor::kernel::KernelInfo;
 
+pub static KERNEL_MANAGER: OnceLock<KernelManager> = OnceLock::new();
+
 pub struct KernelManager {
     kernels: RwLock<HashMap<String, Arc<Kernel>>>,
 }
 
 impl KernelManager {
-    pub fn new() -> Self {
+    pub fn get() -> &'static Self {
+        KERNEL_MANAGER.get_or_init(|| KernelManager::new())
+    }
+
+    fn new() -> Self {
         Self {
             kernels: RwLock::new(HashMap::new()),
         }
@@ -60,13 +66,5 @@ impl KernelManager {
     pub fn kernel_exists(&self, id: &String) -> bool {
         let kernels = self.kernels.read().unwrap();
         kernels.contains_key(id)
-    }
-
-    /// Call `f()` on kernel `id`
-    pub fn with_kernel<F, R>(&self, id: &Id, f: F) -> anyhow::Result<R>
-    where
-        F: FnOnce(&Kernel) -> R,
-    {
-        Ok(f(self.get_kernel(id)?.as_ref()))
     }
 }

@@ -1,5 +1,4 @@
 use crate::msg::session::Session;
-use crate::msg::wire::input_reply::InputReply;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
@@ -41,11 +40,8 @@ impl Stdin {
         }
     }
 
-    fn send_stdin<T: ProtocolMessage>(&self, msg: T) {
-        let message = JupyterMessage::create(msg, None, &self.session);
-        // let id = message.header.msg_id.clone();
-        message.send(&self.socket).unwrap();
-        // id
+    pub fn send<T: ProtocolMessage>(&self, msg: JupyterMessage<T>) {
+        msg.send(&self.socket).unwrap();
     }
 
     /// Receive from Stdin and assert `InputRequest` message.
@@ -56,10 +52,5 @@ impl Stdin {
         assert_matches!(msg, Message::InputRequest(data) => {
             data.content.prompt
         })
-    }
-
-    /// Send back an `InputReply` to an `InputRequest` over Stdin
-    pub fn send_input_reply(&self, value: String) {
-        self.send_stdin(InputReply { value })
     }
 }
