@@ -1,11 +1,9 @@
-use crate::msg::session::Session;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
 
 pub struct Stdin {
     socket: Socket,
-    session: Session,
 }
 
 impl Stdin {
@@ -22,7 +20,6 @@ impl Stdin {
 
         Self {
             socket: socket,
-            session: opts.session.clone(),
         }
     }
 

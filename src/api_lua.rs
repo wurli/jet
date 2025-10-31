@@ -32,30 +32,30 @@ pub fn execute_code(
     })
 }
 
-pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaTable> {
-    match api::is_complete(Id::from(kernel_id), code) {
-        Ok(Message::IsCompleteReply(msg)) => to_lua(lua, &msg.content),
-        Ok(msg) => Err(LuaError::external(format!(
-            "Received unexpected message type {}",
-            msg.kind()
-        ))),
-        Err(e) => Err(e.into_lua_err()),
-    }
-}
-
-pub fn get_completions(
-    lua: &Lua,
-    (kernel_id, code, cursor_pos): (String, String, u32),
-) -> LuaResult<LuaTable> {
-    match api::get_completions(Id::from(kernel_id), code, cursor_pos) {
-        Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
-        Ok(msg) => Err(LuaError::external(format!(
-            "Received unexpected message type {}",
-            msg.kind()
-        ))),
-        Err(e) => Err(e.into_lua_err()),
-    }
-}
+// pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaTable> {
+//     match api::is_complete(Id::from(kernel_id), code) {
+//         Ok(Message::IsCompleteReply(msg)) => to_lua(lua, &msg.content),
+//         Ok(msg) => Err(LuaError::external(format!(
+//             "Received unexpected message type {}",
+//             msg.kind()
+//         ))),
+//         Err(e) => Err(e.into_lua_err()),
+//     }
+// }
+//
+// pub fn get_completions(
+//     lua: &Lua,
+//     (kernel_id, code, cursor_pos): (String, String, u32),
+// ) -> LuaResult<LuaTable> {
+//     match api::get_completions(Id::from(kernel_id), code, cursor_pos) {
+//         Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
+//         Ok(msg) => Err(LuaError::external(format!(
+//             "Received unexpected message type {}",
+//             msg.kind()
+//         ))),
+//         Err(e) => Err(e.into_lua_err()),
+//     }
+// }
 
 fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
@@ -64,16 +64,16 @@ fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTabl
     Ok(out)
 }
 
-pub fn request_shutdown(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
-    let reply = api::request_shutdown(&Id::from(kernel_id)).into_lua_err()?;
-    match reply {
-        Message::ShutdownReply(msg) => lua.to_value(&msg.content),
-        other => Err(LuaError::external(format!(
-            "Received unexpected reply to shutdown request {}",
-            other.describe()
-        ))),
-    }
-}
+// pub fn request_shutdown(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
+//     let reply = api::request_shutdown(&Id::from(kernel_id)).into_lua_err()?;
+//     match reply {
+//         Message::ShutdownReply(msg) => lua.to_value(&msg.content),
+//         other => Err(LuaError::external(format!(
+//             "Received unexpected reply to shutdown request {}",
+//             other.describe()
+//         ))),
+//     }
+// }
 
 pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult<()> {
     api::provide_stdin(&Id::from(kernel_id), value).into_lua_err()?;

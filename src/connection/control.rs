@@ -1,7 +1,6 @@
 use crate::{
     connection::connection::ConnectionOptions,
     msg::{
-        session::Session,
         socket::Socket,
         wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage},
     },
@@ -9,7 +8,6 @@ use crate::{
 
 pub struct Control {
     socket: Socket,
-    session: Session,
 }
 
 impl Control {
@@ -26,7 +24,6 @@ impl Control {
 
         Self {
             socket,
-            session: opts.session.clone(),
         }
     }
 

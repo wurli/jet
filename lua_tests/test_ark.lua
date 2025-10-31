@@ -21,13 +21,13 @@ utils.execute(carpo, kernel_id, "1 + 1", info.display_name, { test = "2^2" })
 utils.execute(carpo, kernel_id, "x <- 2 + 2")
 utils.execute(carpo, kernel_id, "cat('Result:', x,)")
 
--- Try testing completeness
-utils.is_complete(carpo, kernel_id, "1 +")
-utils.is_complete(carpo, kernel_id, "1 + 1")
-utils.is_complete(carpo, kernel_id, "_")
-
--- Try getting completions (ark doesn't do these)
-utils.get_completions(carpo, kernel_id, "iris$", 4)
-
--- Try shutting down
-utils.request_shutdown(carpo, kernel_id)
+-- -- Try testing completeness
+-- utils.is_complete(carpo, kernel_id, "1 +")
+-- utils.is_complete(carpo, kernel_id, "1 + 1")
+-- utils.is_complete(carpo, kernel_id, "_")
+--
+-- -- Try getting completions (ark doesn't do these)
+-- utils.get_completions(carpo, kernel_id, "iris$", 4)
+--
+-- -- Try shutting down
+-- utils.request_shutdown(carpo, kernel_id)

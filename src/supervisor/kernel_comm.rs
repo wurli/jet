@@ -1,17 +1,16 @@
-use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
-use assert_matches::assert_matches;
 use crate::connection::control::Control;
 use crate::connection::shell::Shell;
 use crate::connection::stdin::Stdin;
-use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::msg::session::Session;
+use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::msg::wire::kernel_info_reply::KernelInfoReply;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
 use crate::msg::wire::message_id::Id;
 use crate::msg::wire::status::ExecutionState;
 use crate::supervisor::broker::Broker;
 use crate::supervisor::reply_receivers::ReplyReceivers;
+use assert_matches::assert_matches;
+use std::sync::{Arc, Mutex};
 
 /// These are the channels on which we might want to send data (as well as receive)
 pub struct KernelComm {
@@ -141,6 +140,18 @@ impl KernelComm {
         }
     }
 
+    pub fn is_request_active_shell(&self, request_id: &Id) -> bool {
+        self.shell_broker.is_active(request_id)
+    }
+
+    pub fn is_request_active_stdin(&self, request_id: &Id) -> bool {
+        self.stdin_broker.is_active(request_id)
+    }
+
+    pub fn is_request_active_control(&self, request_id: &Id) -> bool {
+        self.control_broker.is_active(request_id)
+    }
+
     pub fn subscribe(&self) -> KernelInfoReply {
         // When kernels up they often send a welcome message with no parent ID.
         let welcome_rx = self.iopub_broker.register_request(&Id::unparented());
@@ -184,4 +195,3 @@ impl KernelComm {
         &self.shell_broker
     }
 }
-
