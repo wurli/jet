@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
+use crate::msg::session::Session;
 use crate::msg::wire::language_info::LanguageInfo;
 use crate::msg::wire::message_id::Id;
 use crate::supervisor::broker::Broker;
@@ -20,10 +21,11 @@ pub struct KernelInfo {
     pub language: LanguageInfo,
 }
 
-pub struct KernelState {
+pub struct Kernel {
     pub id: Id,
     pub info: KernelInfo,
-    pub connection: InputChannels,
+    pub session: Session,
+    pub input_channels: InputChannels,
     pub iopub_broker: Arc<Broker>,
     pub shell_broker: Arc<Broker>,
     pub stdin_broker: Arc<Broker>,
@@ -38,7 +40,7 @@ pub struct InputChannels {
 }
 
 pub struct KernelManager {
-    kernels: RwLock<HashMap<String, Arc<KernelState>>>,
+    kernels: RwLock<HashMap<String, Arc<Kernel>>>,
 }
 
 impl KernelManager {
@@ -48,7 +50,7 @@ impl KernelManager {
         }
     }
 
-    pub fn add_kernel(&self, id: Id, state: KernelState) -> Result<(), Error> {
+    pub fn add_kernel(&self, id: Id, state: Kernel) -> Result<(), Error> {
         let mut kernels = self.kernels.write().unwrap();
         if kernels.contains_key(&String::from(id.clone())) {
             return Err(Error::KernelAlreadyRunning(id));
@@ -57,7 +59,7 @@ impl KernelManager {
         Ok(())
     }
 
-    pub fn get_kernel(&self, id: &Id) -> Result<Arc<KernelState>, Error> {
+    pub fn get_kernel(&self, id: &Id) -> Result<Arc<Kernel>, Error> {
         let kernels = self.kernels.read().unwrap();
         if let Some(kernel) = kernels.get(&String::from(id.clone())) {
             Ok(Arc::clone(kernel))
@@ -94,7 +96,7 @@ impl KernelManager {
     /// Call `f()` on kernel `id`
     pub fn with_kernel<F, R>(&self, id: &Id, f: F) -> anyhow::Result<R>
     where
-        F: FnOnce(&KernelState) -> R,
+        F: FnOnce(&Kernel) -> R,
     {
         Ok(f(self.get_kernel(id)?.as_ref()))
     }

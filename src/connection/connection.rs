@@ -99,7 +99,7 @@ pub struct Connection {
     pub iopub: Iopub,
     pub stdin: Stdin,
     pub heartbeat: Heartbeat,
-    // session: Session,
+    pub session: Session,
 }
 
 impl Connection {
@@ -132,7 +132,7 @@ impl Connection {
             iopub: Iopub::init(&opts, iopub_endpoint),
             stdin: Stdin::init(&opts, stdin_endpoint),
             heartbeat: Heartbeat::init(&opts, heartbeat_endpoint),
-            // session: opts.session,
+            session: opts.session,
         }
     }
 
@@ -166,7 +166,7 @@ impl Connection {
             iopub: Iopub::init(&opts, opts.endpoint(handshake.iopub_port)),
             stdin: Stdin::init(&opts, opts.endpoint(handshake.stdin_port)),
             heartbeat: Heartbeat::init(&opts, opts.endpoint(handshake.hb_port)),
-            // session: opts.session,
+            session: opts.session,
         }
     }
 }
