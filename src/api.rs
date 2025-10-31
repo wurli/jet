@@ -7,10 +7,7 @@ use crate::{
         jupyter_message::{Describe, Message},
         status::ExecutionState,
     },
-    supervisor::{
-        frontend::Frontend,
-        manager::{KernelId, KernelInfo},
-    },
+    supervisor::{frontend::Frontend, manager::KernelInfo},
 };
 use std::collections::HashMap;
 
@@ -18,7 +15,7 @@ pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
 }
 
-pub fn start_kernel(spec_path: String) -> anyhow::Result<(KernelId, KernelInfo)> {
+pub fn start_kernel(spec_path: String) -> anyhow::Result<(String, KernelInfo)> {
     let matched_spec = KernelSpecFull::get_all()
         .into_iter()
         .filter(|x| x.path.to_string_lossy() == spec_path)
@@ -30,20 +27,22 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<(KernelId, KernelInfo)>
     Frontend::start_kernel(spec_path, spec)
 }
 
-pub fn request_shutdown(kernel_id: KernelId) -> anyhow::Result<Message> {
+pub fn request_shutdown(kernel_id: String) -> anyhow::Result<Message> {
     Frontend::request_shutdown(&kernel_id)
 }
 
-pub fn list_kernels() -> HashMap<KernelId, KernelInfo> {
+pub fn list_kernels() -> HashMap<String, KernelInfo> {
     Frontend::kernel_manager().list_kernels()
 }
 
-pub fn provide_stdin(kernel_id: KernelId, value: String) -> anyhow::Result<()> {
+pub fn provide_stdin(kernel_id: String, value: String) -> anyhow::Result<()> {
     Frontend::provide_stdin(&kernel_id, value)
 }
 
+/// Long term this should maybe return a coroutine (i.e. generator) once they're stable:
+/// https://doc.rust-lang.org/beta/unstable-book/language-features/coroutines.html
 pub fn execute_code(
-    kernel_id: KernelId,
+    kernel_id: String,
     code: String,
     user_expressions: HashMap<String, String>,
 ) -> anyhow::Result<impl Fn() -> Option<Message>> {
@@ -133,7 +132,7 @@ pub fn execute_code(
 }
 
 pub fn get_completions(
-    kernel_id: KernelId,
+    kernel_id: String,
     code: String,
     cursor_pos: u32,
 ) -> anyhow::Result<Message> {
@@ -182,7 +181,7 @@ pub fn get_completions(
     out
 }
 
-pub fn is_complete(kernel_id: KernelId, code: String) -> anyhow::Result<Message> {
+pub fn is_complete(kernel_id: String, code: String) -> anyhow::Result<Message> {
     log::trace!(
         "Sending is complete request `{}` to kernel {}",
         code,

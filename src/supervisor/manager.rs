@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::msg::wire::language_info::LanguageInfo;
 use crate::supervisor::broker::Broker;
 
-pub type KernelId = String;
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KernelInfo {
     pub spec_path: String,
@@ -17,7 +15,7 @@ pub struct KernelInfo {
 }
 
 pub struct KernelState {
-    pub id: KernelId,
+    pub id: String,
     pub info: KernelInfo,
     pub connection: InputChannels,
     pub iopub_broker: Arc<Broker>,
@@ -33,7 +31,7 @@ pub struct InputChannels {
 }
 
 pub struct KernelManager {
-    kernels: RwLock<HashMap<KernelId, Arc<KernelState>>>,
+    kernels: RwLock<HashMap<String, Arc<KernelState>>>,
 }
 
 impl KernelManager {
@@ -43,7 +41,7 @@ impl KernelManager {
         }
     }
 
-    pub fn add_kernel(&self, id: KernelId, state: KernelState) -> anyhow::Result<()> {
+    pub fn add_kernel(&self, id: String, state: KernelState) -> anyhow::Result<()> {
         let mut kernels = self.kernels.write().unwrap();
         if kernels.contains_key(&id) {
             return Err(anyhow::anyhow!("Kernel with id '{}' already exists", id));
@@ -52,17 +50,17 @@ impl KernelManager {
         Ok(())
     }
 
-    pub fn get_kernel(&self, id: &KernelId) -> Option<Arc<KernelState>> {
+    pub fn get_kernel(&self, id: &String) -> Option<Arc<KernelState>> {
         let kernels = self.kernels.read().unwrap();
         kernels.get(id).map(Arc::clone)
     }
 
-    pub fn remove_kernel(&self, id: &KernelId) -> Option<Arc<KernelState>> {
+    pub fn remove_kernel(&self, id: &String) -> Option<Arc<KernelState>> {
         let mut kernels = self.kernels.write().unwrap();
         kernels.remove(id)
     }
 
-    pub fn list_kernels(&self) -> HashMap<KernelId, KernelInfo> {
+    pub fn list_kernels(&self) -> HashMap<String, KernelInfo> {
         let kernels = self.kernels.read().unwrap();
 
         kernels
@@ -71,13 +69,13 @@ impl KernelManager {
             .collect()
     }
 
-    pub fn kernel_exists(&self, id: &KernelId) -> bool {
+    pub fn kernel_exists(&self, id: &String) -> bool {
         let kernels = self.kernels.read().unwrap();
         kernels.contains_key(id)
     }
 
     /// Call `f()` on kernel `id`
-    pub fn with_kernel<F, R>(&self, id: &KernelId, f: F) -> anyhow::Result<R>
+    pub fn with_kernel<F, R>(&self, id: &String, f: F) -> anyhow::Result<R>
     where
         F: FnOnce(&KernelState) -> R,
     {

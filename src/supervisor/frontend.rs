@@ -9,7 +9,6 @@ use crate::{
     connection::connection::Connection,
     kernel::{kernel_spec::KernelSpec, startup_method::ConnectionMethod},
     msg::wire::{
-        input_request::InputRequest,
         jupyter_message::{Message, ProtocolMessage},
         kernel_info_reply::KernelInfoReply,
         kernel_info_request::KernelInfoRequest,
@@ -19,7 +18,7 @@ use crate::{
     supervisor::{
         broker::Broker,
         listeners::{listen_iopub, loop_heartbeat},
-        manager::{InputChannels, KernelId, KernelInfo, KernelManager, KernelState},
+        manager::{InputChannels, KernelInfo, KernelManager, KernelState},
     },
 };
 
@@ -49,7 +48,7 @@ impl Frontend {
     pub fn start_kernel(
         spec_path: String,
         spec: KernelSpec,
-    ) -> anyhow::Result<(KernelId, KernelInfo)> {
+    ) -> anyhow::Result<(String, KernelInfo)> {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = uuid::Uuid::new_v4().to_string();
@@ -165,16 +164,16 @@ impl Frontend {
         kernel_info
     }
 
-    pub fn request_shutdown(kernel_id: &KernelId) -> anyhow::Result<Message> {
+    pub fn request_shutdown(kernel_id: &String) -> anyhow::Result<Message> {
         Self::request_shutdown_impl(kernel_id, false)
     }
 
-    pub fn request_restart(kernel_id: &KernelId) -> anyhow::Result<Message> {
+    pub fn request_restart(kernel_id: &String) -> anyhow::Result<Message> {
         Self::request_shutdown_impl(kernel_id, true)
     }
 
     /// This is a mess
-    fn request_shutdown_impl(kernel_id: &KernelId, restart: bool) -> anyhow::Result<Message> {
+    fn request_shutdown_impl(kernel_id: &String, restart: bool) -> anyhow::Result<Message> {
         Self::kernel_manager()
             .with_kernel(kernel_id, |kernel| {
                 let request_id = {
@@ -258,12 +257,12 @@ impl Frontend {
             .unwrap()
     }
 
-    pub fn get_kernel_info(kernel_id: &KernelId) -> anyhow::Result<KernelInfo> {
+    pub fn get_kernel_info(kernel_id: &String) -> anyhow::Result<KernelInfo> {
         let kernel = Self::kernel_manager().get_kernel(kernel_id).unwrap();
         Ok(kernel.info.clone())
     }
 
-    pub fn provide_stdin(kernel_id: &KernelId, value: String) -> anyhow::Result<()> {
+    pub fn provide_stdin(kernel_id: &String, value: String) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             kernel
                 .connection
@@ -275,7 +274,7 @@ impl Frontend {
     }
 
     pub fn send_request<T: ProtocolMessage>(
-        kernel_id: &KernelId,
+        kernel_id: &String,
         message: T,
     ) -> anyhow::Result<RequestChannels> {
         let kernel = Self::kernel_manager()
@@ -323,7 +322,7 @@ impl Frontend {
         }
     }
 
-    pub fn is_request_active(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<bool> {
+    pub fn is_request_active(kernel_id: &String, request_id: &String) -> anyhow::Result<bool> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             kernel.shell_broker.is_active(request_id)
                 | kernel.iopub_broker.is_active(request_id)
@@ -331,7 +330,7 @@ impl Frontend {
         })
     }
 
-    pub fn route_shell_reply(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<()> {
+    pub fn route_shell_reply(kernel_id: &String, request_id: &String) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             Self::route_reply_impl(
                 || kernel.connection.shell.lock().unwrap().recv(),
@@ -341,7 +340,7 @@ impl Frontend {
         })
     }
 
-    pub fn route_control_reply(kernel_id: &KernelId, request_id: &String) -> anyhow::Result<()> {
+    pub fn route_control_reply(kernel_id: &String, request_id: &String) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             Self::route_reply_impl(
                 || kernel.connection.control.lock().unwrap().recv(),
@@ -367,7 +366,7 @@ impl Frontend {
         }
     }
 
-    pub fn recv_all_incoming_shell(kernel_id: &KernelId) -> anyhow::Result<()> {
+    pub fn recv_all_incoming_shell(kernel_id: &String) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             loop {
                 match kernel.connection.shell.lock().unwrap().try_recv() {
@@ -378,7 +377,7 @@ impl Frontend {
         })
     }
 
-    pub fn recv_all_incoming_control(kernel_id: &KernelId) -> anyhow::Result<()> {
+    pub fn recv_all_incoming_control(kernel_id: &String) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             loop {
                 match kernel.connection.control.lock().unwrap().try_recv() {
@@ -389,7 +388,7 @@ impl Frontend {
         })
     }
 
-    pub fn recv_all_incoming_stdin(kernel_id: &KernelId) -> anyhow::Result<()> {
+    pub fn recv_all_incoming_stdin(kernel_id: &String) -> anyhow::Result<()> {
         Self::kernel_manager().with_kernel(kernel_id, |kernel| {
             loop {
                 match kernel.connection.stdin.lock().unwrap().try_recv() {
@@ -400,7 +399,7 @@ impl Frontend {
         })
     }
 
-    pub fn get_stdin_broker(kernel_id: &KernelId) -> anyhow::Result<Arc<Broker>> {
+    pub fn get_stdin_broker(kernel_id: &String) -> anyhow::Result<Arc<Broker>> {
         let kernel = Self::kernel_manager()
             .get_kernel(kernel_id)
             .ok_or_else(|| anyhow::anyhow!("Kernel '{}' not found", kernel_id))?;
