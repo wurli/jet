@@ -148,7 +148,7 @@ impl JupyterChannels {
         let opts = ConnectionOptions::init();
 
         let sockets = RegistrationSockets::from(&opts);
-        sockets.to_file(&opts, path.into());
+        sockets.to_file(&opts, path);
 
         let child = kernel_cmd.spawn()?;
 

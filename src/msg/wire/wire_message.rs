@@ -147,7 +147,7 @@ impl WireMessage {
         };
 
         // Decode the hexadecimal representation of the signature
-        let decoded = match hex::decode(&data) {
+        let decoded = match hex::decode(data) {
             Ok(decoded_bytes) => decoded_bytes,
             Err(error) => return Err(Error::InvalidHmac(data.to_vec(), error)),
         };
@@ -161,7 +161,7 @@ impl WireMessage {
                 key = false;
                 continue;
             }
-            hmac_validator.update(&buf);
+            hmac_validator.update(buf);
         }
         // Verify the signature
         #[allow(deprecated)]
@@ -177,7 +177,7 @@ impl WireMessage {
     /// into a JSON value.
     fn parse_buffer(desc: String, buf: &[u8]) -> Result<serde_json::Value, Error> {
         // Convert the raw byte sequence from the ZeroMQ message into UTF-8
-        let str = match std::str::from_utf8(&buf) {
+        let str = match std::str::from_utf8(buf) {
             Ok(s) => s,
             Err(err) => return Err(Error::Utf8Error(desc, buf.to_vec(), err)),
         };
@@ -223,7 +223,7 @@ impl WireMessage {
                 use hmac::Mac;
                 let mut sig = key.clone();
                 for part in &parts {
-                    sig.update(&part);
+                    sig.update(part);
                 }
                 #[allow(deprecated)]
                 hex::encode(sig.finalize().into_bytes().as_slice())
@@ -281,11 +281,10 @@ impl WireMessage {
                 }
             },
             "status" => {
-                if let Value::Object(map) = &self.content {
-                    if let Some(Value::String(execution_state)) = map.get("execution_state") {
+                if let Value::Object(map) = &self.content
+                    && let Some(Value::String(execution_state)) = map.get("execution_state") {
                         return format!("status/{execution_state}");
                     }
-                }
             },
             _ => {},
         }
@@ -293,17 +292,16 @@ impl WireMessage {
     }
 
     fn comm_msg_type(data: Option<&Value>) -> String {
-        if let Some(Value::Object(map)) = data {
-            if let Some(Value::String(msg_type)) = map.get("method") {
+        if let Some(Value::Object(map)) = data
+            && let Some(Value::String(msg_type)) = map.get("method") {
                 return msg_type.clone();
             }
-        }
         String::from("unknown")
     }
 
     fn comm_msg_id(id: Option<&Value>) -> String {
         if let Some(Value::String(id)) = id {
-            return Self::comm_msg_id_type(&id);
+            return Self::comm_msg_id_type(id);
         }
         String::from("unknown")
     }
@@ -327,7 +325,7 @@ impl WireMessage {
         if id.contains("dap-") {
             return String::from("DAP");
         }
-        return id.to_string();
+        id.to_string()
     }
 }
 

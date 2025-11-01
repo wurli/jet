@@ -19,7 +19,7 @@ impl Stdin {
         .unwrap();
 
         Self {
-            socket: socket,
+            socket,
         }
     }
 
@@ -31,9 +31,9 @@ impl Stdin {
         if self.socket.has_incoming_data()? {
             // Just unwrapping here because I don't _think_ this should go wrong
             // and currently not sure how to handle if it does.
-            return Ok(Message::read_from_socket(&self.socket)?);
+            Ok(Message::read_from_socket(&self.socket)?)
         } else {
-            return Err(anyhow::anyhow!("No incoming data on stdin socket"));
+            Err(anyhow::anyhow!("No incoming data on stdin socket"))
         }
     }
 

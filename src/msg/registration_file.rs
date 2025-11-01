@@ -64,7 +64,9 @@ impl RegistrationFile {
         let heartbeat_port = 0;
 
         // Build a `ConnectionFile`
-        let connection = ConnectionFile {
+        
+
+        ConnectionFile {
             control_port,
             shell_port,
             stdin_port,
@@ -74,9 +76,7 @@ impl RegistrationFile {
             signature_scheme: self.signature_scheme.clone(),
             ip: self.ip.clone(),
             key: self.key.clone(),
-        };
-
-        connection
+        }
     }
 
     /// Given a port, return a URI-like string that can be used to connect to

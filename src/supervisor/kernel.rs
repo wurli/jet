@@ -65,10 +65,10 @@ impl Kernel {
             shell_channel: Mutex::new(jupyter_channels.shell),
             stdin_channel: Mutex::new(jupyter_channels.stdin),
             control_channel: Mutex::new(jupyter_channels.control),
-            iopub_broker: iopub_broker,
-            shell_broker: shell_broker,
-            stdin_broker: stdin_broker,
-            control_broker: control_broker,
+            iopub_broker,
+            shell_broker,
+            stdin_broker,
+            control_broker,
         };
 
         let kernel_info_reply = kernel_comm.subscribe();
@@ -78,7 +78,7 @@ impl Kernel {
             comm: kernel_comm,
             process: Mutex::new(process),
             info: KernelInfo {
-                spec_path: spec_path,
+                spec_path,
                 display_name: spec.display_name,
                 banner: kernel_info_reply.banner,
                 language: kernel_info_reply.language_info,
@@ -97,7 +97,7 @@ impl Kernel {
             let mut last_cleanup = Instant::now();
 
             loop {
-                if let Ok(_) = stop_rx.try_recv() {
+                if stop_rx.try_recv().is_ok() {
                     log::trace!("Quitting iopub thread");
                     return;
                 }
@@ -128,7 +128,7 @@ impl Kernel {
             log::info!("Heartbeat thread started");
 
             loop {
-                if let Ok(_) = stop_rx.try_recv() {
+                if stop_rx.try_recv().is_ok() {
                     log::trace!("Quitting heartbeat thread");
                     return;
                 }

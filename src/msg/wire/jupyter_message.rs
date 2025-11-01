@@ -225,12 +225,11 @@ impl TryFrom<&WireMessage> for Message {
         if kind == InspectReply::message_type() {
             return Ok(Message::InspectReply(JupyterMessage::try_from(msg)?));
         }
-        if kind == ExecuteReplyException::message_type() {
-            if let Ok(data) = JupyterMessage::try_from(msg) {
+        if kind == ExecuteReplyException::message_type()
+            && let Ok(data) = JupyterMessage::try_from(msg) {
                 return Ok(Message::ExecuteReplyException(data));
             }
             // else fallthrough to try `ExecuteRequest` which has the same message type
-        }
         if kind == ExecuteRequest::message_type() {
             return Ok(Message::ExecuteRequest(JupyterMessage::try_from(msg)?));
         }
@@ -312,7 +311,7 @@ impl TryFrom<&WireMessage> for Message {
         if kind == Welcome::message_type() {
             return Ok(Message::Welcome(JupyterMessage::try_from(msg)?));
         }
-        return Err(Error::UnknownMessageType(kind));
+        Err(Error::UnknownMessageType(kind))
     }
 }
 
@@ -403,11 +402,13 @@ impl Message {
             Message::CommClose(msg) => msg.content.kind(),
         };
 
-        String::from(msg_type)
+        msg_type
     }
 
     pub fn info(&self) -> Option<String> {
-        let msg_type = match self {
+        
+
+        match self {
             Message::KernelInfoReply(msg) => msg.content.info(),
             Message::KernelInfoRequest(msg) => msg.content.info(),
             Message::CompleteReply(msg) => msg.content.info(),
@@ -440,16 +441,11 @@ impl Message {
             Message::CommMsg(msg) => msg.content.info(),
             Message::CommOpen(msg) => msg.content.info(),
             Message::CommClose(msg) => msg.content.info(),
-        };
-
-        msg_type
+        }
     }
 
     pub fn parent_id(&self) -> Option<Id> {
-        match self.parent_header() {
-            Some(msg) => Some(msg.msg_id.clone()),
-            None => None,
-        }
+        self.parent_header().as_ref().map(|msg| msg.msg_id.clone())
     }
 
     /// Gives the message kind, the parent id, and possibly additional info
@@ -470,10 +466,7 @@ where
     T: ProtocolMessage,
 {
     pub fn parent_id(&self) -> Option<Id> {
-        match &self.parent_header {
-            Some(header) => Some(header.msg_id.clone()),
-            None => None,
-        }
+        self.parent_header.as_ref().map(|header| header.msg_id.clone())
     }
 
     /// Sends this Jupyter message to the designated ZeroMQ socket.

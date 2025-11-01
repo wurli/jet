@@ -125,7 +125,7 @@ impl Broker {
 
                 let description = msg.describe();
 
-                if let Err(_) = request.channel.send(msg) {
+                if request.channel.send(msg).is_err() {
                     log::warn!(
                         "{}: Failed to route {} for request {}: receiver dropped",
                         self.name,
@@ -138,7 +138,7 @@ impl Broker {
 
         // We have to unregister after `active_requests` has gone out of scope to avoid a deadlock
         if let Some(reason) = unregister_reason {
-            self.unregister_request(&parent_id, reason);
+            self.unregister_request(parent_id, reason);
         }
     }
 

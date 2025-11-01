@@ -102,7 +102,7 @@ impl KernelSpec {
 
         // Ark _does_ support connection through registration files, but doesn't (yet) advertise
         // this in the kernel spec
-        if self.display_name == String::from("Ark R Kernel") {
+        if self.display_name == "Ark R Kernel" {
             use_registration_file = true;
         }
 
@@ -111,9 +111,9 @@ impl KernelSpec {
         }
 
         if use_registration_file {
-            return StartupMethod::RegistrationFile;
+            StartupMethod::RegistrationFile
         } else {
-            return StartupMethod::ConnectionFile;
+            StartupMethod::ConnectionFile
         }
     }
 }

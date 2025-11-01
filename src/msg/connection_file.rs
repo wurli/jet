@@ -40,6 +40,12 @@ pub struct ConnectionFile {
     pub key: String,
 }
 
+impl Default for ConnectionFile {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionFile {
     pub fn new() -> Self {
         Self {

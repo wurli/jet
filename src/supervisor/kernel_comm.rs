@@ -93,10 +93,10 @@ impl KernelComm {
     fn register_request(&self, request_id: &Id) -> ReplyReceivers {
         ReplyReceivers {
             id: request_id.clone(),
-            iopub: self.iopub_broker.register_request(&request_id),
-            stdin: self.stdin_broker.register_request(&request_id),
-            shell: self.shell_broker.register_request(&request_id),
-            control: self.control_broker.register_request(&request_id),
+            iopub: self.iopub_broker.register_request(request_id),
+            stdin: self.stdin_broker.register_request(request_id),
+            shell: self.shell_broker.register_request(request_id),
+            control: self.control_broker.register_request(request_id),
         }
     }
 
@@ -199,8 +199,8 @@ impl KernelComm {
 
         log::info!("Kernel info reply: {:#?}", kernel_info);
 
-        if let Some(version) = &kernel_info.protocol_version {
-            if version >= &String::from("5.4") {
+        if let Some(version) = &kernel_info.protocol_version
+            && version >= &String::from("5.4") {
                 assert_matches!(welcome_rx.recv().unwrap(), Message::Welcome(data) => {
                     assert_eq!(data.content.subscription, String::from(""));
                     log::info!("Received the welcome message from the kernel");
@@ -210,7 +210,6 @@ impl KernelComm {
                     log::info!("Received the starting message from the kernel");
                 });
             }
-        }
 
         self.iopub_broker
             .unregister_request(&Id::unparented(), "all expected startup messages received");

@@ -85,11 +85,10 @@ impl Socket {
         // unroutable messages.
         #[cfg(debug_assertions)]
         {
-            if kind == zmq::ROUTER {
-                if let Err(err) = socket.set_router_mandatory(true) {
+            if kind == zmq::ROUTER
+                && let Err(err) = socket.set_router_mandatory(true) {
                     return Err(Error::SocketBindError(name, endpoint, err));
                 }
-            }
         }
 
         // One side of a socket must `bind()` to its endpoint, and the other
@@ -161,11 +160,10 @@ impl Socket {
         };
 
         // Set the socket's identity, if supplied
-        if let Some(identity) = identity {
-            if let Err(err) = socket.set_identity(identity) {
+        if let Some(identity) = identity
+            && let Err(err) = socket.set_identity(identity) {
                 return Err(Error::CreateSocketFailed(name, err));
             }
-        }
 
         Ok(socket)
     }

@@ -16,7 +16,7 @@ pub struct KernelManager {
 
 impl KernelManager {
     pub fn manager() -> &'static Self {
-        KERNEL_MANAGER.get_or_init(|| KernelManager::new())
+        KERNEL_MANAGER.get_or_init(KernelManager::new)
     }
 
     fn new() -> Self {

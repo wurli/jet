@@ -24,10 +24,9 @@ pub fn list_running_kernels() -> HashMap<String, KernelInfo> {
 pub fn start_kernel(spec_path: String) -> anyhow::Result<(Id, KernelInfo)> {
     let matched_spec = KernelSpecFull::get_all()
         .into_iter()
-        .filter(|x| x.path.to_string_lossy() == spec_path)
-        .nth(0);
+        .filter(|x| x.path.to_string_lossy() == spec_path).next();
 
-    let spec_full = matched_spec.expect(&format!("No kernel found at `{}`", spec_path));
+    let spec_full = matched_spec.unwrap_or_else(|| panic!("No kernel found at `{}`", spec_path));
     let spec = spec_full.spec?;
 
     let kernel = Kernel::start(spec_path, spec)?;

@@ -37,7 +37,7 @@ impl Iopub {
     }
 
     /// Receive from IOPub and assert Busy message
-    pub fn recv_busy(&self) -> () {
+    pub fn recv_busy(&self) {
         let msg = self.recv();
 
         assert_matches!(msg, Message::Status(data) => {
@@ -46,7 +46,7 @@ impl Iopub {
     }
 
     /// Receive from IOPub and assert Idle message
-    pub fn recv_idle(&self) -> () {
+    pub fn recv_idle(&self) {
         let msg = self.recv();
 
         assert_matches!(msg, Message::Status(data) => {

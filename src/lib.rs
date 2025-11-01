@@ -15,7 +15,7 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
     // Initialise the logger
     let log_file = String::from("carpo.log");
     let target = Box::new(
-        std::fs::File::create(&log_file).expect(&format!("Can't create log file at {log_file}")),
+        std::fs::File::create(&log_file).unwrap_or_else(|_| panic!("Can't create log file at {log_file}")),
     );
     env_logger::Builder::from_default_env()
         .target(env_logger::Target::Pipe(target))
