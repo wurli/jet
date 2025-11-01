@@ -141,7 +141,7 @@ fn request_shutdown_impl(kernel_id: &Id, restart: bool) -> anyhow::Result<Messag
     let receivers = kernel.comm.send_control(ShutdownRequest { restart });
 
     loop {
-        while let Ok(reply) = receivers.iopub.recv() {
+        while let Ok(reply) = receivers.iopub.try_recv() {
             match reply {
                 Message::ShutdownReply(_) => {
                     log::info!("Received shutdown_reply on iopub (non-standard)");
