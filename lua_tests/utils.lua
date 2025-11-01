@@ -58,20 +58,25 @@ M.cat_header = function(x, pad)
     print(pad:rep(2) .. x .. pad:rep(math.max(out_len - 2 - x_len, 0)))
 end
 
---- Execute code in the carpo kernel and print results until the execution finishes
-function M.execute(carpo, kernel_id, code, name, user_expressions)
-    user_expressions = user_expressions or {}
-    name = name or kernel_id
-
+local function big_header(action, name, context)
+    name = name and ("in kernel: " .. name) or ""
     M.cat_header(nil, "=")
-    print("Executing code in kernel: " .. name)
-    if M.tbl_len(user_expressions) > 0 then
-        print("User expressions: " .. M.dump(user_expressions))
+    print(action .. name)
+    for k, v in pairs(context or {}) do
+        print("*   " .. k .. ": " .. M.dump(v))
     end
     M.cat_header(nil, "=")
-    print("```")
-    print(code)
-    print("```")
+end
+
+--- Execute code in the carpo kernel and print results until the execution finishes
+function M.execute(carpo, kernel_id, code, user_expressions, name)
+    user_expressions = user_expressions or {}
+
+    big_header(
+        "Executing code",
+        name,
+        { ["User expressions"] = user_expressions, ["code"] = code }
+    )
 
     local callback = carpo.execute_code(kernel_id, code, user_expressions)
 
@@ -96,23 +101,8 @@ function M.execute(carpo, kernel_id, code, name, user_expressions)
     end
 end
 
-function M.is_complete(carpo, kernel_id_or_code, code_or_nil)
-    local kernel_id, code
-
-    if code_or_nil ~= nil then
-        kernel_id = kernel_id_or_code
-        code = code_or_nil
-    else
-        kernel_id = nil
-        code = kernel_id_or_code
-    end
-
-    M.cat_header(nil, "=")
-    print("Testing completeness")
-    M.cat_header(nil, "=")
-    print("```")
-    print(code)
-    print("```")
+function M.is_complete(carpo, kernel_id, code, name)
+    big_header("Testing completeness", name, { ["code"] = code })
 
     if kernel_id then
         print(M.dump(carpo.is_complete(kernel_id, code)))
@@ -121,31 +111,24 @@ function M.is_complete(carpo, kernel_id_or_code, code_or_nil)
     end
 end
 
-function M.get_completions(carpo, kernel_id, code, cursor_pos)
-    M.cat_header(nil, "=")
-    print("Getting completions")
-    M.cat_header(nil, "=")
-    print("Cursor pos: " .. cursor_pos)
-    print("```")
-    print(code)
-    print("```")
+function M.get_completions(carpo, kernel_id, code, cursor_pos, name)
+    big_header("Getting completeions", name, {
+        code = code,
+        name = name,
+        cursor_pos = cursor_pos
+    })
     print(M.dump(carpo.get_completions(kernel_id, code, cursor_pos)))
 end
 
-function M.request_shutdown(carpo, kernel_id)
-    M.cat_header(nil, "=")
-    print("Requesting shutdown")
-    M.cat_header(nil, "=")
+function M.request_shutdown(carpo, kernel_id, name)
+    big_header("Requesting shutdown", name)
     print(M.dump(carpo.request_shutdown(kernel_id)))
 end
 
-function M.request_restart(carpo, kernel_id)
-    M.cat_header(nil, "=")
-    print("Requesting restart")
-    M.cat_header(nil, "=")
+function M.request_restart(carpo, kernel_id, name)
+    big_header("Getting completeions", name)
     print(M.dump(carpo.request_restart(kernel_id)))
 end
-
 
 function M.list_running_kernels(carpo)
     M.cat_header(nil, "=")
