@@ -7,6 +7,7 @@ use crate::{
         is_complete_request::IsCompleteRequest,
         jupyter_message::{Describe, Message},
         message_id::Id,
+        shutdown_request::ShutdownRequest,
         status::ExecutionState,
     },
     supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager},
@@ -17,13 +18,17 @@ pub fn discover_kernels() -> Vec<KernelSpecFull> {
     KernelSpecFull::get_all()
 }
 
+pub fn list_running_kernels() -> HashMap<String, KernelInfo> {
+    KernelManager::list()
+}
+
 pub fn start_kernel(spec_path: String) -> anyhow::Result<(Id, KernelInfo)> {
     let matched_spec = KernelSpecFull::get_all()
         .into_iter()
         .filter(|x| x.path.to_string_lossy() == spec_path)
         .nth(0);
 
-    let spec_full = matched_spec.expect(&format!("No kernel found with name '{}'", spec_path));
+    let spec_full = matched_spec.expect(&format!("No kernel found at `{}`", spec_path));
     let spec = spec_full.spec?;
 
     let kernel = Kernel::start(spec_path, spec);
@@ -32,20 +37,6 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<(Id, KernelInfo)> {
     KernelManager::add(kernel)?;
 
     Ok(out)
-}
-
-// pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<Message> {
-//     Frontend::request_shutdown(&kernel_id)
-// }
-
-pub fn list_kernels() -> HashMap<String, KernelInfo> {
-    KernelManager::list()
-}
-
-pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
-    let kernel = KernelManager::get(kernel_id)?;
-    kernel.comm.send_stdin(InputReply { value });
-    Ok(())
 }
 
 /// Long term this should maybe return a coroutine (i.e. generator) once they're stable:
@@ -131,6 +122,79 @@ pub fn execute_code(
             }
         }
     })
+}
+
+pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<Message> {
+    request_shutdown_impl(kernel_id, false)
+}
+
+pub fn request_restart(kernel_id: &Id) -> anyhow::Result<Message> {
+    request_shutdown_impl(kernel_id, true)
+}
+
+fn request_shutdown_impl(kernel_id: &Id, restart: bool) -> anyhow::Result<Message> {
+    log::info!("Sending shutdown request to kernel {}", kernel_id);
+
+    let kernel = KernelManager::get(kernel_id)?;
+
+    kernel.comm.route_all_incoming_shell();
+    let receivers = kernel.comm.send_control(ShutdownRequest { restart });
+
+    loop {
+        while let Ok(reply) = receivers.iopub.recv() {
+            match reply {
+                Message::ShutdownReply(_) => {
+                    log::info!("Received shutdown_reply on iopub (non-standard)");
+                    return Ok(reply);
+                }
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    break;
+                }
+                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+            }
+        }
+
+        kernel.comm.route_all_incoming_stdin();
+
+        if let Ok(reply) = receivers.stdin.try_recv() {
+            match reply {
+                Message::InputRequest(_) => return Ok(reply),
+                other => log::warn!("Received unexpected reply {}", other.describe()),
+            }
+        };
+
+        kernel.comm.route_all_incoming_control();
+
+        if let Ok(reply) = receivers.control.try_recv() {
+            match reply {
+                Message::ShutdownReply(_) => {
+                    log::info!("Received shutdown_reply on control (standard)");
+                    kernel
+                        .comm
+                        .control_broker
+                        .unregister_request(&receivers.id, "reply received");
+                    return Ok(reply);
+                }
+                other => {
+                    log::warn!(
+                        "Expected shutdown_reply but received unexpected message: {:#?}",
+                        other
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Expected shutdown_reply but received unexpected message: {:#?}",
+                        other
+                    ));
+                }
+            }
+        }
+    }
+}
+
+pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
+    let kernel = KernelManager::get(kernel_id)?;
+    kernel.comm.send_stdin(InputReply { value });
+    Ok(())
 }
 
 pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::Result<Message> {
@@ -220,7 +284,10 @@ pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
             }
             _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
         }
-        kernel.comm.stdin_broker.unregister_request(&receivers.id, "reply received");
+        kernel
+            .comm
+            .stdin_broker
+            .unregister_request(&receivers.id, "reply received");
     } else {
         log::warn!("Failed to obtain is_complete_reply from the shell");
     }

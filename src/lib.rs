@@ -24,7 +24,7 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
     // Return the Lua API
     let exports = lua.create_table()?;
     exports.set("start_kernel", lua.create_function(api_lua::start_kernel)?)?;
-    exports.set("list_kernels", lua.create_function(api_lua::list_kernels)?)?;
+    exports.set("list_kernels", lua.create_function(api_lua::list_running_kernels)?)?;
     exports.set("execute_code", lua.create_function(api_lua::execute_code)?)?;
     exports.set("is_complete", lua.create_function(api_lua::is_complete)?)?;
     exports.set(
@@ -39,10 +39,14 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
         "discover_kernels",
         lua.create_function(api_lua::discover_kernels)?,
     )?;
-    // exports.set(
-    //     "request_shutdown",
-    //     lua.create_function(api_lua::request_shutdown)?,
-    // )?;
+    exports.set(
+        "request_shutdown",
+        lua.create_function(api_lua::request_shutdown)?,
+    )?;
+    exports.set(
+        "request_restart",
+        lua.create_function(api_lua::request_restart)?,
+    )?;
 
     Ok(exports)
 }

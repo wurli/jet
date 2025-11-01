@@ -64,16 +64,27 @@ fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTabl
     Ok(out)
 }
 
-// pub fn request_shutdown(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
-//     let reply = api::request_shutdown(&Id::from(kernel_id)).into_lua_err()?;
-//     match reply {
-//         Message::ShutdownReply(msg) => lua.to_value(&msg.content),
-//         other => Err(LuaError::external(format!(
-//             "Received unexpected reply to shutdown request {}",
-//             other.describe()
-//         ))),
-//     }
-// }
+pub fn request_shutdown(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
+    let reply = api::request_shutdown(&Id::from(kernel_id)).into_lua_err()?;
+    match reply {
+        Message::ShutdownReply(msg) => lua.to_value(&msg.content),
+        other => Err(LuaError::external(format!(
+            "Received unexpected reply to shutdown request {}",
+            other.describe()
+        ))),
+    }
+}
+
+pub fn request_restart(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
+    let reply = api::request_restart(&Id::from(kernel_id)).into_lua_err()?;
+    match reply {
+        Message::ShutdownReply(msg) => lua.to_value(&msg.content),
+        other => Err(LuaError::external(format!(
+            "Received unexpected reply to restart request {}",
+            other.describe()
+        ))),
+    }
+}
 
 pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult<()> {
     api::provide_stdin(&Id::from(kernel_id), value).into_lua_err()?;
@@ -104,8 +115,8 @@ pub fn start_kernel(lua: &Lua, spec_path: String) -> LuaResult<(String, LuaValue
     }
 }
 
-pub fn list_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
-    let kernels = api::list_kernels();
+pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
+    let kernels = api::list_running_kernels();
     let table = lua.create_table()?;
 
     for (k, v) in kernels.iter() {

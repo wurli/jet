@@ -139,4 +139,11 @@ function M.request_shutdown(carpo, kernel_id)
     print(M.dump(carpo.request_shutdown(kernel_id)))
 end
 
+function M.request_restart(carpo, kernel_id)
+    M.cat_header(nil, "=")
+    print("Requesting restart")
+    M.cat_header(nil, "=")
+    print(M.dump(carpo.request_restart(kernel_id)))
+end
+
 return M
