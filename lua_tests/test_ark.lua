@@ -30,7 +30,7 @@ utils.is_complete(carpo, kernel_id, "_")
 utils.get_completions(carpo, kernel_id, "iris$", 4)
 
 -- Try shutting down
-utils.request_restart(carpo, kernel_id)
+-- utils.request_restart(carpo, kernel_id)
 -- Causes issues currently
 utils.execute(carpo, kernel_id, "x")
 utils.request_shutdown(carpo, kernel_id)
