@@ -1,4 +1,5 @@
 /target
+/inspiration
 .connection_files/*
 jet.log
 ark.log
