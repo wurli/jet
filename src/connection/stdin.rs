@@ -1,3 +1,10 @@
+/*
+ * stdin.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;

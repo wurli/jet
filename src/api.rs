@@ -1,3 +1,10 @@
+/*
+ * api.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use crate::{
     kernel::kernel_spec::KernelSpec,
     msg::wire::{

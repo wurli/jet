@@ -1,6 +1,13 @@
 /*
  * broker.rs
  *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
+/*
+ * broker.rs
+ *
  * Message broker for routing messages to appropriate handlers
  * based on parent message correlation.
  *

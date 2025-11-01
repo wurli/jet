@@ -1,3 +1,10 @@
+/*
+ * kernel_spec.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;

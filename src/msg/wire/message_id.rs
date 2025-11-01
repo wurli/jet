@@ -1,3 +1,10 @@
+/*
+ * message_id.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use core::fmt;
 use std::{
     fmt::{Display, Formatter},

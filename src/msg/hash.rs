@@ -1,3 +1,10 @@
+/*
+ * hash.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 //! The signature is the HMAC hex digest of the concatenation of:
 //!
 //! *    A shared key (typically the key field of a connection file)

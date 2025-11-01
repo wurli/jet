@@ -1,3 +1,10 @@
+/*
+ * lib.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 pub mod api;
 pub mod api_lua;
 pub mod connection;

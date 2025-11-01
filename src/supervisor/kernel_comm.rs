@@ -1,3 +1,10 @@
+/*
+ * kernel_comm.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use crate::connection::control::Control;
 use crate::connection::shell::Shell;
 use crate::connection::stdin::Stdin;

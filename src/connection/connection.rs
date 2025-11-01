@@ -1,3 +1,10 @@
+/*
+ * connection.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use std::path::PathBuf;
 use std::process;
 

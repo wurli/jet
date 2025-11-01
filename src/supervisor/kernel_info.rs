@@ -1,3 +1,10 @@
+/*
+ * kernel_info.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use std::path::PathBuf;
 
 use crate::msg::wire::language_info::LanguageInfo;

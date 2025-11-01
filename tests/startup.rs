@@ -1,3 +1,10 @@
+/*
+ * startup.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use std::{fs::metadata, path::PathBuf};
 
 use jet::api;

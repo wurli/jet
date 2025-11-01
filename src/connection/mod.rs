@@ -1,3 +1,10 @@
+/*
+ * mod.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 pub mod connection;
 pub mod control;
 pub mod heartbeat;

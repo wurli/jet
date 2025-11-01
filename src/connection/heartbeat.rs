@@ -1,3 +1,10 @@
+/*
+ * heartbeat.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 
 pub struct Heartbeat {

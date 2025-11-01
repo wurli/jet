@@ -1,3 +1,10 @@
+/*
+ * shell.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use crate::msg::wire::is_complete_reply::IsCompleteReply;
 use crate::msg::wire::jupyter_message::Status;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};

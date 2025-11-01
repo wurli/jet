@@ -1,3 +1,10 @@
+/*
+ * kernel.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use rand::Rng;
 use std::fmt::Display;
 use std::path::PathBuf;

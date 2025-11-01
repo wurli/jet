@@ -1,3 +1,10 @@
+/*
+ * iopub.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use crate::msg::wire::execute_input::ExecuteInput;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::status::ExecutionState;

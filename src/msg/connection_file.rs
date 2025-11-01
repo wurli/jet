@@ -1,3 +1,10 @@
+/*
+ * connection_file.rs
+ *
+ * Copyright (C) 2025 Jacob Scott. All rights reserved.
+ *
+ */
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
