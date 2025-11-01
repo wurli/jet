@@ -123,16 +123,15 @@ pub fn execute_code(
     })
 }
 
-pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<Message> {
+pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<()> {
     log::info!("Requesting shutdown of kernel {}", kernel_id);
-    let kernel = KernelManager::get(kernel_id)?;
-    kernel.comm.request_shutdown(false)
+    KernelManager::shutdown(kernel_id)
 }
 
 pub fn request_restart(kernel_id: &Id) -> anyhow::Result<Message> {
     log::info!("Requesting restart of kernel {}", kernel_id);
     let kernel = KernelManager::get(kernel_id)?;
-    kernel.comm.request_shutdown(true)
+    kernel.comm.request_restart()
 }
 
 pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {

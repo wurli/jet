@@ -45,11 +45,21 @@ impl KernelManager {
         }
     }
 
-    pub fn remove(id: &Id) -> Result<(), Error> {
+    pub fn shutdown(id: &Id) -> anyhow::Result<()> {
+        let kernel = Self::get(id)?;
+        match Arc::try_unwrap(kernel) {
+            Ok(mut kernel) => {
+                kernel.shutdown()?;
+                Self::drop(id)?;
+            }
+            Err(_) => anyhow::bail!("Cannot remove kernel {id}; it is still in use"),
+        }
+        Ok(())
+    }
+
+    fn drop(id: &Id) -> Result<(), Error> {
         let mut kernels = Self::manager().kernels.write().unwrap();
-        // TODO: check that the kernel is not active
-        let res = kernels.remove(&String::from(id.clone()));
-        if let Some(_) = res {
+        if let Some(_) = kernels.remove(&String::from(id.clone())) {
             Ok(())
         } else {
             log::error!("Could not remove non-active kernel {}", id);

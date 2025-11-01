@@ -1,6 +1,7 @@
 use crate::connection::control::Control;
 use crate::connection::shell::Shell;
 use crate::connection::stdin::Stdin;
+use crate::error::Error;
 use crate::msg::session::Session;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::msg::wire::kernel_info_reply::KernelInfoReply;
@@ -11,12 +12,19 @@ use crate::msg::wire::status::ExecutionState;
 use crate::supervisor::broker::Broker;
 use crate::supervisor::reply_receivers::ReplyReceivers;
 use assert_matches::assert_matches;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 /// These are the channels on which we might want to send data (as well as receive)
 pub struct KernelComm {
     /// The session used to communicate with the kernel
     pub session: Session,
+
+    /// A sender which can be used to stop the heartbeat loop
+    pub heartbeat_tx: Sender<()>,
+
+    /// A sender which can be used to stop the iopub loop
+    pub iopub_tx: Sender<()>,
 
     /// The broker which routes messages received on the iopub channel
     pub iopub_broker: Arc<Broker>,
@@ -41,6 +49,20 @@ pub struct KernelComm {
 }
 
 impl KernelComm {
+    pub fn stop_heartbeat(&self) -> Result<(), Error> {
+        match self.heartbeat_tx.send(()) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::CannotStopThread(String::from("heartbeat"))),
+        }
+    }
+
+    pub fn stop_iopub(&self) -> Result<(), Error> {
+        match self.iopub_tx.send(()) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::CannotStopThread(String::from("iopub"))),
+        }
+    }
+
     pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> ReplyReceivers {
         let (msg, request_id) = self.make_jupyter_message(msg);
         let receivers = self.register_request(&request_id);
@@ -198,7 +220,18 @@ impl KernelComm {
         kernel_info
     }
 
-    pub fn request_shutdown(&self, restart: bool) -> anyhow::Result<Message> {
+    pub fn request_shutdown(&self) -> anyhow::Result<Message> {
+        let res = self.request_shutdown_impl(false);
+        self.stop_heartbeat();
+        self.stop_iopub();
+        res
+    }
+
+    pub fn request_restart(&self) -> anyhow::Result<Message> {
+        self.request_shutdown_impl(true)
+    }
+
+    fn request_shutdown_impl(&self, restart: bool) -> anyhow::Result<Message> {
         self.route_all_incoming_shell();
         let receivers = self.send_control(ShutdownRequest { restart });
 

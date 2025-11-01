@@ -1,15 +1,21 @@
+use rand::Rng;
 use std::fmt::Display;
 use std::process;
+use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
+use std::thread::{sleep, spawn};
+use std::time::{Duration, Instant};
 
 use crate::connection::connection::JupyterChannels;
+use crate::connection::heartbeat::Heartbeat;
+use crate::connection::iopub::Iopub;
 use crate::kernel::kernel_spec::KernelSpec;
 use crate::kernel::startup_method::StartupMethod;
+use crate::msg::wire::jupyter_message::{Message, Status};
 use crate::msg::wire::message_id::Id;
 use crate::supervisor::broker::Broker;
 use crate::supervisor::kernel_comm::KernelComm;
 use crate::supervisor::kernel_info::KernelInfo;
-use crate::supervisor::listeners::{listen_heartbeat, listen_iopub};
 
 pub struct Kernel {
     pub id: Id,
@@ -44,22 +50,26 @@ impl Kernel {
             }
         };
 
+        let iopub_broker = Arc::new(Broker::new(format!("IOPub{}", kernel_id)));
+        let shell_broker = Arc::new(Broker::new(format!("Shell{}", kernel_id)));
+        let stdin_broker = Arc::new(Broker::new(format!("Stdin{}", kernel_id)));
+        let control_broker = Arc::new(Broker::new(format!("Control{}", kernel_id)));
+
+        let heartbeat_tx = Self::loop_heartbeat(jupyter_channels.heartbeat);
+        let iopub_tx = Self::listen_iopub(jupyter_channels.iopub, Arc::clone(&iopub_broker));
+
         let kernel_comm = KernelComm {
             session: jupyter_channels.session.clone(),
+            heartbeat_tx,
+            iopub_tx,
             shell_channel: Mutex::new(jupyter_channels.shell),
             stdin_channel: Mutex::new(jupyter_channels.stdin),
             control_channel: Mutex::new(jupyter_channels.control),
-            iopub_broker: Arc::new(Broker::new(format!("IOPub{}", kernel_id))),
-            shell_broker: Arc::new(Broker::new(format!("Shell{}", kernel_id))),
-            stdin_broker: Arc::new(Broker::new(format!("Stdin{}", kernel_id))),
-            control_broker: Arc::new(Broker::new(format!("Control{}", kernel_id))),
+            iopub_broker: iopub_broker,
+            shell_broker: shell_broker,
+            stdin_broker: stdin_broker,
+            control_broker: control_broker,
         };
-
-        listen_heartbeat(jupyter_channels.heartbeat);
-        listen_iopub(
-            jupyter_channels.iopub,
-            Arc::clone(&kernel_comm.iopub_broker),
-        );
 
         let kernel_info_reply = kernel_comm.subscribe();
 
@@ -76,17 +86,106 @@ impl Kernel {
         })
     }
 
+    /// Spawn a thread that continuously receives IOPub messages and routes them through the broker
+    fn listen_iopub(iopub: Iopub, broker: Arc<Broker>) -> Sender<()> {
+        let (stop_tx, stop_rx) = channel();
+
+        spawn(move || {
+            log::info!("IOPub thread started");
+
+            let cleanup_interval = broker.config.cleanup_interval;
+            let mut last_cleanup = Instant::now();
+
+            loop {
+                if let Ok(_) = stop_rx.try_recv() {
+                    log::trace!("Quitting iopub thread");
+                    return;
+                }
+
+                // Receive with a short timeout to allow periodic cleanup
+                if let Some(msg) = iopub.recv_with_timeout(100) {
+                    log::trace!("Message received on iopub: {}", msg.describe(),);
+                    broker.route(msg);
+                };
+
+                // Periodic cleanup of stale requests and orphan messages
+                if last_cleanup.elapsed() >= cleanup_interval {
+                    broker.purge();
+                    broker.log_stats();
+                    last_cleanup = Instant::now();
+                }
+            }
+        });
+
+        stop_tx
+    }
+
+    /// Spawn a thread that periodically send heartbeat messages and verify replies
+    fn loop_heartbeat(heartbeat: Heartbeat) -> Sender<()> {
+        let (stop_tx, stop_rx) = channel();
+
+        spawn(move || {
+            log::info!("Heartbeat thread started");
+
+            loop {
+                if let Ok(_) = stop_rx.try_recv() {
+                    log::trace!("Quitting heartbeat thread");
+                    return;
+                }
+
+                let mut rng = rand::rng();
+                // We just send some random number to the kernel
+                let bytes: Vec<u8> = (0..32).map(|_| rng.random_range(0..10)).collect();
+
+                heartbeat.send(zmq::Message::from(&bytes));
+
+                // Then we (hopefully) wait to receive the same message back
+                if let Ok(reply) = heartbeat.recv_with_timeout(1000) {
+                    let reply_slice: &[u8] = reply.as_ref();
+
+                    if reply_slice != bytes.as_slice() {
+                        log::warn!(
+                            "Heartbeat reply not the same as request: {:?} != {:?}",
+                            bytes,
+                            reply_slice,
+                        )
+                    }
+                } else {
+                    log::error!("Heartbeat timed out");
+                    panic!("Heartbeat timed out")
+                }
+
+                sleep(Duration::from_millis(500));
+            }
+        });
+
+        stop_tx
+    }
+
     pub fn shutdown(&mut self) -> anyhow::Result<()> {
         log::info!("Shutting down kernel '{}'", self);
 
-        // self.comm.send_shutdown_request()?;
+        match self.comm.request_shutdown() {
+            Ok(Message::ShutdownReply(msg)) if msg.content.status == Status::Error => {
+                log::error!("{self} reported an error during shutdown");
+            }
+            Ok(Message::ShutdownReply(msg)) if msg.content.status == Status::Ok => {
+                log::trace!("{self} reported successful shutdown");
+            }
+            Ok(_) => {
+                log::warn!("{self} received unexpected reply to shutdown request");
+            }
+            Err(e) => {
+                log::error!("Failed to request shutdown for {self}: {e}");
+            }
+        };
 
         match self.process.try_wait()? {
             Some(status) => {
-                log::info!("Kernel '{}' exited with status {}", self, status);
+                log::info!("{self} exited with status {status} after shutdown request");
             }
             None => {
-                log::warn!("Kernel '{}' did not exit in time, killing", self);
+                log::warn!("{self} did not exit in time, killing process");
                 self.process.kill()?;
             }
         }

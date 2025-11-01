@@ -64,15 +64,8 @@ fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTabl
     Ok(out)
 }
 
-pub fn request_shutdown(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
-    let reply = api::request_shutdown(&Id::from(kernel_id)).into_lua_err()?;
-    match reply {
-        Message::ShutdownReply(msg) => lua.to_value(&msg.content),
-        other => Err(LuaError::external(format!(
-            "Received unexpected reply to shutdown request {}",
-            other.describe()
-        ))),
-    }
+pub fn request_shutdown(_lua: &Lua, kernel_id: String) -> LuaResult<()> {
+    api::request_shutdown(&Id::from(kernel_id)).into_lua_err()
 }
 
 pub fn request_restart(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {

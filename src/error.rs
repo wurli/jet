@@ -26,6 +26,7 @@ pub enum Error {
     CannotSerialize(serde_json::Error),
     UnknownMessageType(String),
     NoInstallDir,
+    CannotStopThread(String),
     CreateDirFailed(std::io::Error),
     JsonSerializeSpecFailed(serde_json::Error),
     CreateSpecFailed(std::io::Error),
@@ -59,6 +60,9 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Error::CannotStopThread(name) => {
+                write!(f, "Failed to send stop signal to the {name} thread")
+            }
             Error::MissingDelimiter => {
                 write!(
                     f,
