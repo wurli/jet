@@ -27,10 +27,10 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("list_kernels", lua.create_function(api_lua::list_kernels)?)?;
     exports.set("execute_code", lua.create_function(api_lua::execute_code)?)?;
     // exports.set("is_complete", lua.create_function(api_lua::is_complete)?)?;
-    // exports.set(
-    //     "get_completions",
-    //     lua.create_function(api_lua::get_completions)?,
-    // )?;
+    exports.set(
+        "get_completions",
+        lua.create_function(api_lua::get_completions)?,
+    )?;
     exports.set(
         "provide_stdin",
         lua.create_function(api_lua::provide_stdin)?,

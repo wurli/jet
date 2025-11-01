@@ -42,20 +42,20 @@ pub fn execute_code(
 //         Err(e) => Err(e.into_lua_err()),
 //     }
 // }
-//
-// pub fn get_completions(
-//     lua: &Lua,
-//     (kernel_id, code, cursor_pos): (String, String, u32),
-// ) -> LuaResult<LuaTable> {
-//     match api::get_completions(Id::from(kernel_id), code, cursor_pos) {
-//         Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
-//         Ok(msg) => Err(LuaError::external(format!(
-//             "Received unexpected message type {}",
-//             msg.kind()
-//         ))),
-//         Err(e) => Err(e.into_lua_err()),
-//     }
-// }
+
+pub fn get_completions(
+    lua: &Lua,
+    (kernel_id, code, cursor_pos): (String, String, u32),
+) -> LuaResult<LuaTable> {
+    match api::get_completions(Id::from(kernel_id), code, cursor_pos) {
+        Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
+        Ok(msg) => Err(LuaError::external(format!(
+            "Received unexpected message type {}",
+            msg.kind()
+        ))),
+        Err(e) => Err(e.into_lua_err()),
+    }
+}
 
 fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
