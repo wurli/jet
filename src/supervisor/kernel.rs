@@ -20,7 +20,7 @@ use crate::supervisor::kernel_info::KernelInfo;
 pub struct Kernel {
     pub id: Id,
     pub info: KernelInfo,
-    pub process: process::Child,
+    pub process: Mutex<process::Child>,
     pub comm: KernelComm,
 }
 
@@ -76,7 +76,7 @@ impl Kernel {
         Ok(Self {
             id: kernel_id,
             comm: kernel_comm,
-            process: process,
+            process: Mutex::new(process),
             info: KernelInfo {
                 spec_path: spec_path,
                 display_name: spec.display_name,
@@ -162,7 +162,7 @@ impl Kernel {
         stop_tx
     }
 
-    pub fn shutdown(&mut self) -> anyhow::Result<()> {
+    pub fn shutdown(&self) -> anyhow::Result<()> {
         log::info!("Shutting down kernel '{}'", self);
 
         match self.comm.request_shutdown() {
@@ -180,13 +180,14 @@ impl Kernel {
             }
         };
 
-        match self.process.try_wait()? {
+        let mut process = self.process.lock().unwrap();
+        match process.try_wait()? {
             Some(status) => {
                 log::info!("{self} exited with status {status} after shutdown request");
             }
             None => {
                 log::warn!("{self} did not exit in time, killing process");
-                self.process.kill()?;
+                process.kill()?;
             }
         }
 
