@@ -46,14 +46,7 @@ impl KernelManager {
     }
 
     pub fn shutdown(id: &Id) -> anyhow::Result<()> {
-        let kernel = Self::take(id)?;
-        match Arc::try_unwrap(kernel) {
-            Ok(kernel) => {
-                kernel.shutdown()?;
-            }
-            Err(_) => anyhow::bail!("Cannot remove kernel {id}; it is still in use"),
-        }
-        Ok(())
+        Self::take(id)?.shutdown()
     }
 
     fn take(id: &Id) -> Result<Arc<Kernel>, Error> {

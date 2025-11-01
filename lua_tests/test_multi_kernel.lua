@@ -27,9 +27,9 @@ utils.execute(carpo, ark_id, "cat('Result:', x, '\\n')", ark_info.display_name)
 utils.request_shutdown(carpo, ipy_id)
 
 -- List all running kernels
-utils.list_kernels()
+utils.list_running_kernels(carpo)
 
-utils.execute(carpo, ipy_id, "1 + 1", ipy_info.display_name)
+-- utils.execute(carpo, ipy_id, "1 + 1", ipy_info.display_name)
 utils.execute(carpo, ark_id, "2 + 2", ark_info.display_name)
 
 utils.request_shutdown(carpo, ark_id)
