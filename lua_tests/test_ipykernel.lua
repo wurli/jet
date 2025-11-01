@@ -38,4 +38,6 @@ df = pd.DataFrame(dict(my_inconveniently_named_col = [1, 2, 3], bar = ["a", "b",
 utils.get_completions(carpo, kernel_id, "df.my_inconv", 12)
 
 -- Try getting completions (ark doesn't do these)
-utils.request_shutdown(carpo, kernel_id)
+-- utils.request_shutdown(carpo, kernel_id)
+utils.request_restart(carpo, kernel_id)
+utils.execute(carpo, kernel_id, "df")
