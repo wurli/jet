@@ -70,8 +70,8 @@ impl SubscriptionMessage {
                     String::from("subscription"),
                     buf.to_vec(),
                     err,
-                ))
-            },
+                ));
+            }
         };
 
         let subscription = subscription.to_string();

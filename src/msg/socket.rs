@@ -86,9 +86,10 @@ impl Socket {
         #[cfg(debug_assertions)]
         {
             if kind == zmq::ROUTER
-                && let Err(err) = socket.set_router_mandatory(true) {
-                    return Err(Error::SocketBindError(name, endpoint, err));
-                }
+                && let Err(err) = socket.set_router_mandatory(true)
+            {
+                return Err(Error::SocketBindError(name, endpoint, err));
+            }
         }
 
         // One side of a socket must `bind()` to its endpoint, and the other
@@ -161,9 +162,10 @@ impl Socket {
 
         // Set the socket's identity, if supplied
         if let Some(identity) = identity
-            && let Err(err) = socket.set_identity(identity) {
-                return Err(Error::CreateSocketFailed(name, err));
-            }
+            && let Err(err) = socket.set_identity(identity)
+        {
+            return Err(Error::CreateSocketFailed(name, err));
+        }
 
         Ok(socket)
     }
@@ -231,7 +233,9 @@ impl Socket {
         let address = match address {
             Ok(address) => address,
             Err(_) => {
-                return Err(crate::anyhow!("Can't access last endpoint of {name} socket"));
+                return Err(crate::anyhow!(
+                    "Can't access last endpoint of {name} socket"
+                ));
             }
         };
 
@@ -256,4 +260,3 @@ impl Socket {
         Ok(port)
     }
 }
-

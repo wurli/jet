@@ -22,9 +22,7 @@ impl Control {
         )
         .unwrap();
 
-        Self {
-            socket,
-        }
+        Self { socket }
     }
 
     pub fn recv(&self) -> Message {

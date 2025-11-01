@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::msg::wire::language_info::LanguageInfo;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KernelInfo {
@@ -12,4 +12,3 @@ pub struct KernelInfo {
     /// The language info given by the kernel's `KernelInfoReply`
     pub language: LanguageInfo,
 }
-

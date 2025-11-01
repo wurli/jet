@@ -18,9 +18,7 @@ impl Stdin {
         )
         .unwrap();
 
-        Self {
-            socket,
-        }
+        Self { socket }
     }
 
     pub fn recv(&self) -> Message {

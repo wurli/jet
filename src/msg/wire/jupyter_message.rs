@@ -226,10 +226,11 @@ impl TryFrom<&WireMessage> for Message {
             return Ok(Message::InspectReply(JupyterMessage::try_from(msg)?));
         }
         if kind == ExecuteReplyException::message_type()
-            && let Ok(data) = JupyterMessage::try_from(msg) {
-                return Ok(Message::ExecuteReplyException(data));
-            }
-            // else fallthrough to try `ExecuteRequest` which has the same message type
+            && let Ok(data) = JupyterMessage::try_from(msg)
+        {
+            return Ok(Message::ExecuteReplyException(data));
+        }
+        // else fallthrough to try `ExecuteRequest` which has the same message type
         if kind == ExecuteRequest::message_type() {
             return Ok(Message::ExecuteRequest(JupyterMessage::try_from(msg)?));
         }
@@ -406,8 +407,6 @@ impl Message {
     }
 
     pub fn info(&self) -> Option<String> {
-        
-
         match self {
             Message::KernelInfoReply(msg) => msg.content.info(),
             Message::KernelInfoRequest(msg) => msg.content.info(),
@@ -466,7 +465,9 @@ where
     T: ProtocolMessage,
 {
     pub fn parent_id(&self) -> Option<Id> {
-        self.parent_header.as_ref().map(|header| header.msg_id.clone())
+        self.parent_header
+            .as_ref()
+            .map(|header| header.msg_id.clone())
     }
 
     /// Sends this Jupyter message to the designated ZeroMQ socket.

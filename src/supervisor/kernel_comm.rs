@@ -200,16 +200,17 @@ impl KernelComm {
         log::info!("Kernel info reply: {:#?}", kernel_info);
 
         if let Some(version) = &kernel_info.protocol_version
-            && version >= &String::from("5.4") {
-                assert_matches!(welcome_rx.recv().unwrap(), Message::Welcome(data) => {
-                    assert_eq!(data.content.subscription, String::from(""));
-                    log::info!("Received the welcome message from the kernel");
-                });
-                assert_matches!(welcome_rx.recv().unwrap(), Message::Status(data) => {
-                    assert_eq!(data.content.execution_state, ExecutionState::Starting);
-                    log::info!("Received the starting message from the kernel");
-                });
-            }
+            && version >= &String::from("5.4")
+        {
+            assert_matches!(welcome_rx.recv().unwrap(), Message::Welcome(data) => {
+                assert_eq!(data.content.subscription, String::from(""));
+                log::info!("Received the welcome message from the kernel");
+            });
+            assert_matches!(welcome_rx.recv().unwrap(), Message::Status(data) => {
+                assert_eq!(data.content.execution_state, ExecutionState::Starting);
+                log::info!("Received the starting message from the kernel");
+            });
+        }
 
         self.iopub_broker
             .unregister_request(&Id::unparented(), "all expected startup messages received");

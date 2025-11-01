@@ -41,7 +41,7 @@ impl Session {
                     Err(err) => return Err(Error::HmacKeyInvalid(String::from(key), err)),
                 };
                 Some(result)
-            },
+            }
         };
         Ok(Self {
             hmac: hmac_key,

@@ -49,7 +49,9 @@ impl Default for ConnectionFile {
 impl ConnectionFile {
     pub fn new() -> Self {
         Self {
-            control_port: RandomUserPort::new().expect("Failed to open control port").0,
+            control_port: RandomUserPort::new()
+                .expect("Failed to open control port")
+                .0,
             shell_port: RandomUserPort::new().expect("Failed to open shell port").0,
             stdin_port: RandomUserPort::new().expect("Failed to open stdin port").0,
             iopub_port: RandomUserPort::new().expect("Failed to open iopub port").0,

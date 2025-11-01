@@ -9,9 +9,9 @@
 use crypto_common::generic_array::GenericArray;
 use hmac::Hmac;
 use log::trace;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::json;
 use serde_json::value::Value;
 use sha2::Sha256;
@@ -104,7 +104,7 @@ impl WireMessage {
                 // buffer, we have no parent message, which is OK per the wire
                 // protocol.
                 None
-            },
+            }
             _ => {
                 // If we do have content, ensure it parses as a header.
                 let parent_val =
@@ -116,10 +116,10 @@ impl WireMessage {
                             String::from("parent header"),
                             parent_val,
                             err,
-                        ))
-                    },
+                        ));
+                    }
                 }
-            },
+            }
         };
 
         Ok(Self {
@@ -201,14 +201,14 @@ impl WireMessage {
                     parent.msg_type,
                     socket.name
                 );
-            },
+            }
             None => {
                 trace!(
                     "Sending '{}' message via {} socket",
                     self.msg_type(),
                     socket.name
                 );
-            },
+            }
         }
 
         // Serialize JSON values into byte parts in preparation for transmission
@@ -227,7 +227,7 @@ impl WireMessage {
                 }
                 #[allow(deprecated)]
                 hex::encode(sig.finalize().into_bytes().as_slice())
-            },
+            }
             None => String::new(),
         };
 
@@ -279,23 +279,25 @@ impl WireMessage {
                     let comm_msg_type = Self::comm_msg_type(map.get("data"));
                     return format!("comm_msg/{comm_id}/{comm_msg_type}");
                 }
-            },
+            }
             "status" => {
                 if let Value::Object(map) = &self.content
-                    && let Some(Value::String(execution_state)) = map.get("execution_state") {
-                        return format!("status/{execution_state}");
-                    }
-            },
-            _ => {},
+                    && let Some(Value::String(execution_state)) = map.get("execution_state")
+                {
+                    return format!("status/{execution_state}");
+                }
+            }
+            _ => {}
         }
         self.header.msg_type.clone()
     }
 
     fn comm_msg_type(data: Option<&Value>) -> String {
         if let Some(Value::Object(map)) = data
-            && let Some(Value::String(msg_type)) = map.get("method") {
-                return msg_type.clone();
-            }
+            && let Some(Value::String(msg_type)) = map.get("method")
+        {
+            return msg_type.clone();
+        }
         String::from("unknown")
     }
 
@@ -341,8 +343,8 @@ impl<T: ProtocolMessage + DeserializeOwned> TryFrom<&WireMessage> for JupyterMes
                     T::message_type(),
                     msg.content.clone(),
                     err,
-                ))
-            },
+                ));
+            }
         };
         Ok(JupyterMessage {
             zmq_identities: msg.zmq_identities.clone(),

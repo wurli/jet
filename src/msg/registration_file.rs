@@ -6,12 +6,12 @@
  */
 
 use std::error::Error;
-use std::{fs, path::Path};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
+use std::{fs, path::Path};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::msg::connection_file::ConnectionFile;
 
@@ -64,7 +64,6 @@ impl RegistrationFile {
         let heartbeat_port = 0;
 
         // Build a `ConnectionFile`
-        
 
         ConnectionFile {
             control_port,

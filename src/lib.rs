@@ -1,10 +1,10 @@
 pub mod api;
 pub mod api_lua;
 pub mod connection;
+pub mod error;
 pub mod kernel;
 pub mod msg;
 pub mod supervisor;
-pub mod error;
 
 use mlua::prelude::*;
 
@@ -15,7 +15,8 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
     // Initialise the logger
     let log_file = String::from("carpo.log");
     let target = Box::new(
-        std::fs::File::create(&log_file).unwrap_or_else(|_| panic!("Can't create log file at {log_file}")),
+        std::fs::File::create(&log_file)
+            .unwrap_or_else(|_| panic!("Can't create log file at {log_file}")),
     );
     env_logger::Builder::from_default_env()
         .target(env_logger::Target::Pipe(target))
@@ -24,7 +25,10 @@ pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
     // Return the Lua API
     let exports = lua.create_table()?;
     exports.set("start_kernel", lua.create_function(api_lua::start_kernel)?)?;
-    exports.set("list_kernels", lua.create_function(api_lua::list_running_kernels)?)?;
+    exports.set(
+        "list_kernels",
+        lua.create_function(api_lua::list_running_kernels)?,
+    )?;
     exports.set("execute_code", lua.create_function(api_lua::execute_code)?)?;
     exports.set("is_complete", lua.create_function(api_lua::is_complete)?)?;
     exports.set(

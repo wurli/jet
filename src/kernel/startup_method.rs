@@ -1,5 +1,4 @@
 pub enum StartupMethod {
     ConnectionFile,
-    RegistrationFile
+    RegistrationFile,
 }
-

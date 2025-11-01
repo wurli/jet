@@ -54,7 +54,6 @@ pub fn discover_kernels() -> Vec<PathBuf> {
         dirs.push(format!("{}/share/jupyter/kernels", var.to_string_lossy()));
     }
 
-
     dirs.into_iter()
         .filter(|dir| path_exists(Path::new(dir)))
         .filter_map(|dir| fs::read_dir(dir).ok())
