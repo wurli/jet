@@ -32,16 +32,16 @@ pub fn execute_code(
     })
 }
 
-// pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaTable> {
-//     match api::is_complete(Id::from(kernel_id), code) {
-//         Ok(Message::IsCompleteReply(msg)) => to_lua(lua, &msg.content),
-//         Ok(msg) => Err(LuaError::external(format!(
-//             "Received unexpected message type {}",
-//             msg.kind()
-//         ))),
-//         Err(e) => Err(e.into_lua_err()),
-//     }
-// }
+pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaTable> {
+    match api::is_complete(Id::from(kernel_id), code) {
+        Ok(Message::IsCompleteReply(msg)) => to_lua(lua, &msg.content),
+        Ok(msg) => Err(LuaError::external(format!(
+            "Received unexpected message type {}",
+            msg.kind()
+        ))),
+        Err(e) => Err(e.into_lua_err()),
+    }
+}
 
 pub fn get_completions(
     lua: &Lua,

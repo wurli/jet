@@ -4,6 +4,7 @@ use crate::{
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
         input_reply::InputReply,
+        is_complete_request::IsCompleteRequest,
         jupyter_message::{Describe, Message},
         message_id::Id,
         status::ExecutionState,
@@ -179,49 +180,50 @@ pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::
 
     out
 }
-//
-// pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
-//     log::trace!(
-//         "Sending is complete request `{}` to kernel {}",
-//         code,
-//         kernel_id
-//     );
-//
-//     Frontend::recv_all_incoming_shell(&kernel_id)?;
-//
-//     let request = Frontend::send_shell(&kernel_id, IsCompleteRequest { code: code.clone() })?;
-//
-//     let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
-//
-//     while let Ok(reply) = request.iopub.recv() {
-//         match reply {
-//             Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
-//                 log::trace!("Received iopub busy status for is_complete_request");
-//             }
-//             Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-//                 log::trace!("Received iopub idle status for is_complete_request");
-//                 break;
-//             }
-//             _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
-//         }
-//     }
-//
-//     Frontend::route_shell_reply(&kernel_id, &request.id)?;
-//
-//     if let Ok(reply) = request.shell.recv() {
-//         match reply {
-//             Message::IsCompleteReply(_) => {
-//                 log::trace!("Received is_complete_reply on the shell");
-//                 out = Ok(reply);
-//             }
-//             _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
-//         }
-//         if let Ok(broker) = Frontend::get_stdin_broker(&kernel_id) {
-//             broker.unregister_request(&request.id, "reply received");
-//         }
-//     } else {
-//         log::warn!("Failed to obtain is_complete_reply from the shell");
-//     }
-//
-//     out
-// }
+
+pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
+    log::trace!(
+        "Sending is complete request `{}` to kernel {}",
+        code,
+        kernel_id
+    );
+
+    let kernel = KernelManager::get(&kernel_id)?;
+    kernel.comm.route_all_incoming_shell();
+
+    let receivers = kernel
+        .comm
+        .send_shell(IsCompleteRequest { code: code.clone() });
+
+    let mut out = Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"));
+
+    while let Ok(reply) = receivers.iopub.recv() {
+        match reply {
+            Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
+                log::trace!("Received iopub busy status for is_complete_request");
+            }
+            Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                log::trace!("Received iopub idle status for is_complete_request");
+                break;
+            }
+            _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+        }
+    }
+
+    kernel.comm.await_reply_shell(&receivers.id);
+
+    if let Ok(reply) = receivers.shell.recv() {
+        match reply {
+            Message::IsCompleteReply(_) => {
+                log::trace!("Received is_complete_reply on the shell");
+                out = Ok(reply);
+            }
+            _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
+        }
+        kernel.comm.stdin_broker.unregister_request(&receivers.id, "reply received");
+    } else {
+        log::warn!("Failed to obtain is_complete_reply from the shell");
+    }
+
+    out
+}
