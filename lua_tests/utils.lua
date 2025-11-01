@@ -146,4 +146,14 @@ function M.request_restart(carpo, kernel_id)
     print(M.dump(carpo.request_restart(kernel_id)))
 end
 
+
+function M.list_running_kernels(carpo)
+    M.cat_header(nil, "=")
+    print("Listing running kernels")
+    M.cat_header(nil, "=")
+    for id, kernel in pairs(carpo.list_running_kernels()) do
+        print(("* (%s) %s"):format(id:sub(1, 7), kernel.display_name))
+    end
+end
+
 return M

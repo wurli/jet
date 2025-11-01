@@ -16,10 +16,7 @@ local ipy_id, ipy_info = carpo.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter
 local ark_id, ark_info = carpo.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 
 -- List all running kernels
-utils.cat_header("Running kernels", "=")
-for _, info in pairs(carpo.list_kernels()) do
-    print("- " .. info.display_name)
-end
+utils.list_running_kernels(carpo)
 
 -- Execute code in kernels, interleaving results
 utils.execute(carpo, ipy_id, "x = 1 + 1", ipy_info.display_name)
@@ -27,3 +24,12 @@ utils.execute(carpo, ark_id, "x <- 2 + 2", ark_info.display_name)
 utils.execute(carpo, ipy_id, "print(f'Result: {x}')", ipy_info.display_name)
 utils.execute(carpo, ark_id, "cat('Result:', x, '\\n')", ark_info.display_name)
 
+utils.request_shutdown(carpo, ipy_id)
+
+-- List all running kernels
+utils.list_kernels()
+
+utils.execute(carpo, ipy_id, "1 + 1", ipy_info.display_name)
+utils.execute(carpo, ark_id, "2 + 2", ark_info.display_name)
+
+utils.request_shutdown(carpo, ark_id)
