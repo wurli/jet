@@ -5,7 +5,7 @@ local function get_lib_extension()
 end
 
 local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../target/release/')
-local lib_name = 'carpo'
+local lib_name = 'jet'
 local lib_extension = get_lib_extension()
 
 -- Try loading with lib prefix first (Unix-style)

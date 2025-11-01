@@ -2,7 +2,7 @@
 
 ## Current Architecture Analysis
 
-The current `carpo` implementation uses a single-kernel architecture with:
+The current `jet` implementation uses a single-kernel architecture with:
 
 - **Global State**: `OnceLock` static variables (`KERNEL_INFO`, `EXECUTE_RX`, `STREAM_CHANNEL`, `SHELL`)
 - **Single Frontend**: One `Frontend` instance managing 5 ZMQ sockets (shell, iopub, stdin, control, heartbeat)
@@ -45,23 +45,23 @@ pub type KernelId = String; // e.g., "python-1", "r-main", or UUID
 **Lua API Changes**:
 ```lua
 -- Start kernels with explicit IDs
-carpo.start_kernel(spec_path, "python-main")
-carpo.start_kernel(spec_path, "python-worker")
+jet.start_kernel(spec_path, "python-main")
+jet.start_kernel(spec_path, "python-worker")
 
 -- Execute on specific kernel
-carpo.execute_code(code, "python-main")
+jet.execute_code(code, "python-main")
 
 -- Execute on active kernel (for convenience)
-carpo.execute_code(code)  -- uses active kernel
+jet.execute_code(code)  -- uses active kernel
 
 -- Switch active kernel
-carpo.set_active_kernel("python-worker")
+jet.set_active_kernel("python-worker")
 
 -- List all running kernels
-kernels = carpo.list_kernels()
+kernels = jet.list_kernels()
 
 -- Shutdown specific kernel
-carpo.shutdown_kernel("python-worker")
+jet.shutdown_kernel("python-worker")
 ```
 
 **Pros**:
@@ -104,16 +104,16 @@ pub struct LanguagePool {
 **Lua API Changes**:
 ```lua
 -- Create pool with 3 Python kernel instances
-carpo.create_pool("python", spec_path, {size = 3})
+jet.create_pool("python", spec_path, {size = 3})
 
 -- Execute on any available Python kernel
-carpo.execute_code(code, {language = "python"})
+jet.execute_code(code, {language = "python"})
 
 -- Execute on specific instance
-carpo.execute_code(code, {language = "python", instance = 2})
+jet.execute_code(code, {language = "python", instance = 2})
 
 -- Scale pool
-carpo.scale_pool("python", 5)
+jet.scale_pool("python", 5)
 ```
 
 **Pros**:
@@ -162,7 +162,7 @@ pub struct KernelHandle {
 **Lua API Changes**:
 ```lua
 -- Start kernel and get handle
-kernel = carpo.start_kernel(spec_path)
+kernel = jet.start_kernel(spec_path)
 
 -- Execute with callback
 kernel:execute_code(code, function(result)
@@ -173,8 +173,8 @@ end)
 result = kernel:execute_code_sync(code)
 
 -- Multiple kernels
-py = carpo.start_kernel(python_spec)
-r = carpo.start_kernel(r_spec)
+py = jet.start_kernel(python_spec)
+r = jet.start_kernel(r_spec)
 
 py:execute_code("import numpy")
 r:execute_code("library(dplyr)")
@@ -220,12 +220,12 @@ pub struct ExecutionContext {
 **Lua API Changes**:
 ```lua
 -- Create kernels with contexts
-ctx1 = carpo.create_context("python-main", {
+ctx1 = jet.create_context("python-main", {
     kernel = python_spec,
     cwd = "/workspace/project1"
 })
 
-ctx2 = carpo.create_context("python-analysis", {
+ctx2 = jet.create_context("python-analysis", {
     kernel = python_spec,
     cwd = "/workspace/project2"
 })
@@ -235,11 +235,11 @@ ctx1:execute("import pandas")
 ctx2:execute("import matplotlib")
 
 -- Switch between contexts
-carpo.use_context(ctx1)
-carpo.execute("df = pd.read_csv('data.csv')")
+jet.use_context(ctx1)
+jet.execute("df = pd.read_csv('data.csv')")
 
-carpo.use_context(ctx2)
-carpo.execute("plt.plot([1,2,3])")
+jet.use_context(ctx2)
+jet.execute("plt.plot([1,2,3])")
 ```
 
 **Pros**:
@@ -277,7 +277,7 @@ pub struct KernelTree {
 **Lua API Changes**:
 ```lua
 -- Start main kernel
-main = carpo.start_kernel(spec_path)
+main = jet.start_kernel(spec_path)
 main:execute("x = 10")
 
 -- Fork kernel for experimentation

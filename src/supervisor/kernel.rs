@@ -37,7 +37,7 @@ impl Kernel {
 
         let kernel_id = Id::new();
         let cf_path = format!(
-            ".connection_files/carpo_connection_file_{}.json",
+            ".connection_files/jet_connection_file_{}.json",
             String::from(kernel_id.clone())
         );
         let kernel_cmd = spec.build_command(&cf_path);

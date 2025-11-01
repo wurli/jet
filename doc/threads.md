@@ -142,4 +142,4 @@
 
    Does this pattern match what you're building?
 
- claude-sonnet-4.5 ~/Repos/carpo [⎇ main*]
+ claude-sonnet-4.5 ~/Repos/jet [⎇ main*]

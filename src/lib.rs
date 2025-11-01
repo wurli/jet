@@ -11,9 +11,9 @@ use mlua::prelude::*;
 pub type Result<T> = std::result::Result<T, error::Error>;
 
 #[mlua::lua_module(skip_memory_check)]
-pub fn carpo(lua: &Lua) -> LuaResult<LuaTable> {
+pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     // Initialise the logger
-    let log_file = String::from("carpo.log");
+    let log_file = String::from("jet.log");
     let target = Box::new(
         std::fs::File::create(&log_file)
             .unwrap_or_else(|_| panic!("Can't create log file at {log_file}")),

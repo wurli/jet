@@ -1,9 +1,9 @@
 local M = {}
 
 --------------------------------------------------
--- Get the carpo library
+-- Get the jet library
 --------------------------------------------------
-local libname = "carpo"
+local libname = "jet"
 
 local get_lib_extension = function()
     if jit.os:lower() == 'mac' or jit.os:lower() == 'osx' then return '.dylib' end
@@ -11,7 +11,7 @@ local get_lib_extension = function()
     return '.so'
 end
 
-M.carpo_loader = package.loadlib(
+M.jet_loader = package.loadlib(
     "./target/release/lib" .. libname .. get_lib_extension(),
     "luaopen_" .. libname
 )
@@ -68,8 +68,8 @@ local function big_header(action, name, context)
     M.cat_header(nil, "=")
 end
 
---- Execute code in the carpo kernel and print results until the execution finishes
-function M.execute(carpo, kernel_id, code, user_expressions, name)
+--- Execute code in the jet kernel and print results until the execution finishes
+function M.execute(jet, kernel_id, code, user_expressions, name)
     user_expressions = user_expressions or {}
 
     big_header(
@@ -78,7 +78,7 @@ function M.execute(carpo, kernel_id, code, user_expressions, name)
         { ["User expressions"] = user_expressions, ["code"] = code }
     )
 
-    local callback = carpo.execute_code(kernel_id, code, user_expressions)
+    local callback = jet.execute_code(kernel_id, code, user_expressions)
 
     local i = 0
     while true do
@@ -94,47 +94,47 @@ function M.execute(carpo, kernel_id, code, user_expressions, name)
         if result.type == "input_request" then
             local stdin = "Hello from Lua!"
             M.cat_header(("Sending dummy val '%s'"):format(stdin), ".")
-            carpo.provide_stdin(kernel_id, stdin)
+            jet.provide_stdin(kernel_id, stdin)
         end
 
         os.execute("sleep 0.1")
     end
 end
 
-function M.is_complete(carpo, kernel_id, code, name)
+function M.is_complete(jet, kernel_id, code, name)
     big_header("Testing completeness", name, { ["code"] = code })
 
     if kernel_id then
-        print(M.dump(carpo.is_complete(kernel_id, code)))
+        print(M.dump(jet.is_complete(kernel_id, code)))
     else
         error("is_complete() requires a kernel_id parameter")
     end
 end
 
-function M.get_completions(carpo, kernel_id, code, cursor_pos, name)
+function M.get_completions(jet, kernel_id, code, cursor_pos, name)
     big_header("Getting completeions", name, {
         code = code,
         name = name,
         cursor_pos = cursor_pos
     })
-    print(M.dump(carpo.get_completions(kernel_id, code, cursor_pos)))
+    print(M.dump(jet.get_completions(kernel_id, code, cursor_pos)))
 end
 
-function M.request_shutdown(carpo, kernel_id, name)
+function M.request_shutdown(jet, kernel_id, name)
     big_header("Requesting shutdown", name)
-    print(M.dump(carpo.request_shutdown(kernel_id)))
+    print(M.dump(jet.request_shutdown(kernel_id)))
 end
 
-function M.request_restart(carpo, kernel_id, name)
+function M.request_restart(jet, kernel_id, name)
     big_header("Getting completeions", name)
-    print(M.dump(carpo.request_restart(kernel_id)))
+    print(M.dump(jet.request_restart(kernel_id)))
 end
 
-function M.list_running_kernels(carpo)
+function M.list_running_kernels(jet)
     M.cat_header(nil, "=")
     print("Listing running kernels")
     M.cat_header(nil, "=")
-    for id, kernel in pairs(carpo.list_running_kernels()) do
+    for id, kernel in pairs(jet.list_running_kernels()) do
         print(("* (%s) %s"):format(id:sub(1, 7), kernel.display_name))
     end
 end
