@@ -1,5 +1,5 @@
 use crate::{
-    kernel::kernel_spec::KernelSpecFull,
+    kernel::kernel_spec::KernelSpec,
     msg::wire::{
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
@@ -11,24 +11,21 @@ use crate::{
     },
     supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
-pub fn discover_kernels() -> Vec<KernelSpecFull> {
-    KernelSpecFull::get_all()
+pub fn discover_kernels() -> HashMap<PathBuf, KernelSpec> {
+    KernelSpec::find_all()
 }
 
 pub fn list_running_kernels() -> HashMap<String, KernelInfo> {
     KernelManager::list()
 }
 
-pub fn start_kernel(spec_path: String) -> anyhow::Result<(Id, KernelInfo)> {
-    let matched_spec = KernelSpecFull::get_all()
-        .into_iter()
-        .filter(|x| x.path.to_string_lossy() == spec_path)
-        .next();
-
-    let spec_full = matched_spec.unwrap_or_else(|| panic!("No kernel found at `{}`", spec_path));
-    let spec = spec_full.spec?;
+pub fn start_kernel(spec_path: PathBuf) -> anyhow::Result<(Id, KernelInfo)> {
+    let spec = match KernelSpec::find_all().remove(&spec_path) {
+        Some(spec) => spec,
+        None => anyhow::bail!("No valid kernel spec found at {}", spec_path.to_string_lossy())
+    };
 
     let kernel = Kernel::start(spec_path, spec)?;
     let out = (kernel.id.clone(), kernel.info.clone());

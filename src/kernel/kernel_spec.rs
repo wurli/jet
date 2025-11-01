@@ -2,11 +2,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
+use std::fs::metadata;
+use std::fs::read_dir;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+
 use std::process::{Command, Stdio};
 
-use crate::kernel::discover::discover_kernels;
 use crate::kernel::startup_method::StartupMethod;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -66,11 +68,6 @@ pub struct KernelSpec {
 }
 
 impl KernelSpec {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let file = File::open(path)?;
-        Ok(serde_json::from_reader(BufReader::new(file))?)
-    }
-
     pub fn build_command(&self, connection_file_path: &String) -> Command {
         let mut args = self.argv.clone();
 
@@ -116,21 +113,77 @@ impl KernelSpec {
             StartupMethod::ConnectionFile
         }
     }
-}
 
-pub struct KernelSpecFull {
-    pub path: PathBuf,
-    pub spec: anyhow::Result<KernelSpec>,
-}
+    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
+        let file = File::open(path)?;
+        Ok(serde_json::from_reader(BufReader::new(file))?)
+    }
 
-impl KernelSpecFull {
-    pub fn get_all() -> Vec<Self> {
-        discover_kernels()
+    pub fn find_all() -> HashMap<PathBuf, Self> {
+        Self::discover_specs()
             .iter()
-            .map(|path| Self {
-                path: path.to_path_buf(),
-                spec: KernelSpec::from_file(path),
+            .filter_map(|path| match Self::from_file(path) {
+                Ok(spec) => Some((path.to_owned(), spec)),
+                Err(_) => None,
             })
             .collect()
     }
+
+    /// Jupyter kernels should be identified through files in the following directories:
+    ///
+    /// System
+    ///   `/usr/share/jupyter/kernels`
+    ///   `/usr/local/share/jupyter/kernels`
+    ///
+    /// Env
+    ///   `{sys.prefix}/share/jupyter/kernels`
+    ///
+    /// User
+    ///
+    ///   `~/.local/share/jupyter/kernels` (Linux)
+    ///   `~/Library/Jupyter/kernels` (Mac)
+    ///
+    /// Other locations may also be searched if the `JUPYTER_PATH` environment variable is set.
+    ///
+    /// Windows exists too but I'm not supporting it yet.
+    ///
+    /// docs: <https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs>
+    pub fn discover_specs() -> Vec<PathBuf> {
+        log::info!("Discovering installed kernels");
+        let mut dirs: Vec<String> = Vec::new();
+
+        // TODO: split this variable up on `:` and recurse
+        if let Some(var) = std::env::var_os("JUPYTER_PATH") {
+            dirs.push(format!("{}", var.to_string_lossy()));
+        }
+
+        if let Some(var) = std::env::var_os("HOME") {
+            dirs.push(format!(
+                "{}/.local/share/jupyter/kernels",
+                var.to_string_lossy()
+            ));
+            dirs.push(format!("{}/Library/Jupyter/kernels", var.to_string_lossy()));
+        }
+
+        dirs.push("/usr/share/jupyter/kernels".to_string());
+        dirs.push("/usr/local/share/jupyter/kernels".to_string());
+
+        // TODO: Are there any other prefix env vars we should check?
+        if let Some(var) = std::env::var_os("CONDA_PREFIX") {
+            dirs.push(format!("{}/share/jupyter/kernels", var.to_string_lossy()));
+        }
+
+        dirs.into_iter()
+            .filter(|dir| Self::path_exists(Path::new(dir)))
+            .filter_map(|dir| read_dir(dir).ok())
+            .flat_map(|entries| entries.flatten())
+            .map(|entry| entry.path().join("kernel.json"))
+            .filter(|path| path.exists())
+            .collect()
+    }
+
+    fn path_exists(path: &Path) -> bool {
+        metadata(path).is_ok()
+    }
 }
+

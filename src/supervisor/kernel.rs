@@ -1,5 +1,6 @@
 use rand::Rng;
 use std::fmt::Display;
+use std::path::PathBuf;
 use std::process;
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -31,7 +32,7 @@ impl Display for Kernel {
 }
 
 impl Kernel {
-    pub fn start(spec_path: String, spec: KernelSpec) -> anyhow::Result<Self> {
+    pub fn start(spec_path: PathBuf, spec: KernelSpec) -> anyhow::Result<Self> {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = Id::new();

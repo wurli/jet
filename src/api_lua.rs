@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 use mlua::LuaSerdeExt;
 use mlua::prelude::*;
@@ -87,22 +89,16 @@ pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult
 pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
     let kernels = api::discover_kernels();
 
-    let kernels_table = lua.create_table()?;
-
-    for kernel in kernels {
-        if let Ok(spec) = kernel.spec {
-            let _ = kernels_table.set(
-                kernel.path.to_string_lossy().to_string(),
-                lua.to_value(&spec).unwrap(),
-            );
-        };
-    }
-
-    Ok(kernels_table)
+    Ok(lua.create_table_from(
+        kernels
+            .iter()
+            .map(|(path, spec)| (path.to_string_lossy(), lua.to_value(&spec).unwrap())),
+    )?)
 }
 
 pub fn start_kernel(lua: &Lua, spec_path: String) -> LuaResult<(String, LuaValue)> {
-    match api::start_kernel(spec_path) {
+    let spec_pathbuf = PathBuf::from_str(&spec_path).into_lua_err()?;
+    match api::start_kernel(spec_pathbuf) {
         Ok((kernel_id, info)) => Ok((String::from(kernel_id), lua.to_value(&info).unwrap())),
         Err(e) => Err(LuaError::external(e)),
     }
