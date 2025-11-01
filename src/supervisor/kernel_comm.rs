@@ -222,8 +222,8 @@ impl KernelComm {
 
     pub fn request_shutdown(&self) -> anyhow::Result<Message> {
         let res = self.request_shutdown_impl(false);
-        self.stop_heartbeat();
-        self.stop_iopub();
+        self.stop_heartbeat()?;
+        self.stop_iopub()?;
         res
     }
 
