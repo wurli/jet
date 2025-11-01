@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process;
 
 use assert_matches::assert_matches;
 use rand::Rng;
@@ -104,9 +105,9 @@ pub struct JupyterChannels {
 
 impl JupyterChannels {
     pub fn init_with_connection_file(
-        mut kernel_cmd: std::process::Command,
+        mut kernel_cmd: process::Command,
         path: PathBuf,
-    ) -> Self {
+    ) -> anyhow::Result<(Self, process::Child)> {
         log::info!("Starting kernel using connection file");
 
         let opts = ConnectionOptions::init();
@@ -115,7 +116,7 @@ impl JupyterChannels {
         connection_file.key = opts.key.clone();
         connection_file.to_file(path).unwrap();
 
-        let _ = kernel_cmd.spawn();
+        let child = kernel_cmd.spawn()?;
 
         // We need to give the kernel a chance to start up and read the connection file
         std::thread::sleep(std::time::Duration::from_millis(2000));
@@ -126,20 +127,22 @@ impl JupyterChannels {
         let stdin_endpoint = connection_file.endpoint(connection_file.stdin_port);
         let heartbeat_endpoint = connection_file.endpoint(connection_file.hb_port);
 
-        Self {
+        let channels = Self {
             control: Control::init(&opts, control_endpoint),
             shell: Shell::init(&opts, shell_endpoint),
             iopub: Iopub::init(&opts, iopub_endpoint),
             stdin: Stdin::init(&opts, stdin_endpoint),
             heartbeat: Heartbeat::init(&opts, heartbeat_endpoint),
             session: opts.session,
-        }
+        };
+
+        Ok((channels, child))
     }
 
     pub fn init_with_registration_file(
-        mut kernel_cmd: std::process::Command,
+        mut kernel_cmd: process::Command,
         path: PathBuf,
-    ) -> Self {
+    ) -> anyhow::Result<(Self, process::Child)> {
         log::info!("Starting kernel using registration file");
 
         let opts = ConnectionOptions::init();
@@ -147,7 +150,7 @@ impl JupyterChannels {
         let sockets = RegistrationSockets::from(&opts);
         sockets.to_file(&opts, path.into());
 
-        let _ = kernel_cmd.spawn();
+        let child = kernel_cmd.spawn()?;
 
         // Wait to receive the handshake request so we know what ports to connect on.
         // Note that `recv()` times out.
@@ -160,14 +163,16 @@ impl JupyterChannels {
         let reply_msg = JupyterMessage::create(reply, None, &opts.session);
         reply_msg.send(&sockets.registration).unwrap();
 
-        Self {
+        let channels = Self {
             control: Control::init(&opts, opts.endpoint(handshake.control_port)),
             shell: Shell::init(&opts, opts.endpoint(handshake.shell_port)),
             iopub: Iopub::init(&opts, opts.endpoint(handshake.iopub_port)),
             stdin: Stdin::init(&opts, opts.endpoint(handshake.stdin_port)),
             heartbeat: Heartbeat::init(&opts, opts.endpoint(handshake.hb_port)),
             session: opts.session,
-        }
+        };
+
+        Ok((channels, child))
     }
 }
 

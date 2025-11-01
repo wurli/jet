@@ -7,7 +7,6 @@ use crate::{
         is_complete_request::IsCompleteRequest,
         jupyter_message::{Describe, Message},
         message_id::Id,
-        shutdown_request::ShutdownRequest,
         status::ExecutionState,
     },
     supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager},
@@ -31,7 +30,7 @@ pub fn start_kernel(spec_path: String) -> anyhow::Result<(Id, KernelInfo)> {
     let spec_full = matched_spec.expect(&format!("No kernel found at `{}`", spec_path));
     let spec = spec_full.spec?;
 
-    let kernel = Kernel::start(spec_path, spec);
+    let kernel = Kernel::start(spec_path, spec)?;
     let out = (kernel.id.clone(), kernel.info.clone());
 
     KernelManager::add(kernel)?;
@@ -125,70 +124,15 @@ pub fn execute_code(
 }
 
 pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<Message> {
-    request_shutdown_impl(kernel_id, false)
+    log::info!("Requesting shutdown of kernel {}", kernel_id);
+    let kernel = KernelManager::get(kernel_id)?;
+    kernel.comm.request_shutdown(false)
 }
 
 pub fn request_restart(kernel_id: &Id) -> anyhow::Result<Message> {
-    request_shutdown_impl(kernel_id, true)
-}
-
-fn request_shutdown_impl(kernel_id: &Id, restart: bool) -> anyhow::Result<Message> {
-    log::info!("Sending shutdown request to kernel {}", kernel_id);
-
+    log::info!("Requesting restart of kernel {}", kernel_id);
     let kernel = KernelManager::get(kernel_id)?;
-
-    kernel.comm.route_all_incoming_shell();
-    let receivers = kernel.comm.send_control(ShutdownRequest { restart });
-
-    loop {
-        while let Ok(reply) = receivers.iopub.try_recv() {
-            match reply {
-                Message::ShutdownReply(_) => {
-                    log::info!("Received shutdown_reply on iopub (non-standard)");
-                    return Ok(reply);
-                }
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                    break;
-                }
-                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
-            }
-        }
-
-        kernel.comm.route_all_incoming_stdin();
-
-        if let Ok(reply) = receivers.stdin.try_recv() {
-            match reply {
-                Message::InputRequest(_) => return Ok(reply),
-                other => log::warn!("Received unexpected reply {}", other.describe()),
-            }
-        };
-
-        kernel.comm.route_all_incoming_control();
-
-        if let Ok(reply) = receivers.control.try_recv() {
-            match reply {
-                Message::ShutdownReply(_) => {
-                    log::info!("Received shutdown_reply on control (standard)");
-                    kernel
-                        .comm
-                        .control_broker
-                        .unregister_request(&receivers.id, "reply received");
-                    return Ok(reply);
-                }
-                other => {
-                    log::warn!(
-                        "Expected shutdown_reply but received unexpected message: {:#?}",
-                        other
-                    );
-                    return Err(anyhow::anyhow!(
-                        "Expected shutdown_reply but received unexpected message: {:#?}",
-                        other
-                    ));
-                }
-            }
-        }
-    }
+    kernel.comm.request_shutdown(true)
 }
 
 pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {

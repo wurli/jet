@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::kernel::discover::discover_kernels;
-use crate::kernel::startup_method::ConnectionMethod;
+use crate::kernel::startup_method::StartupMethod;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -97,7 +97,7 @@ impl KernelSpec {
         command
     }
 
-    pub fn get_connection_method(&self) -> ConnectionMethod {
+    pub fn get_connection_method(&self) -> StartupMethod {
         let mut use_registration_file = false;
 
         // Ark _does_ support connection through registration files, but doesn't (yet) advertise
@@ -111,9 +111,9 @@ impl KernelSpec {
         }
 
         if use_registration_file {
-            return ConnectionMethod::RegistrationFile;
+            return StartupMethod::RegistrationFile;
         } else {
-            return ConnectionMethod::ConnectionFile;
+            return StartupMethod::ConnectionFile;
         }
     }
 }

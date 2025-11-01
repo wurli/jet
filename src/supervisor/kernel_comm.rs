@@ -6,6 +6,7 @@ use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage
 use crate::msg::wire::kernel_info_reply::KernelInfoReply;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
 use crate::msg::wire::message_id::Id;
+use crate::msg::wire::shutdown_request::ShutdownRequest;
 use crate::msg::wire::status::ExecutionState;
 use crate::supervisor::broker::Broker;
 use crate::supervisor::reply_receivers::ReplyReceivers;
@@ -197,7 +198,57 @@ impl KernelComm {
         kernel_info
     }
 
-    pub fn shell_broker(&self) -> &Broker {
-        &self.shell_broker
+    pub fn request_shutdown(&self, restart: bool) -> anyhow::Result<Message> {
+        self.route_all_incoming_shell();
+        let receivers = self.send_control(ShutdownRequest { restart });
+
+        loop {
+            while let Ok(reply) = receivers.iopub.try_recv() {
+                match reply {
+                    Message::ShutdownReply(_) => {
+                        log::info!("Received shutdown_reply on iopub (non-standard)");
+                        return Ok(reply);
+                    }
+                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
+                    }
+                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                        break;
+                    }
+                    _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+                }
+            }
+
+            self.route_all_incoming_stdin();
+
+            if let Ok(reply) = receivers.stdin.try_recv() {
+                match reply {
+                    Message::InputRequest(_) => return Ok(reply),
+                    other => log::warn!("Received unexpected reply {}", other.describe()),
+                }
+            };
+
+            self.route_all_incoming_control();
+
+            if let Ok(reply) = receivers.control.try_recv() {
+                match reply {
+                    Message::ShutdownReply(_) => {
+                        log::info!("Received shutdown_reply on control (standard)");
+                        self.control_broker
+                            .unregister_request(&receivers.id, "reply received");
+                        return Ok(reply);
+                    }
+                    other => {
+                        log::warn!(
+                            "Expected shutdown_reply but received unexpected message: {:#?}",
+                            other
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Expected shutdown_reply but received unexpected message: {:#?}",
+                            other
+                        ));
+                    }
+                }
+            }
+        }
     }
 }
