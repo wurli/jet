@@ -50,18 +50,19 @@ pub fn listen_heartbeat(heartbeat: Heartbeat) -> JoinHandle<()> {
             heartbeat.send(zmq::Message::from(&bytes));
 
             // Then we (hopefully) wait to receive the same message back
-            let reply = heartbeat
-                .recv_with_timeout(9000)
-                .expect("Heartbeat timed out");
+            if let Ok(reply) = heartbeat.recv_with_timeout(1000) {
+                let reply_slice: &[u8] = reply.as_ref();
 
-            let reply_slice: &[u8] = reply.as_ref();
-
-            if reply_slice != bytes.as_slice() {
-                log::warn!(
-                    "Heartbeat reply not the same as request: {:?} != {:?}",
-                    bytes,
-                    reply_slice,
-                )
+                if reply_slice != bytes.as_slice() {
+                    log::warn!(
+                        "Heartbeat reply not the same as request: {:?} != {:?}",
+                        bytes,
+                        reply_slice,
+                    )
+                }
+            } else {
+                log::error!("Heartbeat timed out");
+                panic!("Heartbeat timed out")
             }
 
             std::thread::sleep(std::time::Duration::from_millis(500));
