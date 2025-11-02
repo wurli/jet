@@ -29,6 +29,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Download Ark for "${{ matrix.os }}"
         id: release_data
         # https://github.com/marketplace/actions/github-release-data
@@ -39,10 +52,8 @@ jobs:
           fileName: ${{ matrix.asset_pattern }}
           extract: true
 
-      # - name: Install Ark
-      #   run: |
-      #     unzip $KERNEL_DIR/*.zip
-      #     $KERNEL_DIR/ark --install
+      - name: Install Ark
+        run: $KERNEL_DIR/ark --install
 
       - name: Cargo test
         run: cargo test
