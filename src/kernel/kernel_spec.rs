@@ -9,10 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
-use std::fs::metadata;
 use std::fs::read_dir;
 use std::io::BufReader;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use std::process::{Command, Stdio};
 
@@ -130,7 +129,7 @@ impl KernelSpec {
 
         match serde_json::from_reader(BufReader::new(file)) {
             Ok(file) => Ok(file),
-            Err(e) => Err(Error::CannotDeserialize(e))
+            Err(e) => Err(Error::CannotDeserialize(e)),
         }
     }
 
