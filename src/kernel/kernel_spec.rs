@@ -126,13 +126,20 @@ impl KernelSpec {
         Ok(serde_json::from_reader(BufReader::new(file))?)
     }
 
-    pub fn find_all() -> HashMap<PathBuf, Self> {
-        Self::discover_specs()
-            .iter()
-            .filter_map(|path| match Self::from_file(path) {
-                Ok(spec) => Some((path.to_owned(), spec)),
+    pub fn find_valid() -> HashMap<PathBuf, Self> {
+        Self::find_all()
+            .into_iter()
+            .filter_map(|(path, contents)| match contents {
+                Ok(spec) => Some((path, spec)),
                 Err(_) => None,
             })
+            .collect()
+    }
+
+    pub fn find_all() -> HashMap<PathBuf, anyhow::Result<Self>> {
+        Self::discover_specs()
+            .iter()
+            .map(|path| (path.to_owned(), Self::from_file(path)))
             .collect()
     }
 
@@ -193,4 +200,3 @@ impl KernelSpec {
         metadata(path).is_ok()
     }
 }
-

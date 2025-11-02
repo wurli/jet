@@ -1,5 +1,6 @@
 /target
 /inspiration
+/kernels
 .connection_files/*
 jet.log
 ark.log
