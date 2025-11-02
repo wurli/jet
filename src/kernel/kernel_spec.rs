@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use std::process::{Command, Stdio};
 
+use crate::error::Error;
 use crate::kernel::startup_method::StartupMethod;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -121,9 +122,16 @@ impl KernelSpec {
         }
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let file = File::open(path)?;
-        Ok(serde_json::from_reader(BufReader::new(file))?)
+    pub fn from_file(path: &PathBuf) -> Result<Self, Error> {
+        let file = match File::open(path) {
+            Ok(file) => Ok(file),
+            Err(e) => Err(Error::CannotOpenFile(e)),
+        }?;
+
+        match serde_json::from_reader(BufReader::new(file)) {
+            Ok(file) => Ok(file),
+            Err(e) => Err(Error::CannotDeserialize(e))
+        }
     }
 
     pub fn find_valid() -> HashMap<PathBuf, Self> {
@@ -136,10 +144,10 @@ impl KernelSpec {
             .collect()
     }
 
-    pub fn find_all() -> HashMap<PathBuf, anyhow::Result<Self>> {
+    pub fn find_all() -> HashMap<PathBuf, Result<Self, Error>> {
         Self::discover_specs()
             .iter()
-            .map(|path| (path.to_owned(), Self::from_file(path)))
+            .map(|path| (path.to_owned(), Self::from_file(&path)))
             .collect()
     }
 

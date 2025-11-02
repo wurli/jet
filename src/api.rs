@@ -29,14 +29,7 @@ pub fn list_running_kernels() -> HashMap<String, KernelInfo> {
 }
 
 pub fn start_kernel(spec_path: PathBuf) -> anyhow::Result<(Id, KernelInfo)> {
-    let spec = match KernelSpec::find_all().remove(&spec_path) {
-        Some(Ok(spec)) => spec,
-        Some(Err(e)) => anyhow::bail!(
-            "Invalid kernel spec detected at {}: {e}",
-            spec_path.to_string_lossy()
-        ),
-        None => anyhow::bail!("File not found at {}", spec_path.to_string_lossy()),
-    };
+    let spec = KernelSpec::from_file(&spec_path)?;
 
     let kernel = Kernel::start(spec_path, spec)?;
     let out = (kernel.id.clone(), kernel.info.clone());

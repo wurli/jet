@@ -15,6 +15,7 @@ use crate::msg::wire::message_id::Id;
 /// Type representing all errors that can occur inside the Amalthea implementation.
 #[derive(Debug)]
 pub enum Error {
+    CannotOpenFile(std::io::Error),
     MissingDelimiter,
     InsufficientParts(usize, usize),
     InvalidHmac(Vec<u8>, hex::FromHexError),
@@ -24,6 +25,7 @@ pub enum Error {
     InvalidPart(String, serde_json::Value, serde_json::Error),
     InvalidMessage(String, serde_json::Value, serde_json::Error),
     CannotSerialize(serde_json::Error),
+    CannotDeserialize(serde_json::Error),
     UnknownMessageType(String),
     NoInstallDir,
     CannotStopThread(String),
@@ -60,6 +62,9 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Error::CannotOpenFile(e) => {
+                write!(f, "Cannot open file {e}")
+            },
             Error::CannotStopThread(name) => {
                 write!(f, "Failed to send stop signal to the {name} thread")
             }
@@ -119,6 +124,9 @@ impl fmt::Display for Error {
             }
             Error::CannotSerialize(err) => {
                 write!(f, "Cannot serialize message: {}", err)
+            }
+            Error::CannotDeserialize(err) => {
+                write!(f, "Cannot deserialize json: {}", err)
             }
             Error::NoInstallDir => {
                 write!(f, "No Jupyter installation directory found.")
