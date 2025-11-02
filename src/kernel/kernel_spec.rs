@@ -172,39 +172,31 @@ impl KernelSpec {
     /// docs: <https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs>
     pub fn discover_specs() -> Vec<PathBuf> {
         log::info!("Discovering installed kernels");
-        let mut dirs: Vec<String> = Vec::new();
+        let mut dirs: Vec<PathBuf> = Vec::new();
 
         // TODO: split this variable up on `:` and recurse
         if let Some(var) = std::env::var_os("JUPYTER_PATH") {
-            dirs.push(format!("{}/kernels", var.to_string_lossy()));
+            dirs.push(PathBuf::from(var).join("kernels"));
         }
 
         if let Some(var) = std::env::var_os("HOME") {
-            dirs.push(format!(
-                "{}/.local/share/jupyter/kernels",
-                var.to_string_lossy()
-            ));
-            dirs.push(format!("{}/Library/Jupyter/kernels", var.to_string_lossy()));
+            dirs.push(PathBuf::from(var.clone()).join(".local/share/jupyter/kernels"));
+            dirs.push(PathBuf::from(var).join("Library/Jupyter/kernels"));
         }
 
-        dirs.push("/usr/share/jupyter/kernels".to_string());
-        dirs.push("/usr/local/share/jupyter/kernels".to_string());
+        dirs.push("/usr/share/jupyter/kernels".into());
+        dirs.push("/usr/local/share/jupyter/kernels".into());
 
         // TODO: Are there any other prefix env vars we should check?
         if let Some(var) = std::env::var_os("CONDA_PREFIX") {
-            dirs.push(format!("{}/share/jupyter/kernels", var.to_string_lossy()));
+            dirs.push(PathBuf::from(var).join("share/jupyter/kernels"));
         }
 
         dirs.into_iter()
-            .filter(|dir| Self::path_exists(Path::new(dir)))
             .filter_map(|dir| read_dir(dir).ok())
             .flat_map(|entries| entries.flatten())
             .map(|entry| entry.path().join("kernel.json"))
             .filter(|path| path.exists())
             .collect()
-    }
-
-    fn path_exists(path: &Path) -> bool {
-        metadata(path).is_ok()
     }
 }
