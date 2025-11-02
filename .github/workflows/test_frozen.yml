@@ -9,6 +9,7 @@ env:
   # Causes ark to install the kernel spec to this dir
   KERNEL_DIR: "./kernels/frozen"
   CARGO_TERM_COLOR: always
+  JUPYTER_HOME: "${{ github.workspace }}"
 
 jobs:
   test:
@@ -42,6 +43,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: List envir
+        run: printenv
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
