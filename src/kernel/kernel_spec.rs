@@ -173,21 +173,26 @@ impl KernelSpec {
         log::info!("Discovering installed kernels");
         let mut dirs: Vec<PathBuf> = Vec::new();
 
+        // User-set kernel path (highest priority)
         if let Some(var) = std::env::var_os("JUPYTER_PATH") {
             for path in std::env::split_paths(&var) {
                 dirs.push(path.join("kernels"));
             }
         }
 
+        // User kernels
         if let Some(var) = std::env::var_os("HOME") {
-            dirs.push(PathBuf::from(var.clone()).join(".local/share/jupyter/kernels"));
-            dirs.push(PathBuf::from(var).join("Library/Jupyter/kernels"));
+            // Linux
+            dirs.push(PathBuf::from(&var).join(".local/share/jupyter/kernels"));
+            // Mac
+            dirs.push(PathBuf::from(&var).join("Library/Jupyter/kernels"));
         }
 
+        // System kernels
         dirs.push("/usr/share/jupyter/kernels".into());
         dirs.push("/usr/local/share/jupyter/kernels".into());
 
-        // TODO: Are there any other prefix env vars we should check?
+        // Conda kernels
         if let Some(var) = std::env::var_os("CONDA_PREFIX") {
             dirs.push(PathBuf::from(var).join("share/jupyter/kernels"));
         }
