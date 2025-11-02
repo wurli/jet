@@ -173,9 +173,10 @@ impl KernelSpec {
         log::info!("Discovering installed kernels");
         let mut dirs: Vec<PathBuf> = Vec::new();
 
-        // TODO: split this variable up on `:` and recurse
         if let Some(var) = std::env::var_os("JUPYTER_PATH") {
-            dirs.push(PathBuf::from(var).join("kernels"));
+            for path in std::env::split_paths(&var) {
+                dirs.push(path.join("kernels"));
+            }
         }
 
         if let Some(var) = std::env::var_os("HOME") {
