@@ -25,7 +25,7 @@ fn ark_id() -> Id {
 }
 
 fn start_ark() -> Id {
-    jet::api::start_kernel("kernels/ark/kernel.json".into())
+    jet::api::start_kernel("./kernels/ark/kernel.json".into())
         .expect("Failed to start Ark")
         .0
 }
