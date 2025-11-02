@@ -50,6 +50,7 @@ jobs:
           repository: ${{ env.ARK_REPO }}
           tag: ${{ matrix.ark_version }}
           fileName: ${{ matrix.asset_pattern }}
+          out-file-path: ${{ env.KERNEL_DIR }}
           extract: true
 
       - name: list
