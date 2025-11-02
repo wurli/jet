@@ -25,7 +25,21 @@ fn ark_id() -> Id {
 }
 
 fn start_ark() -> Id {
-    jet::api::start_kernel("./kernels/ark/kernel.json".into())
+    let kernels = api::list_available_kernels();
+
+    let ark_path = kernels
+        .iter()
+        .filter_map(|(path, spec)| {
+            if spec.display_name == String::from("Ark R Kernel") {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .next()
+        .expect("Ark kernel could not be located");
+
+    jet::api::start_kernel(ark_path.to_owned())
         .expect("Failed to start Ark")
         .0
 }
