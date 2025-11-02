@@ -14,19 +14,20 @@ use jet::api;
 use jet::msg::wire::is_complete_reply::IsComplete;
 use jet::msg::wire::jupyter_message::Message;
 use jet::msg::wire::message_id::Id;
+use serde_json::Value;
 
 static ARK_ID: OnceLock<Id> = OnceLock::new();
 
 /// Get the Id for the Ark kernel. 'Getting' for the first time starts the kernel so we can use
 /// the same session for all tests, even though they're run in parallel.
 fn ark_id() -> Id {
-    ARK_ID
-        .get_or_init(|| {
-            let (id, _info) = jet::api::start_kernel("kernels/ark/kernel.json".into())
-                .expect("Failed to start Ark");
-            id
-        })
-        .clone()
+    ARK_ID.get_or_init(start_ark).clone()
+}
+
+fn start_ark() -> Id {
+    jet::api::start_kernel("kernels/ark/kernel.json".into())
+        .expect("Failed to start Ark")
+        .0
 }
 
 fn execute(code: &str) -> impl Fn() -> Option<Message> {
@@ -80,33 +81,50 @@ fn test_ark_returns_stdout() {
 }
 
 #[test]
+fn test_ark_handles_stdin() {
+    let callback = execute("readline('Enter something:')");
+
+    let res = callback().expect("Callback returned `None`");
+
+    assert_matches!(res, Message::InputRequest(msg) => {
+        assert_eq!(msg.content.prompt, "Enter something:")
+    });
+
+    api::provide_stdin(&ark_id(), String::from("Hello tests!")).expect("Could not provide stdin");
+
+    let res = callback().expect("Callback returned `None`");
+
+    assert_matches!(res, Message::ExecuteResult(msg) => {
+        assert_matches!(msg.content.data["text/plain"], Value::String(ref string) => {
+            assert_eq!(string, "[1] \"Hello tests!\"")
+        })
+    });
+
+    // The following callback should give None
+    assert_matches!(callback(), None);
+}
+
+#[test]
 fn test_ark_streams_results() {
     // It's important we only print a single character here, since Ark gathers stdout from R
     // at regular intervals, meaning something like `cat("hello")` might only return output
     // in several chunks.
     //
     // Here we just print "a" then "b" at 0.5s intervals
-    let callback = execute("for (letter in c('a', 'b')) { Sys.sleep(0.5); cat(letter) }");
-    let execute_time = Instant::now();
+    let callback = execute("cat('a')\nSys.sleep(0.5)\ncat('b')");
 
     // Receive the first result
     let res = callback().expect("Callback returned `None`");
-    let elapsed = execute_time.elapsed();
+
+    // We only set the timer afer we receive the first result. This is because tests may be
+    // run in parallel, meaning the kernel may be busy executing other stuff when we first send the
+    // execute request. Once we get the first 'a' through, we should expect the 'b' to come through
+    // within 0.5s.
+    let execute_time = Instant::now();
 
     assert_matches!(res, Message::Stream(msg) => {
         assert_eq!(msg.content.text, "a")
     });
-
-    assert!(
-        Duration::from_millis(500) < elapsed,
-        "Result received too early: {}ms after request)",
-        elapsed.as_millis()
-    );
-    assert!(
-        elapsed < Duration::from_millis(700),
-        "Result received too late: {}ms after request",
-        elapsed.as_millis()
-    );
 
     // Receive the second result
     let res = callback().expect("Callback returned `None`");
@@ -117,12 +135,12 @@ fn test_ark_streams_results() {
     });
 
     assert!(
-        Duration::from_millis(1000) < elapsed,
+        Duration::from_millis(400) < elapsed,
         "Result received too early: {}ms after request)",
         elapsed.as_millis()
     );
     assert!(
-        elapsed < Duration::from_millis(1200),
+        elapsed < Duration::from_millis(600),
         "Result received too late: {}ms after request",
         elapsed.as_millis()
     );
@@ -131,12 +149,17 @@ fn test_ark_streams_results() {
     assert_matches!(callback(), None);
 }
 
-fn is_complete(code: &str) -> Message {
-    api::is_complete(ark_id(), String::from(code)).expect("Could not execute is_complete request")
-}
-
 #[test]
 fn test_ark_is_complete_request() {
+    // This test runs on a new instance of Ark since is_complete requests seem to block the
+    // kernel from returning stdout, which can interfere with other tests (but only if
+    // running with multiple threads)
+    let id = start_ark();
+    let is_complete = |code: &str| -> Message {
+        api::is_complete(id.clone(), String::from(code))
+            .expect("Could not execute is_complete request")
+    };
+
     assert_matches!(is_complete("1"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Complete)
     });
@@ -148,4 +171,6 @@ fn test_ark_is_complete_request() {
     assert_matches!(is_complete("_"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Invalid)
     });
+
+    api::request_shutdown(&id).expect("Could not shut down Ark");
 }
