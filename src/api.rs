@@ -20,7 +20,7 @@ use crate::{
 };
 use std::{collections::HashMap, path::PathBuf};
 
-pub fn discover_kernels() -> HashMap<PathBuf, KernelSpec> {
+pub fn list_available_kernels() -> HashMap<PathBuf, KernelSpec> {
     KernelSpec::find_valid()
 }
 

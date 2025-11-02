@@ -130,12 +130,20 @@ function M.request_restart(jet, kernel_id, name)
     print(M.dump(jet.request_restart(kernel_id)))
 end
 
-function M.list_running_kernels(jet)
-    M.cat_header(nil, "=")
+function M.list_running_kernels(jet, name)
+    big_header("Listing running kernels", name)
     print("Listing running kernels")
     M.cat_header(nil, "=")
     for id, kernel in pairs(jet.list_running_kernels()) do
         print(("* (%s) %s"):format(id:sub(1, 7), kernel.display_name))
+    end
+end
+
+
+function M.discover_kernels(jet)
+    big_header("Discovering available kernels")
+    for id, kernel in pairs(jet.discover_kernels()) do
+        print(("* (%s) %s"):format(id, kernel.display_name))
     end
 end
 

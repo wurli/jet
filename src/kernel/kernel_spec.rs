@@ -168,7 +168,7 @@ impl KernelSpec {
 
         // TODO: split this variable up on `:` and recurse
         if let Some(var) = std::env::var_os("JUPYTER_PATH") {
-            dirs.push(format!("{}", var.to_string_lossy()));
+            dirs.push(format!("{}/kernels", var.to_string_lossy()));
         }
 
         if let Some(var) = std::env::var_os("HOME") {

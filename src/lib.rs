@@ -47,8 +47,8 @@ pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
         lua.create_function(api_lua::provide_stdin)?,
     )?;
     exports.set(
-        "discover_kernels",
-        lua.create_function(api_lua::discover_kernels)?,
+        "list_available_kernels",
+        lua.create_function(api_lua::list_available_kernels)?,
     )?;
     exports.set(
         "request_shutdown",

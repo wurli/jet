@@ -93,8 +93,8 @@ pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult
     Ok(())
 }
 
-pub fn discover_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
-    let kernels = api::discover_kernels();
+pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
+    let kernels = api::list_available_kernels();
 
     Ok(lua.create_table_from(
         kernels
