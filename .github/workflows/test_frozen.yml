@@ -1,3 +1,8 @@
+on:
+  pull_request:
+    branches:
+      - main
+
 env:
   ARK_REPO: "posit-dev/ark"
   # Causes ark to install the kernel spec to this dir
