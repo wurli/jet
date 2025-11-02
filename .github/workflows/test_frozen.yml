@@ -35,7 +35,7 @@ jobs:
         uses: robinraju/release-downloader@v1
         with:
           repository: ${{ env.ARK_REPO }}
-          releaseId: ${{ matrix.ark_version }}
+          tag: ${{ matrix.ark_version }}
           fileName: ${{ matrix.asset_pattern }}
           extract: true
 
