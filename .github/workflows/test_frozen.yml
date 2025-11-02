@@ -8,7 +8,7 @@ env:
   ARK_REPO: "posit-dev/ark"
   # Causes ark to install the kernel spec to this dir
   KERNEL_DIR: "./kernels/frozen"
-  JUPYTER_HOME: "${{ github.workspace }}/kernels/frozen"
+  JUPYTER_PATH: "${{ github.workspace }}/kernels/frozen"
   CARGO_TERM_COLOR: always
 
 jobs:
