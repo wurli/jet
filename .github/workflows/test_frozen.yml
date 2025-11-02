@@ -1,6 +1,8 @@
 env:
   ARK_REPO: "posit-dev/ark"
+  # Causes ark to install the kernel spec to this dir
   KERNEL_DIR: "./kernels/frozen"
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
@@ -20,6 +22,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - uses: actions/checkout@v5
+
       - name: Download Ark for "${{ matrix.os }}"
         id: release_data
         # https://github.com/marketplace/actions/github-release-data
