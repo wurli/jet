@@ -7,9 +7,6 @@ local kernel_id, info = jet.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/ke
 utils.cat_header("startup message", "=")
 print(info.banner)
 
--- Try running some code
-utils.execute(jet, kernel_id, "%config Completer.use_jedi=True")
-
 utils.execute(jet, kernel_id, "1 + 1")
 utils.execute(jet, kernel_id, "input('Enter something')")
 utils.execute(jet, kernel_id, [[
@@ -19,7 +16,7 @@ time.sleep(1)
 ]])
 
 -- User expressions
-utils.execute(jet, kernel_id, "1 + 1", info.display_name, { test = "2 ** 2" })
+utils.execute(jet, kernel_id, "1 + 1", { test = "2 ** 2" })
 
 -- Try testing completeness
 -- These seem brittle... Often this hangs.
@@ -30,12 +27,11 @@ utils.is_complete(jet, kernel_id, "$")
 utils.execute(
     jet,
     kernel_id,
-    [[import pandas as pd
-df = pd.DataFrame(dict(my_inconveniently_named_col = [1, 2, 3], bar = ["a", "b", "c"]))]]
+    [[my_inconveniently_named_var = 1]]
 )
 
 -- Try getting completions (ark doesn't do these)
-utils.get_completions(jet, kernel_id, "df.my_inconv", 12)
+utils.get_completions(jet, kernel_id, "my_inconv", 9)
 
 -- Try getting completions (ark doesn't do these)
 utils.request_shutdown(jet, kernel_id)
