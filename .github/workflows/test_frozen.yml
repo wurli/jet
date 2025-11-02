@@ -52,6 +52,9 @@ jobs:
           fileName: ${{ matrix.asset_pattern }}
           extract: true
 
+      - name: list
+        run: ls $KERNEL_DIR -aR
+
       - name: Install Ark
         run: $KERNEL_DIR/ark --install
 
