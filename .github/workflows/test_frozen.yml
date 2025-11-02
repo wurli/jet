@@ -18,7 +18,7 @@ jobs:
         ark_version: [0.1.216]
         include:
           - os: ubuntu-latest
-            asset_pattern: '[0-9]-linux-x64.zip'
+            asset_pattern: '[0123456789]-linux-x64.zip'
           # - os: windows-latest
           #   asset-pattern: '*-windows-x64.zip'
           # - os: macos-latest
