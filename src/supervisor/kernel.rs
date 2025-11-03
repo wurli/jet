@@ -43,18 +43,16 @@ impl Kernel {
         log::info!("Using kernel '{}'", spec.display_name);
 
         let kernel_id = Id::new();
-        let cf_path = format!(
-            ".connection_files/jet_connection_file_{}.json",
-            String::from(kernel_id.clone())
-        );
+        let mut cf_path = std::env::temp_dir();
+        cf_path.push(format!("jet_connection_file_{}.json", kernel_id.clone()));
         let kernel_cmd = spec.build_command(&cf_path);
 
         let (jupyter_channels, process) = match spec.get_connection_method() {
             StartupMethod::RegistrationFile => {
-                JupyterChannels::init_with_registration_file(kernel_cmd, cf_path.into())?
+                JupyterChannels::init_with_registration_file(kernel_cmd, cf_path)?
             }
             StartupMethod::ConnectionFile => {
-                JupyterChannels::init_with_connection_file(kernel_cmd, cf_path.into())?
+                JupyterChannels::init_with_connection_file(kernel_cmd, cf_path)?
             }
         };
 

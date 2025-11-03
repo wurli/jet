@@ -75,12 +75,12 @@ pub struct KernelSpec {
 }
 
 impl KernelSpec {
-    pub fn build_command(&self, connection_file_path: &String) -> Command {
+    pub fn build_command(&self, connection_file_path: &PathBuf) -> Command {
         let mut args = self.argv.clone();
 
         for arg in args.iter_mut() {
             if *arg == "{connection_file}" {
-                *arg = connection_file_path.clone()
+                *arg = String::from(connection_file_path.to_string_lossy())
             }
         }
 
