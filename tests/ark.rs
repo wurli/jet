@@ -163,17 +163,14 @@ fn test_ark_streams_results() {
     assert_matches!(callback(), None);
 }
 
-#[test]
-fn test_ark_is_complete_request() {
-    // This test runs on a new instance of Ark since is_complete requests seem to block the
-    // kernel from returning stdout, which can interfere with other tests (but only if
-    // running with multiple threads)
-    let id = start_ark();
-    let is_complete = |code: &str| -> Message {
-        api::is_complete(id.clone(), String::from(code))
-            .expect("Could not execute is_complete request")
-    };
 
+fn is_complete(code: &str) -> Message {
+    api::is_complete(ark_id(), String::from(code))
+        .expect("Could not execute is_complete request")
+}
+
+#[test]
+fn test_ark_provides_code_completeness() {
     assert_matches!(is_complete("1"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Complete)
     });
@@ -185,6 +182,4 @@ fn test_ark_is_complete_request() {
     assert_matches!(is_complete("_"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Invalid)
     });
-
-    api::request_shutdown(&id).expect("Could not shut down Ark");
 }

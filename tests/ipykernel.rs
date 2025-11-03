@@ -156,17 +156,13 @@ fn test_ipykernel_streams_results() {
     assert_matches!(callback(), None);
 }
 
-#[test]
-fn test_ipykernel_is_complete_request() {
-    // This test runs on a new instance of ipykernel since is_complete requests seem to block the
-    // kernel from returning stdout, which can interfere with other tests (but only if
-    // running with multiple threads)
-    let id = start_ipykernel();
-    let is_complete = |code: &str| -> Message {
-        api::is_complete(id.clone(), String::from(code))
-            .expect("Could not execute is_complete request")
-    };
+fn is_complete(code: &str) -> Message {
+    api::is_complete(ipykernel_id(), String::from(code))
+        .expect("Could not execute is_complete request")
+}
 
+#[test]
+fn test_ipykernel_provides_code_completeness() {
     assert_matches!(is_complete("1"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Complete)
     });
@@ -179,5 +175,21 @@ fn test_ipykernel_is_complete_request() {
         assert_matches!(msg.content.status, IsComplete::Invalid)
     });
 
-    api::request_shutdown(&id).expect("Could not shut down ipykernel");
+    // api::request_shutdown(&id).expect("Could not shut down ipykernel");
+}
+
+fn get_completions(code: &str, pos: u32) -> Message {
+    api::get_completions(ipykernel_id(), String::from(code), pos)
+        .expect("Could not execute is_complete request")
+}
+
+#[test]
+fn test_ipykernel_provides_completions() {
+    let code = "my_long_named_variable = 1\nmy_long_";
+    assert_matches!(get_completions(code, code.chars().count() as u32), Message::CompleteReply(msg) => {
+        assert_eq!(
+            msg.content.matches.into_iter().next().expect("No completions returned"),
+            String::from("my_long_named_variable")
+        )
+    });
 }
