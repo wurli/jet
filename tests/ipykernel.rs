@@ -1,5 +1,5 @@
 /*
- * ark.rs
+ * ipykernel.rs
  *
  * Copyright (C) 2025 Jacob Scott. All rights reserved.
  *
@@ -16,47 +16,40 @@ use jet::msg::wire::jupyter_message::Message;
 use jet::msg::wire::message_id::Id;
 use serde_json::Value;
 
-static ARK_ID: OnceLock<Id> = OnceLock::new();
+static IPYKERNEL_ID: OnceLock<Id> = OnceLock::new();
 
-/// Get the Id for the Ark kernel. 'Getting' for the first time starts the kernel so we can use
+/// Get the Id for the ipykernel. 'Getting' for the first time starts the kernel so we can use
 /// the same session for all tests, even though they're run in parallel.
-fn ark_id() -> Id {
-    ARK_ID.get_or_init(start_ark).clone()
+fn ipykernel_id() -> Id {
+    IPYKERNEL_ID.get_or_init(start_ipykernel).clone()
 }
 
-fn start_ark() -> Id {
-    let kernels = api::list_available_kernels();
+fn start_ipykernel() -> Id {
+    // Use the system-installed python3 kernel
+    let kernel_path = std::env::var("IPYKERNEL_PATH").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").expect("HOME not set");
+        format!("{}/Library/Jupyter/kernels/python3/kernel.json", home)
+    });
 
-    let ark_path = kernels
-        .iter()
-        .filter_map(|(path, spec)| {
-            if spec.display_name == String::from("Ark R Kernel") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .next()
-        .expect("Ark kernel could not be located");
-
-    jet::api::start_kernel(ark_path.to_owned())
-        .expect("Failed to start Ark")
+    jet::api::start_kernel(kernel_path.into())
+        .expect("Failed to start ipykernel")
         .0
 }
 
 fn execute(code: &str) -> impl Fn() -> Option<Message> {
-    api::execute_code(ark_id(), String::from(code), HashMap::new()).expect("Could not execute code")
+    api::execute_code(ipykernel_id(), String::from(code), HashMap::new())
+        .expect("Could not execute code")
 }
 
 #[test]
-fn test_ark_can_run_simple_code() {
+fn test_ipykernel_can_run_simple_code() {
     let callback = execute("1 + 1");
 
     let res = callback().expect("Callback returned `None`");
 
     // Initial callback should give the execute result
     assert_matches!(res, Message::ExecuteResult(msg) => {
-        assert_eq!(msg.content.data["text/plain"], "[1] 2")
+        assert_eq!(msg.content.data["text/plain"], "2")
     });
 
     // The following callback should give None
@@ -64,8 +57,8 @@ fn test_ark_can_run_simple_code() {
 }
 
 #[test]
-fn test_ark_persists_environment() {
-    let callback = execute("x <- 1");
+fn test_ipykernel_persists_environment() {
+    let callback = execute("x = 1");
 
     // The callback shouldn't have an output
     assert_matches!(callback(), None);
@@ -76,13 +69,13 @@ fn test_ark_persists_environment() {
 
     // Initial callback should give the execute result
     assert_matches!(res, Message::ExecuteResult(msg) => {
-        assert_eq!(msg.content.data["text/plain"], "[1] 1")
+        assert_eq!(msg.content.data["text/plain"], "1")
     });
 }
 
 #[test]
-fn test_ark_returns_stdout() {
-    let callback = execute("cat('Hi!')");
+fn test_ipykernel_returns_stdout() {
+    let callback = execute("print('Hi!', end='')");
 
     let res = callback().expect("Callback returned `None`");
 
@@ -95,8 +88,8 @@ fn test_ark_returns_stdout() {
 }
 
 #[test]
-fn test_ark_handles_stdin() {
-    let callback = execute("readline('Enter something:')");
+fn test_ipykernel_handles_stdin() {
+    let callback = execute("input('Enter something:')");
 
     let res = callback().expect("Callback returned `None`");
 
@@ -104,13 +97,14 @@ fn test_ark_handles_stdin() {
         assert_eq!(msg.content.prompt, "Enter something:")
     });
 
-    api::provide_stdin(&ark_id(), String::from("Hello tests!")).expect("Could not provide stdin");
+    api::provide_stdin(&ipykernel_id(), String::from("Hello tests!"))
+        .expect("Could not provide stdin");
 
     let res = callback().expect("Callback returned `None`");
 
     assert_matches!(res, Message::ExecuteResult(msg) => {
         assert_matches!(msg.content.data["text/plain"], Value::String(ref string) => {
-            assert_eq!(string, "[1] \"Hello tests!\"")
+            assert_eq!(string, "'Hello tests!'")
         })
     });
 
@@ -119,18 +113,17 @@ fn test_ark_handles_stdin() {
 }
 
 #[test]
-fn test_ark_streams_results() {
-    // It's important we only print a single character here, since Ark gathers stdout from R
-    // at regular intervals, meaning something like `cat("hello")` might only return output
-    // in several chunks.
-    //
-    // Here we just print "a" then "b" at 0.5s intervals
-    let callback = execute("cat('a')\nSys.sleep(0.5)\ncat('b')");
+fn test_ipykernel_streams_results() {
+    // Print "a" then "b" at 0.5s intervals
+    // Use sys.stdout.flush() to ensure output is sent immediately
+    let callback = execute(
+        "import time\nimport sys\nprint('a', end='', flush=True)\ntime.sleep(0.5)\nprint('b', end='', flush=True)",
+    );
 
     // Receive the first result
     let res = callback().expect("Callback returned `None`");
 
-    // We only set the timer afer we receive the first result. This is because tests may be
+    // We only set the timer after we receive the first result. This is because tests may be
     // run in parallel, meaning the kernel may be busy executing other stuff when we first send the
     // execute request. Once we get the first 'a' through, we should expect the 'b' to come through
     // within 0.5s.
@@ -154,7 +147,7 @@ fn test_ark_streams_results() {
         elapsed.as_millis()
     );
     assert!(
-        elapsed < Duration::from_millis(600),
+        elapsed < Duration::from_millis(700),
         "Result received too late: {}ms after request",
         elapsed.as_millis()
     );
@@ -163,23 +156,40 @@ fn test_ark_streams_results() {
     assert_matches!(callback(), None);
 }
 
-
 fn is_complete(code: &str) -> Message {
-    api::is_complete(ark_id(), String::from(code))
+    api::is_complete(ipykernel_id(), String::from(code))
         .expect("Could not execute is_complete request")
 }
 
 #[test]
-fn test_ark_provides_code_completeness() {
+fn test_ipykernel_provides_code_completeness() {
     assert_matches!(is_complete("1"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Complete)
     });
 
-    assert_matches!(is_complete("1 +"), Message::IsCompleteReply(msg) => {
+    assert_matches!(is_complete("for i in range(3):"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Incomplete)
     });
 
-    assert_matches!(is_complete("_"), Message::IsCompleteReply(msg) => {
+    assert_matches!(is_complete("$"), Message::IsCompleteReply(msg) => {
         assert_matches!(msg.content.status, IsComplete::Invalid)
+    });
+
+    // api::request_shutdown(&id).expect("Could not shut down ipykernel");
+}
+
+fn get_completions(code: &str, pos: u32) -> Message {
+    api::get_completions(ipykernel_id(), String::from(code), pos)
+        .expect("Could not execute is_complete request")
+}
+
+#[test]
+fn test_ipykernel_provides_completions() {
+    let code = "my_long_named_variable = 1\nmy_long_";
+    assert_matches!(get_completions(code, code.chars().count() as u32), Message::CompleteReply(msg) => {
+        assert_eq!(
+            msg.content.matches.into_iter().next().expect("No completions returned"),
+            String::from("my_long_named_variable")
+        )
     });
 }

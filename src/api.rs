@@ -150,29 +150,29 @@ pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::
 
     let kernel = KernelManager::get(&kernel_id)?;
 
-    kernel.comm.route_all_incoming_shell();
     let receivers = kernel.comm.send_shell(CompleteRequest { code, cursor_pos });
 
-    kernel.comm.await_reply_shell(&receivers.id);
+    loop {
+        // We need to loop here because it's possible that the shell channel may receive any number
+        // of replies to previous messages before we get the reply we're looking for.
+        kernel.comm.route_all_incoming_shell();
 
-    if let Ok(reply) = receivers.shell.recv() {
-        match reply {
-            Message::CompleteReply(_) => {
-                log::trace!("Received completion_reply on the shell");
-                kernel
-                    .comm
-                    .stdin_broker
-                    .unregister_request(&receivers.id, "reply received");
-                Ok(reply)
-            }
-            _ => {
-                log::warn!("Unexpected reply received on shell: {}", reply.describe());
-                Err(anyhow::anyhow!("Unexpected reply: {}", reply.describe()))
+        if let Ok(reply) = receivers.shell.try_recv() {
+            match reply {
+                Message::CompleteReply(_) => {
+                    log::trace!("Received completion_reply on the shell");
+                    kernel
+                        .comm
+                        .stdin_broker
+                        .unregister_request(&receivers.id, "reply received");
+                    return Ok(reply);
+                }
+                _ => {
+                    log::warn!("Unexpected reply received on shell: {}", reply.describe());
+                    return Err(anyhow::anyhow!("Unexpected reply: {}", reply.describe()));
+                }
             }
         }
-    } else {
-        log::warn!("Failed to obtain completion_reply from the shell");
-        Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"))
     }
 }
 
@@ -184,31 +184,31 @@ pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
     );
 
     let kernel = KernelManager::get(&kernel_id)?;
-    kernel.comm.route_all_incoming_shell();
 
     let receivers = kernel
         .comm
         .send_shell(IsCompleteRequest { code: code.clone() });
 
-    kernel.comm.await_reply_shell(&receivers.id);
+    loop {
+        // We need to loop here because it's possible that the shell channel may receive any number
+        // of replies to previous messages before we get the reply we're looking for.
+        kernel.comm.route_all_incoming_shell();
 
-    if let Ok(reply) = receivers.shell.recv() {
-        match reply {
-            Message::IsCompleteReply(_) => {
-                log::trace!("Received is_complete_reply on the shell");
-                kernel
-                    .comm
-                    .stdin_broker
-                    .unregister_request(&receivers.id, "reply received");
-                Ok(reply)
-            }
-            _ => {
-                log::warn!("Unexpected reply received on shell: {}", reply.describe());
-                Err(anyhow::anyhow!("Unexpected reply: {}", reply.describe()))
+        if let Ok(reply) = receivers.shell.try_recv() {
+            match reply {
+                Message::IsCompleteReply(_) => {
+                    log::trace!("Received is_complete_reply on the shell");
+                    kernel
+                        .comm
+                        .stdin_broker
+                        .unregister_request(&receivers.id, "reply received");
+                    return Ok(reply);
+                }
+                _ => {
+                    log::warn!("Unexpected reply received on shell: {}", reply.describe());
+                    return Err(anyhow::anyhow!("Unexpected reply: {}", reply.describe()));
+                }
             }
         }
-    } else {
-        log::warn!("Failed to obtain is_complete_reply from the shell");
-        Err(anyhow::anyhow!("Failed to obtain a reply from the kernel"))
     }
 }
