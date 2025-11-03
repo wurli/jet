@@ -26,19 +26,19 @@ fn ipykernel_id() -> Id {
 
 fn start_ipykernel() -> Id {
     // Use the system-installed python3 kernel
-    let kernel_path = std::env::var("IPYKERNEL_PATH")
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").expect("HOME not set");
-            format!("{}/Library/Jupyter/kernels/python3/kernel.json", home)
-        });
-    
+    let kernel_path = std::env::var("IPYKERNEL_PATH").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").expect("HOME not set");
+        format!("{}/Library/Jupyter/kernels/python3/kernel.json", home)
+    });
+
     jet::api::start_kernel(kernel_path.into())
         .expect("Failed to start ipykernel")
         .0
 }
 
 fn execute(code: &str) -> impl Fn() -> Option<Message> {
-    api::execute_code(ipykernel_id(), String::from(code), HashMap::new()).expect("Could not execute code")
+    api::execute_code(ipykernel_id(), String::from(code), HashMap::new())
+        .expect("Could not execute code")
 }
 
 #[test]
@@ -97,7 +97,8 @@ fn test_ipykernel_handles_stdin() {
         assert_eq!(msg.content.prompt, "Enter something:")
     });
 
-    api::provide_stdin(&ipykernel_id(), String::from("Hello tests!")).expect("Could not provide stdin");
+    api::provide_stdin(&ipykernel_id(), String::from("Hello tests!"))
+        .expect("Could not provide stdin");
 
     let res = callback().expect("Callback returned `None`");
 
@@ -115,7 +116,9 @@ fn test_ipykernel_handles_stdin() {
 fn test_ipykernel_streams_results() {
     // Print "a" then "b" at 0.5s intervals
     // Use sys.stdout.flush() to ensure output is sent immediately
-    let callback = execute("import time\nimport sys\nprint('a', end='', flush=True)\ntime.sleep(0.5)\nprint('b', end='', flush=True)");
+    let callback = execute(
+        "import time\nimport sys\nprint('a', end='', flush=True)\ntime.sleep(0.5)\nprint('b', end='', flush=True)",
+    );
 
     // Receive the first result
     let res = callback().expect("Callback returned `None`");
