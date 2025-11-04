@@ -33,9 +33,14 @@ runs:
         out-file-path: ${{ env.JUPYTER_PATH }}/kernels/ark
         extract: true
 
-    - name: Install Ark
+    - name: Install Ark (Unix)
       shell: bash
+      if: ${{ runner.os != 'Windows' }}
       run: |
         chmod +x ${{ env.JUPYTER_PATH }}/kernels/ark/ark
         ${{ env.JUPYTER_PATH }}/kernels/ark/ark --install
 
+    - name: Install Ark (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: bash
+      run: ${{ env.JUPYTER_PATH }}/kernels/ark/ark.exe --install
