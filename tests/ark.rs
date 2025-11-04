@@ -150,12 +150,12 @@ fn test_ark_streams_results() {
 
     assert!(
         Duration::from_millis(400) < elapsed,
-        "Result received too early: {}ms after request)",
+        "Second result received too early: {}ms after first)",
         elapsed.as_millis()
     );
     assert!(
         elapsed < Duration::from_millis(600),
-        "Result received too late: {}ms after request",
+        "Second result received too late: {}ms after first",
         elapsed.as_millis()
     );
 

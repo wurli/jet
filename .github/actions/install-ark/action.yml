@@ -1,0 +1,41 @@
+name: "Install Ark"
+description: "Download and install R and the Ark kernel"
+
+inputs:
+  ark_version:
+    description: "Version of Ark to install (e.g., 0.1.216 or 'latest')"
+    required: true
+  r_version:
+    description: "R version to install"
+    required: false
+    default: "4.5.2"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: ${{ inputs.r_version }}
+
+    - name: Download Ark
+      uses: robinraju/release-downloader@v1
+      with:
+        repository: "posit-dev/ark"
+        latest: ${{ inputs.ark_version == 'latest' }}
+        tag: ${{ inputs.ark_version }}
+        fileName: >
+          ${{
+            runner.os == 'Linux'       && '*[0123456789]-linux-x64.zip'
+            || (runner.os == 'Windows' && '*-windows-x64.zip'
+            || (runner.os == 'Mac'     && '*-darwin-universal.zip' ))
+          }}
+        out-file-path: ${{ env.JUPYTER_PATH }}/kernels/ark
+        extract: true
+
+    - name: Install Ark
+      shell: bash
+      run: |
+        chmod +x ${{ env.JUPYTER_PATH }}/kernels/ark/ark
+        ${{ env.JUPYTER_PATH }}/kernels/ark/ark --install
+

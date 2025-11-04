@@ -25,13 +25,21 @@ fn ipykernel_id() -> Id {
 }
 
 fn start_ipykernel() -> Id {
-    // Use the system-installed python3 kernel
-    let kernel_path = std::env::var("IPYKERNEL_PATH").unwrap_or_else(|_| {
-        let home = std::env::var("HOME").expect("HOME not set");
-        format!("{}/Library/Jupyter/kernels/python3/kernel.json", home)
-    });
+    let kernels = api::list_available_kernels();
 
-    jet::api::start_kernel(kernel_path.into())
+    let ipykernel_path = kernels
+        .iter()
+        .filter_map(|(path, spec)| {
+            if spec.display_name == String::from("Python 3 (ipykernel)") {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .next()
+        .expect("Ipykernel could not be located");
+
+    jet::api::start_kernel(ipykernel_path.to_owned())
         .expect("Failed to start ipykernel")
         .0
 }
@@ -143,12 +151,12 @@ fn test_ipykernel_streams_results() {
 
     assert!(
         Duration::from_millis(400) < elapsed,
-        "Result received too early: {}ms after request)",
+        "Second result received too early: {}ms after first)",
         elapsed.as_millis()
     );
     assert!(
         elapsed < Duration::from_millis(700),
-        "Result received too late: {}ms after request",
+        "Second result received too late: {}ms after first",
         elapsed.as_millis()
     );
 

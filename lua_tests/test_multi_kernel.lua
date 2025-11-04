@@ -4,8 +4,8 @@ local jet = utils.jet_loader()
 -- Discover available kernels
 utils.cat_header("Available kernels", "=")
 print()
-for _, spec in pairs(jet.discover_kernels()) do
-    print("- " .. spec.display_name)
+for path, spec in pairs(jet.list_available_kernels()) do
+    print(("- %s (%s)"):format(spec.display_name, path))
 end
 print()
 

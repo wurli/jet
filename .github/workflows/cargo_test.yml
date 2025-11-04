@@ -1,0 +1,60 @@
+run-name: "Cargo test"
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+  JUPYTER_PATH: ${{ github.workspace }}
+
+jobs:
+  cargo_test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        version: frozen # todo: figure out how to also test against 'latest'
+        include:
+          - version: frozen
+            ark_version: "0.1.216"
+            ipykernel_version: "uv.lock"
+          # - version: latest
+          #   ark_version: latest
+          #   ipykernel_version: latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Ark
+        uses: ./.github/actions/install-ark
+        with:
+          ark_version: "0.1.216"
+          r_version: "4.5.2"
+
+      - name: Install Ipykernel
+        uses: ./.github/actions/install-ipykernel
+        with:
+          ipykernel_version: "uv.lock"
+
+      - name: Show `./kernels` contents
+        run: ls -R kernels
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run cargo test
+        run: cargo test --no-fail-fast

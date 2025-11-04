@@ -1,0 +1,49 @@
+name: "Install Ipykernel"
+description: "Download and install Python and the Ipykernel"
+
+inputs:
+  ipykernel_version:
+    type: choice
+    description: "Version of the Ipykernel to install"
+    required: false
+    options:
+      - latest
+      - uv.lock
+
+runs:
+  using: "composite"
+  steps:
+    # Installing python with uv can apparently be a little
+    # slower than the official action
+    - name: "Set up Python"
+      uses: actions/setup-python@v6
+      with:
+        # We should always use the frozen python version; we only want to vary
+        # the versions of packages.
+        python-version-file: "pyproject.toml"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        version: 0.9.7
+
+    - name: Install Ipykernel
+      shell: bash
+      run: uv sync --locked --all-extras
+
+    - name: Upgrade Ipykernel
+      shell: bash
+      if: ${{ inputs.ipykernel_version == 'latest' }}
+      run: uv lock --upgrade
+
+    - name: Install Ipykernel kernel spec
+      shell: bash
+      # Annoyingly, `ipykernel install --prefix bla` installs to
+      # `bla/share/kernels` rather than `bla/` so we have to move the
+      # kernelspec up a few levels so Jet can find it.
+      run: |
+        uv run python -m ipykernel install --prefix ${{ env.JUPYTER_PATH }}
+        mkdir ./kernels/python3
+        mv ${{ env.JUPYTER_PATH }}/share/jupyter/kernels/* ${{ env.JUPYTER_PATH }}/kernels
+        rm -rf ${{ env.JUPYTER_PATH }}/share

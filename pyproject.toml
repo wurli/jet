@@ -1,0 +1,9 @@
+[project]
+name = "jet"
+version = "0.1.0"
+description = "A Jupyter Kernel Supervisor for Neovim"
+readme = "README.md"
+requires-python = "==3.13.0"
+dependencies = [
+    "ipykernel"
+]
