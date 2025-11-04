@@ -59,7 +59,7 @@ pub fn execute_code(
         allow_stdin: true,
         stop_on_error: true,
         user_expressions: serde_json::to_value(user_expressions).unwrap(),
-    });
+    })?;
 
     Ok(move || {
         loop {
@@ -137,7 +137,7 @@ pub fn request_restart(kernel_id: &Id) -> anyhow::Result<Message> {
 
 pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
     let kernel = KernelManager::get(kernel_id)?;
-    kernel.comm.send_stdin(InputReply { value });
+    kernel.comm.send_stdin(InputReply { value })?;
     Ok(())
 }
 
@@ -150,7 +150,7 @@ pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::
 
     let kernel = KernelManager::get(&kernel_id)?;
 
-    let receivers = kernel.comm.send_shell(CompleteRequest { code, cursor_pos });
+    let receivers = kernel.comm.send_shell(CompleteRequest { code, cursor_pos })?;
 
     loop {
         // We need to loop here because it's possible that the shell channel may receive any number
@@ -187,7 +187,7 @@ pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
 
     let receivers = kernel
         .comm
-        .send_shell(IsCompleteRequest { code: code.clone() });
+        .send_shell(IsCompleteRequest { code: code.clone() })?;
 
     loop {
         // We need to loop here because it's possible that the shell channel may receive any number

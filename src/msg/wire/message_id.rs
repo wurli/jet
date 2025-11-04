@@ -7,6 +7,7 @@
 
 use core::fmt;
 use std::{
+    borrow::Borrow,
     fmt::{Display, Formatter},
     ops::Deref,
 };
@@ -51,6 +52,18 @@ impl Display for Id {
 impl Default for Id {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl AsRef<str> for Id {
+    fn as_ref(&self) -> &str {
+        &self.value
+    }
+}
+
+impl Borrow<str> for Id {
+    fn borrow(&self) -> &str {
+        &self.value
     }
 }
 

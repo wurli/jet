@@ -88,16 +88,19 @@ impl Broker {
     pub fn route(&self, msg: Message) {
         log::trace!("{}: Routing message: {}", self.name, msg.describe(),);
 
-        if let Some(parent_id) = msg.parent_id() {
-            self.route_to_request(&parent_id, msg);
-        } else {
-            // No parent ID, handle as orphan
-            log::trace!(
-                "{}: Routing unparented message: {}",
-                self.name,
-                msg.describe()
-            );
-            self.route_to_request(&Id::unparented(), msg);
+        match msg.parent_id() {
+            Some(parent_id) => {
+                self.route_to_request(&parent_id.clone(), msg);
+            }
+            None => {
+                // No parent ID, handle as orphan
+                log::trace!(
+                    "{}: Routing unparented message: {}",
+                    self.name,
+                    msg.describe()
+                );
+                self.route_to_request(&Id::unparented(), msg);
+            }
         }
     }
 

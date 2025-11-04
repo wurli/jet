@@ -17,9 +17,10 @@ use crate::msg::wire::message_id::Id;
 use crate::msg::wire::shutdown_request::ShutdownRequest;
 use crate::msg::wire::status::ExecutionState;
 use crate::supervisor::broker::Broker;
+use crate::supervisor::kernel::{HeartbeatFailed, StopHeartbeat, StopIopub};
 use crate::supervisor::reply_receivers::ReplyReceivers;
 use assert_matches::assert_matches;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 
 /// These are the channels on which we might want to send data (as well as receive)
@@ -28,10 +29,13 @@ pub struct KernelComm {
     pub session: Session,
 
     /// A sender which can be used to stop the heartbeat loop
-    pub heartbeat_tx: Sender<()>,
+    pub heartbeat_stopper: Sender<StopHeartbeat>,
+
+    /// A receiver which notifies when the heartbeat has failed
+    pub heartbeat_monitor: Mutex<Receiver<HeartbeatFailed>>,
 
     /// A sender which can be used to stop the iopub loop
-    pub iopub_tx: Sender<()>,
+    pub iopub_stopper: Sender<StopIopub>,
 
     /// The broker which routes messages received on the iopub channel
     pub iopub_broker: Arc<Broker>,
@@ -57,115 +61,148 @@ pub struct KernelComm {
 
 impl KernelComm {
     pub fn stop_heartbeat(&self) -> Result<(), Error> {
-        match self.heartbeat_tx.send(()) {
+        match self.heartbeat_stopper.send(StopHeartbeat) {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::CannotStopThread(String::from("heartbeat"))),
         }
     }
 
     pub fn stop_iopub(&self) -> Result<(), Error> {
-        match self.iopub_tx.send(()) {
+        match self.iopub_stopper.send(StopIopub) {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::CannotStopThread(String::from("iopub"))),
         }
     }
 
-    pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> ReplyReceivers {
-        let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id);
+    pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
+        let msg = self.make_jupyter_message(msg);
+        let request_id = &msg.header.msg_id;
+        let receivers = self.register_request(request_id)?;
         self.shell_channel.lock().unwrap().send(msg);
-        receivers
+        Ok(receivers)
     }
 
-    pub fn send_stdin<T: ProtocolMessage>(&self, msg: T) -> ReplyReceivers {
-        let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id);
+    pub fn send_stdin<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
+        let msg = self.make_jupyter_message(msg);
+        let receivers = self.register_request(&msg.header.msg_id)?;
         self.stdin_channel.lock().unwrap().send(msg);
-        receivers
+        Ok(receivers)
     }
 
-    pub fn send_control<T: ProtocolMessage>(&self, msg: T) -> ReplyReceivers {
-        let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id);
+    pub fn send_control<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
+        let msg = self.make_jupyter_message(msg);
+        let receivers = self.register_request(&msg.header.msg_id)?;
         self.control_channel.lock().unwrap().send(msg);
-        receivers
+        Ok(receivers)
     }
 
-    fn make_jupyter_message<T: ProtocolMessage>(&self, msg: T) -> (JupyterMessage<T>, Id) {
-        let message = JupyterMessage::create(msg, None, &self.session);
-        let id = message.header.msg_id.clone();
-        (message, id)
+    fn make_jupyter_message<T: ProtocolMessage>(&self, msg: T) -> JupyterMessage<T> {
+        JupyterMessage::create(msg, None, &self.session)
     }
 
-    fn register_request(&self, request_id: &Id) -> ReplyReceivers {
-        ReplyReceivers {
+    fn register_request(&self, request_id: &Id) -> Result<ReplyReceivers, Error> {
+        self.check_heartbeat()?;
+        Ok(ReplyReceivers {
             id: request_id.clone(),
             iopub: self.iopub_broker.register_request(request_id),
             stdin: self.stdin_broker.register_request(request_id),
             shell: self.shell_broker.register_request(request_id),
             control: self.control_broker.register_request(request_id),
+        })
+    }
+
+    fn check_heartbeat(&self) -> Result<(), Error> {
+        match self.heartbeat_monitor.lock().unwrap().try_recv() {
+            Ok(HeartbeatFailed) => Err(Error::HeartbeatFailed(String::from(
+                "Heartbeat monitor reported failure",
+            ))),
+            Err(TryRecvError::Disconnected) => Err(Error::HeartbeatFailed(String::from(
+                "Heartbeat monitor disconnected",
+            ))),
+            Err(TryRecvError::Empty) => Ok(()),
         }
     }
 
-    pub fn recv_shell(&self) -> Message {
-        self.shell_channel.lock().unwrap().recv()
+    pub fn recv_shell(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        Ok(self.shell_channel.lock().unwrap().recv())
     }
 
-    pub fn recv_stdin(&self) -> Message {
-        self.stdin_channel.lock().unwrap().recv()
+    pub fn recv_stdin(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        Ok(self.stdin_channel.lock().unwrap().recv())
     }
 
-    pub fn recv_control(&self) -> Message {
-        self.control_channel.lock().unwrap().recv()
+    pub fn recv_control(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        Ok(self.control_channel.lock().unwrap().recv())
     }
 
-    pub fn await_reply_shell(&self, request_id: &Id) {
+    pub fn try_recv_shell(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        self.shell_channel.lock().unwrap().try_recv()
+    }
+
+    pub fn try_recv_stdin(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        self.stdin_channel.lock().unwrap().try_recv()
+    }
+
+    pub fn try_recv_control(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        self.control_channel.lock().unwrap().try_recv()
+    }
+
+    pub fn await_reply_shell(&self, request_id: &Id) -> Result<(), Error> {
         loop {
-            let msg = self.recv_shell();
-            let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
+            let msg = self.recv_shell()?;
+            let is_reply = msg.parent_id().unwrap_or(&Id::unparented()) == request_id;
             self.shell_broker.route(msg);
             if is_reply {
                 break;
             }
         }
+        Ok(())
     }
 
-    pub fn await_reply_stdin(&self, request_id: &Id) {
+    pub fn await_reply_stdin(&self, request_id: &Id) -> Result<(), Error> {
         loop {
-            let msg = self.recv_stdin();
-            let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
+            let msg = self.recv_stdin()?;
+            let is_reply = msg.parent_id().unwrap_or(&Id::unparented()) == request_id;
             self.stdin_broker.route(msg);
             if is_reply {
                 break;
             }
         }
+        Ok(())
     }
 
-    pub fn await_reply_control(&self, request_id: &Id) {
+    pub fn await_reply_control(&self, request_id: &Id) -> Result<(), Error> {
         loop {
-            let msg = self.recv_control();
-            let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
+            let msg = self.recv_control()?;
+            let is_reply = msg.parent_id().unwrap_or(&Id::unparented()) == request_id;
             self.control_broker.route(msg);
             if is_reply {
                 break;
             }
         }
+        Ok(())
     }
 
     pub fn route_all_incoming_shell(&self) {
-        while let Ok(msg) = self.shell_channel.lock().unwrap().try_recv() {
+        while let Ok(msg) = self.try_recv_shell() {
             self.shell_broker.route(msg);
         }
     }
 
     pub fn route_all_incoming_stdin(&self) {
-        while let Ok(msg) = self.stdin_channel.lock().unwrap().try_recv() {
+        while let Ok(msg) = self.try_recv_stdin() {
             self.stdin_broker.route(msg);
         }
     }
 
     pub fn route_all_incoming_control(&self) {
-        while let Ok(msg) = self.control_channel.lock().unwrap().try_recv() {
+        while let Ok(msg) = self.try_recv_control() {
             self.control_broker.route(msg);
         }
     }
@@ -188,13 +225,13 @@ impl KernelComm {
         self.control_broker.is_active(request_id)
     }
 
-    pub fn subscribe(&self) -> KernelInfoReply {
+    pub fn subscribe(&self) -> Result<KernelInfoReply, Error> {
         // When kernels up they often send a welcome message with no parent ID.
         let welcome_rx = self.iopub_broker.register_request(&Id::unparented());
         log::info!("Sending kernel info request for subscription");
 
-        let receivers = self.send_shell(KernelInfoRequest {});
-        self.await_reply_shell(&receivers.id);
+        let receivers = self.send_shell(KernelInfoRequest {})?;
+        self.await_reply_shell(&receivers.id)?;
 
         let reply = receivers.shell.recv().unwrap();
         log::info!("Received reply on the shell");
@@ -224,7 +261,7 @@ impl KernelComm {
 
         log::info!("Subscription complete");
 
-        kernel_info
+        Ok(kernel_info)
     }
 
     pub fn request_shutdown(&self) -> anyhow::Result<Message> {
@@ -240,7 +277,7 @@ impl KernelComm {
 
     fn request_shutdown_impl(&self, restart: bool) -> anyhow::Result<Message> {
         self.route_all_incoming_shell();
-        let receivers = self.send_control(ShutdownRequest { restart });
+        let receivers = self.send_control(ShutdownRequest { restart })?;
 
         loop {
             while let Ok(reply) = receivers.iopub.try_recv() {

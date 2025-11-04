@@ -6,11 +6,10 @@
  */
 
 use crate::{
-    connection::connection::ConnectionOptions,
-    msg::{
+    connection::connection::ConnectionOptions, error::Error, msg::{
         socket::Socket,
         wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage},
-    },
+    }
 };
 
 pub struct Control {
@@ -36,14 +35,14 @@ impl Control {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
-    // TODO: this really needs more granular error handling
-    pub fn try_recv(&self) -> anyhow::Result<Message> {
-        if self.socket.has_incoming_data()? {
-            // Just unwrapping here because I don't _think_ this should go wrong
-            // and currently not sure how to handle if it does.
-            Ok(Message::read_from_socket(&self.socket)?)
-        } else {
-            Err(anyhow::anyhow!("No incoming data on shell socket"))
+    pub fn try_recv(&self) -> Result<Message, Error> {
+        match self.socket.has_incoming_data() {
+            Ok(true) => Ok(Message::read_from_socket(&self.socket)?),
+            Ok(false) => Err(Error::NoIncomingData(String::from("stdin"))),
+            Err(e) => Err(Error::Anyhow(anyhow::anyhow!(
+                "Error checking for incoming data on control socket: {}",
+                e,
+            ))),
         }
     }
 

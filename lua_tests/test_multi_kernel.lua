@@ -19,17 +19,17 @@ local ark_id, ark_info = jet.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/k
 utils.list_running_kernels(jet)
 
 -- Execute code in kernels, interleaving results
-utils.execute(jet, ipy_id, "x = 1 + 1", ipy_info.display_name)
-utils.execute(jet, ark_id, "x <- 2 + 2", ark_info.display_name)
-utils.execute(jet, ipy_id, "print(f'Result: {x}')", ipy_info.display_name)
-utils.execute(jet, ark_id, "cat('Result:', x, '\\n')", ark_info.display_name)
+utils.execute(jet, ipy_id, "x = 1 + 1", {}, ipy_info.display_name)
+utils.execute(jet, ark_id, "x <- 2 + 2", {}, ark_info.display_name)
+utils.execute(jet, ipy_id, "print(f'Result: {x}')", {}, ipy_info.display_name)
+utils.execute(jet, ark_id, "cat('Result:', x, '\\n')", {}, ark_info.display_name)
 
-utils.request_shutdown(jet, ipy_id)
+utils.request_shutdown(jet, ark_id)
 
 -- List all running kernels
 utils.list_running_kernels(jet)
 
--- utils.execute(jet, ipy_id, "1 + 1", ipy_info.display_name)
-utils.execute(jet, ark_id, "2 + 2", ark_info.display_name)
+utils.execute(jet, ipy_id, "2 + 2", {}, ipy_info.display_name)
 
-utils.request_shutdown(jet, ark_id)
+-- Jet should automatically clean up the ARK kernel on shutdown
+
