@@ -27,8 +27,8 @@ runs:
         fileName: >
           ${{
             runner.os == 'Linux'       && '*[0123456789]-linux-x64.zip'
-            || (runner.os == 'Windows' && '*-windows-x64.zip'
-            || (runner.os == 'macOS'   && '*-darwin-universal.zip' ))
+            || (runner.os == 'Windows' && '*[0123456789]-windows-x64.zip'
+            || (runner.os == 'macOS'   && '*[0123456789]-darwin-universal.zip' ))
           }}
         out-file-path: ${{ env.JUPYTER_PATH }}/kernels/ark
         extract: true
