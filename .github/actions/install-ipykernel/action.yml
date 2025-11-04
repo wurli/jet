@@ -39,6 +39,7 @@ runs:
 
     - name: Install Ipykernel kernel spec (Unix)
       shell: bash
+      if: ${{ runner.os != 'Windows' }}
       # Annoyingly, `ipykernel install --prefix bla` installs to
       # `bla/share/kernels` rather than `bla/` so we have to move the
       # kernelspec up a few levels so Jet can find it.
@@ -49,6 +50,7 @@ runs:
         rm -rf ${{ env.JUPYTER_PATH }}/share
 
     - name: Install Ipykernel kernel spec (Windows)
+      if: ${{ runner.os == 'Windows' }}
       shell: pwsh
       # Annoyingly, `ipykernel install --prefix bla` installs to
       # `bla/share/kernels` rather than `bla/` so we have to move the
