@@ -102,17 +102,17 @@ end
 ---@field list_available_kernels fun(): table<Jet.Kernel.Spec.Path, Jet.Kernel.Spec>
 ---@field list_running_kernels fun(): table<Jet.Kernel.Id, Jet.Kernel.Info>
 
----@alias Jet.ExecuteCallback fun(): nil
+---@alias Jet.ExecuteCallback fun(): Jet.MsgGroup.ExecuteCode
+
+---@alias Jet.MsgGroup.ExecuteCode
 ---| Jet.Msg.ExecutionResult
 ---| Jet.Msg.ExecuteError
 ---| Jet.Msg.Stream
 ---| Jet.Msg.DisplayData
 ---| Jet.Msg.InputRequest
+---| {}
 
 ---@type Jet.Engine
 local out = loader()
 
 return out
-
-
-
