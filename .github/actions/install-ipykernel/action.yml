@@ -37,7 +37,7 @@ runs:
       if: ${{ inputs.ipykernel_version == 'latest' }}
       run: uv lock --upgrade
 
-    - name: Install Ipykernel kernel spec
+    - name: Install Ipykernel kernel spec (Unix)
       shell: bash
       # Annoyingly, `ipykernel install --prefix bla` installs to
       # `bla/share/kernels` rather than `bla/` so we have to move the
@@ -47,3 +47,14 @@ runs:
         mkdir ./kernels/python3
         mv ${{ env.JUPYTER_PATH }}/share/jupyter/kernels/* ${{ env.JUPYTER_PATH }}/kernels
         rm -rf ${{ env.JUPYTER_PATH }}/share
+
+    - name: Install Ipykernel kernel spec (Windows)
+      shell: bash
+      # Annoyingly, `ipykernel install --prefix bla` installs to
+      # `bla/share/kernels` rather than `bla/` so we have to move the
+      # kernelspec up a few levels so Jet can find it.
+      run: |
+        uv run python -m ipykernel install --prefix ${{ env.JUPYTER_PATH }}
+        mkdir .\kernels\python3
+        mv ${{ env.JUPYTER_PATH }}\share\jupyter\kernels\* ${{ env.JUPYTER_PATH }}\kernels
+        rm -rf ${{ env.JUPYTER_PATH }}\share
