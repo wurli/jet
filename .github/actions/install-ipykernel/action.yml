@@ -59,6 +59,4 @@ runs:
       # mkdir .\kernels\python3
       # mv ${{ env.JUPYTER_PATH }}\share\jupyter\kernels\* ${{ env.JUPYTER_PATH }}\kernels
       # rm -rf ${{ env.JUPYTER_PATH }}\share
-      run:
-        uv run python -m ipykernel install --prefix ${{ env.JUPYTER_PATH }}
-        ls -R ${{ env.JUPYTER_PATH }}\kernels
+      run: uv run python -m ipykernel install --prefix ${{ env.JUPYTER_PATH }}
