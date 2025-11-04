@@ -241,7 +241,7 @@ impl KernelComm {
 
         log::info!("Subscription complete");
 
-        kernel_info
+        Ok(kernel_info)
     }
 
     pub fn request_shutdown(&self) -> anyhow::Result<Message> {
