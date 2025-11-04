@@ -15,6 +15,7 @@ use crate::msg::wire::message_id::Id;
 /// Type representing all errors that can occur inside the Amalthea implementation.
 #[derive(Debug)]
 pub enum Error {
+    NoIncomingData(String),
     HeartbeatFailed(String),
     CannotOpenFile(std::io::Error),
     MissingDelimiter,
@@ -63,6 +64,9 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Error::NoIncomingData(name) => {
+                write!(f, "No incoming data on {} socket", name)
+            }
             Error::HeartbeatFailed(desc) => {
                 write!(f, "Heartbeat thread failed: {desc}" )
             }

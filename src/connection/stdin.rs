@@ -5,6 +5,7 @@
  *
  */
 
+use crate::error::Error;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::{connection::connection::ConnectionOptions, msg::socket::Socket};
 use assert_matches::assert_matches;
@@ -32,13 +33,14 @@ impl Stdin {
         Message::read_from_socket(&self.socket).unwrap()
     }
 
-    pub fn try_recv(&self) -> anyhow::Result<Message> {
-        if self.socket.has_incoming_data()? {
-            // Just unwrapping here because I don't _think_ this should go wrong
-            // and currently not sure how to handle if it does.
-            Ok(Message::read_from_socket(&self.socket)?)
-        } else {
-            Err(anyhow::anyhow!("No incoming data on stdin socket"))
+    pub fn try_recv(&self) -> Result<Message, Error> {
+        match self.socket.has_incoming_data() {
+            Ok(true) => Ok(Message::read_from_socket(&self.socket)?),
+            Ok(false) => Err(Error::NoIncomingData(String::from("stdin"))),
+            Err(e) => Err(Error::Anyhow(anyhow::anyhow!(
+                "Error checking for incoming data on stdin socket: {}",
+                e,
+            ))),
         }
     }
 

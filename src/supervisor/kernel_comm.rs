@@ -124,65 +124,86 @@ impl KernelComm {
         }
     }
 
-    pub fn recv_shell(&self) -> Message {
-        self.shell_channel.lock().unwrap().recv()
+    pub fn recv_shell(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        Ok(self.shell_channel.lock().unwrap().recv())
     }
 
-    pub fn recv_stdin(&self) -> Message {
-        self.stdin_channel.lock().unwrap().recv()
+    pub fn recv_stdin(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        Ok(self.stdin_channel.lock().unwrap().recv())
     }
 
-    pub fn recv_control(&self) -> Message {
-        self.control_channel.lock().unwrap().recv()
+    pub fn recv_control(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        Ok(self.control_channel.lock().unwrap().recv())
     }
 
-    pub fn await_reply_shell(&self, request_id: &Id) {
+    pub fn try_recv_shell(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        self.shell_channel.lock().unwrap().try_recv()
+    }
+
+    pub fn try_recv_stdin(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        self.stdin_channel.lock().unwrap().try_recv()
+    }
+
+    pub fn try_recv_control(&self) -> Result<Message, Error> {
+        self.check_heartbeat()?;
+        self.control_channel.lock().unwrap().try_recv()
+    }
+
+    pub fn await_reply_shell(&self, request_id: &Id) -> Result<(), Error> {
         loop {
-            let msg = self.recv_shell();
+            let msg = self.recv_shell()?;
             let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
             self.shell_broker.route(msg);
             if is_reply {
                 break;
             }
         }
+        Ok(())
     }
 
-    pub fn await_reply_stdin(&self, request_id: &Id) {
+    pub fn await_reply_stdin(&self, request_id: &Id) -> Result<(), Error> {
         loop {
-            let msg = self.recv_stdin();
+            let msg = self.recv_stdin()?;
             let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
             self.stdin_broker.route(msg);
             if is_reply {
                 break;
             }
         }
+        Ok(())
     }
 
-    pub fn await_reply_control(&self, request_id: &Id) {
+    pub fn await_reply_control(&self, request_id: &Id) -> Result<(), Error> {
         loop {
-            let msg = self.recv_control();
+            let msg = self.recv_control()?;
             let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
             self.control_broker.route(msg);
             if is_reply {
                 break;
             }
         }
+        Ok(())
     }
 
     pub fn route_all_incoming_shell(&self) {
-        while let Ok(msg) = self.shell_channel.lock().unwrap().try_recv() {
+        while let Ok(msg) = self.try_recv_shell() {
             self.shell_broker.route(msg);
         }
     }
 
     pub fn route_all_incoming_stdin(&self) {
-        while let Ok(msg) = self.stdin_channel.lock().unwrap().try_recv() {
+        while let Ok(msg) = self.try_recv_stdin() {
             self.stdin_broker.route(msg);
         }
     }
 
     pub fn route_all_incoming_control(&self) {
-        while let Ok(msg) = self.control_channel.lock().unwrap().try_recv() {
+        while let Ok(msg) = self.try_recv_control() {
             self.control_broker.route(msg);
         }
     }
@@ -211,7 +232,7 @@ impl KernelComm {
         log::info!("Sending kernel info request for subscription");
 
         let receivers = self.send_shell(KernelInfoRequest {})?;
-        self.await_reply_shell(&receivers.id);
+        self.await_reply_shell(&receivers.id)?;
 
         let reply = receivers.shell.recv().unwrap();
         log::info!("Received reply on the shell");
