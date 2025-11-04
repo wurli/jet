@@ -34,9 +34,9 @@ impl KernelManager {
 
     pub fn add(kernel: Kernel) -> Result<(), Error> {
         let mut kernels = Self::manager().kernels.write().unwrap();
-        if kernels.contains_key(&String::from(kernel.id.clone())) {
+        if kernels.contains_key(kernel.id.as_ref()) {
             log::warn!("Failed to add existing kernel {}", kernel);
-            return Err(Error::KernelAlreadyRunning(kernel.id.clone()));
+            return Err(Error::KernelAlreadyRunning(kernel.id));
         }
         log::trace!("Failed to add existing kernel {}", kernel);
         kernels.insert(String::from(kernel.id.clone()), Arc::new(kernel));
@@ -45,7 +45,7 @@ impl KernelManager {
 
     pub fn get(id: &Id) -> Result<Arc<Kernel>, Error> {
         let kernels = Self::manager().kernels.read().unwrap();
-        if let Some(kernel) = kernels.get(&String::from(id.clone())) {
+        if let Some(kernel) = kernels.get(id.as_ref()) {
             Ok(Arc::clone(kernel))
         } else {
             Err(Error::KernelNotRunning(id.clone()))
@@ -60,7 +60,7 @@ impl KernelManager {
 
     fn take(id: &Id) -> Result<Arc<Kernel>, Error> {
         let mut kernels = Self::manager().kernels.write().unwrap();
-        if let Some(kernel) = kernels.remove(&String::from(id.clone())) {
+        if let Some(kernel) = kernels.remove(id.as_ref()) {
             Ok(kernel)
         } else {
             log::error!("Could not remove non-active kernel {}", id);
@@ -79,7 +79,7 @@ impl KernelManager {
 
     pub fn has(id: &Id) -> bool {
         let kernels = Self::manager().kernels.read().unwrap();
-        kernels.contains_key(&String::from(id.clone()))
+        kernels.contains_key(id.as_ref())
     }
 
     pub fn shutdown_all() {

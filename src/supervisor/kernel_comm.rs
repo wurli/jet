@@ -75,30 +75,29 @@ impl KernelComm {
     }
 
     pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
-        let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id)?;
+        let msg = self.make_jupyter_message(msg);
+        let request_id = &msg.header.msg_id;
+        let receivers = self.register_request(request_id)?;
         self.shell_channel.lock().unwrap().send(msg);
         Ok(receivers)
     }
 
     pub fn send_stdin<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
-        let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id)?;
+        let msg = self.make_jupyter_message(msg);
+        let receivers = self.register_request(&msg.header.msg_id)?;
         self.stdin_channel.lock().unwrap().send(msg);
         Ok(receivers)
     }
 
     pub fn send_control<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
-        let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id)?;
+        let msg = self.make_jupyter_message(msg);
+        let receivers = self.register_request(&msg.header.msg_id)?;
         self.control_channel.lock().unwrap().send(msg);
         Ok(receivers)
     }
 
-    fn make_jupyter_message<T: ProtocolMessage>(&self, msg: T) -> (JupyterMessage<T>, Id) {
-        let message = JupyterMessage::create(msg, None, &self.session);
-        let id = message.header.msg_id.clone();
-        (message, id)
+    fn make_jupyter_message<T: ProtocolMessage>(&self, msg: T) -> JupyterMessage<T> {
+        JupyterMessage::create(msg, None, &self.session)
     }
 
     fn register_request(&self, request_id: &Id) -> Result<ReplyReceivers, Error> {
@@ -157,7 +156,7 @@ impl KernelComm {
     pub fn await_reply_shell(&self, request_id: &Id) -> Result<(), Error> {
         loop {
             let msg = self.recv_shell()?;
-            let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
+            let is_reply = msg.parent_id().unwrap_or(&Id::unparented()) == request_id;
             self.shell_broker.route(msg);
             if is_reply {
                 break;
@@ -169,7 +168,7 @@ impl KernelComm {
     pub fn await_reply_stdin(&self, request_id: &Id) -> Result<(), Error> {
         loop {
             let msg = self.recv_stdin()?;
-            let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
+            let is_reply = msg.parent_id().unwrap_or(&Id::unparented()) == request_id;
             self.stdin_broker.route(msg);
             if is_reply {
                 break;
@@ -181,7 +180,7 @@ impl KernelComm {
     pub fn await_reply_control(&self, request_id: &Id) -> Result<(), Error> {
         loop {
             let msg = self.recv_control()?;
-            let is_reply = msg.parent_id().unwrap_or(Id::unparented()) == *request_id;
+            let is_reply = msg.parent_id().unwrap_or(&Id::unparented()) == request_id;
             self.control_broker.route(msg);
             if is_reply {
                 break;

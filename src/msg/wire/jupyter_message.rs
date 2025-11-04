@@ -443,13 +443,14 @@ impl Message {
         }
     }
 
-    pub fn parent_id(&self) -> Option<Id> {
-        self.parent_header().as_ref().map(|msg| msg.msg_id.clone())
+    pub fn parent_id(&self) -> Option<&Id> {
+        self.parent_header().as_ref().map(|msg| &msg.msg_id)
     }
 
     /// Gives the message kind, the parent id, and possibly additional info
     pub fn describe(&self) -> String {
-        let id = self.parent_id().unwrap_or(Id::unparented());
+        let unparented = Id::unparented();
+        let id = self.parent_id().unwrap_or(&unparented);
         let info = if let Some(info) = self.info() {
             format!("[{}]", info)
         } else {
@@ -464,10 +465,10 @@ impl<T> JupyterMessage<T>
 where
     T: ProtocolMessage,
 {
-    pub fn parent_id(&self) -> Option<Id> {
+    pub fn parent_id(&self) -> Option<&Id> {
         self.parent_header
             .as_ref()
-            .map(|header| header.msg_id.clone())
+            .map(|header| &header.msg_id)
     }
 
     /// Sends this Jupyter message to the designated ZeroMQ socket.
