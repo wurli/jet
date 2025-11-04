@@ -45,8 +45,11 @@ fn start_ipykernel() -> Id {
 }
 
 fn execute(code: &str) -> impl Fn() -> Option<Message> {
-    api::execute_code(ipykernel_id(), String::from(code), HashMap::new())
-        .expect("Could not execute code")
+    execute_in(ipykernel_id(), code)
+}
+
+fn execute_in(id: Id, code: &str) -> impl Fn() -> Option<Message> {
+    api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code")
 }
 
 #[test]
@@ -124,7 +127,8 @@ fn test_ipykernel_handles_stdin() {
 fn test_ipykernel_streams_results() {
     // Print "a" then "b" at 0.5s intervals
     // Use sys.stdout.flush() to ensure output is sent immediately
-    let callback = execute(
+    let callback = execute_in(
+        start_ipykernel(),
         "import time\nimport sys\nprint('a', end='', flush=True)\ntime.sleep(0.5)\nprint('b', end='', flush=True)",
     );
 

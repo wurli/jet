@@ -45,7 +45,11 @@ fn start_ark() -> Id {
 }
 
 fn execute(code: &str) -> impl Fn() -> Option<Message> {
-    api::execute_code(ark_id(), String::from(code), HashMap::new()).expect("Could not execute code")
+    execute_in(ark_id(), code)
+}
+
+fn execute_in(id: Id, code: &str) -> impl Fn() -> Option<Message> {
+    api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code")
 }
 
 #[test]
@@ -125,7 +129,7 @@ fn test_ark_streams_results() {
     // in several chunks.
     //
     // Here we just print "a" then "b" at 0.5s intervals
-    let callback = execute("cat('a')\nSys.sleep(0.5)\ncat('b')");
+    let callback = execute_in(start_ark(), "cat('a')\nSys.sleep(0.5)\ncat('b')");
 
     // Receive the first result
     let res = callback().expect("Callback returned `None`");
@@ -163,10 +167,8 @@ fn test_ark_streams_results() {
     assert_matches!(callback(), None);
 }
 
-
 fn is_complete(code: &str) -> Message {
-    api::is_complete(ark_id(), String::from(code))
-        .expect("Could not execute is_complete request")
+    api::is_complete(ark_id(), String::from(code)).expect("Could not execute is_complete request")
 }
 
 #[test]
