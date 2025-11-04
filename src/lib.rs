@@ -11,9 +11,12 @@ pub mod connection;
 pub mod error;
 pub mod kernel;
 pub mod msg;
+pub mod shutdown_guard;
 pub mod supervisor;
 
 use mlua::prelude::*;
+
+use crate::shutdown_guard::ShutdownGuard;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
@@ -28,6 +31,10 @@ pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     env_logger::Builder::from_default_env()
         .target(env_logger::Target::Pipe(target))
         .init();
+
+    // When lua goes out of scope, i.e. when Neovim exits, ShutDownGuard will also go out of scope
+    // and its Drop implementation will shut down all running kernels.
+    lua.set_app_data(ShutdownGuard {});
 
     // Return the Lua API
     let exports = lua.create_table()?;

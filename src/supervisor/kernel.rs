@@ -169,7 +169,7 @@ impl Kernel {
     }
 
     pub fn shutdown(&self) -> anyhow::Result<()> {
-        log::info!("Shutting down kernel '{}'", self);
+        log::info!("Shutting down kernel {self}");
 
         match self.comm.request_shutdown() {
             Ok(Message::ShutdownReply(msg)) if msg.content.status == Status::Error => {
@@ -201,11 +201,3 @@ impl Kernel {
     }
 }
 
-impl Drop for Kernel {
-    fn drop(&mut self) {
-        match self.shutdown() {
-            Ok(()) => log::trace!("Successfully shut down {self} on drop"),
-            Err(e) => log::error!("Failed to shut down {e} on drop"),
-        };
-    }
-}

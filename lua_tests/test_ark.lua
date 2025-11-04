@@ -33,4 +33,4 @@ utils.get_completions(jet, kernel_id, "iris$", 4)
 -- utils.request_restart(jet, kernel_id)
 -- Causes issues currently
 utils.execute(jet, kernel_id, "x")
-utils.request_shutdown(jet, kernel_id)
+-- utils.request_shutdown(jet, kernel_id)

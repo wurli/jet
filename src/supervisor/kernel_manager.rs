@@ -81,4 +81,16 @@ impl KernelManager {
         let kernels = Self::manager().kernels.read().unwrap();
         kernels.contains_key(&String::from(id.clone()))
     }
+
+    pub fn shutdown_all() {
+        let kernels = Self::manager().kernels.write().unwrap();
+        log::info!("Shutting down all {} registered kernels", kernels.len());
+
+        for (_, kernel) in kernels.iter() {
+            match kernel.shutdown() {
+                Ok(()) => log::trace!("Successfully shut down kernel {kernel}"),
+                Err(e) => log::error!("Failed to shut down kernel {kernel}: {e}"),
+            }
+        }
+    }
 }
