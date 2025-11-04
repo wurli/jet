@@ -22,7 +22,6 @@ if not loader then
     error('Failed to load native module from: ' .. lib_path)
 end
 
-
 ---@class Jet.MsgContent.CompleteReply
 ---@field status "ok" | "error"
 ---@field matches string[]
@@ -46,7 +45,7 @@ end
 ---@class Jet.MsgContent.InputRequest
 ---@field prompt string
 ---@field password boolean
----
+
 ---@class Jet.MsgContent.IsCompleteReply
 ---@field status "complete" | "incomplete" | "invalid" | "unknown"
 ---@field indent string?
@@ -54,7 +53,6 @@ end
 ---@class Jet.MsgContent.Stream
 ---@field name "stdout" | "stderr"
 ---@field text string
-
 
 ---@alias Jet.Msg.CompleteReply   { type: "complete_reply",    data: Jet.MsgContent.CompleteReply }
 ---@alias Jet.Msg.DisplayData     { type: "display_data",      data: Jet.MsgContent.DisplayData }
