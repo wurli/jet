@@ -20,7 +20,7 @@ use crate::supervisor::broker::Broker;
 use crate::supervisor::kernel::{HeartbeatFailed, StopHeartbeat, StopIopub};
 use crate::supervisor::reply_receivers::ReplyReceivers;
 use assert_matches::assert_matches;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 
 /// These are the channels on which we might want to send data (as well as receive)
@@ -117,10 +117,10 @@ impl KernelComm {
             Ok(HeartbeatFailed) => Err(Error::HeartbeatFailed(String::from(
                 "Heartbeat monitor reported failure",
             ))),
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(Error::HeartbeatFailed(
-                String::from("Heartbeat monitor disconnected"),
-            )),
-            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(()),
+            Err(TryRecvError::Disconnected) => Err(Error::HeartbeatFailed(String::from(
+                "Heartbeat monitor disconnected",
+            ))),
+            Err(TryRecvError::Empty) => Ok(()),
         }
     }
 
