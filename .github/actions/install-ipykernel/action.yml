@@ -49,7 +49,7 @@ runs:
         rm -rf ${{ env.JUPYTER_PATH }}/share
 
     - name: Install Ipykernel kernel spec (Windows)
-      shell: bash
+      shell: pwsh
       # Annoyingly, `ipykernel install --prefix bla` installs to
       # `bla/share/kernels` rather than `bla/` so we have to move the
       # kernelspec up a few levels so Jet can find it.

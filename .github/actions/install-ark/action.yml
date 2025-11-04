@@ -42,5 +42,5 @@ runs:
 
     - name: Install Ark (Windows)
       if: ${{ runner.os == 'Windows' }}
-      shell: bash
+      shell: pwsh
       run: ${{ env.JUPYTER_PATH }}\kernels\ark\ark.exe --install
