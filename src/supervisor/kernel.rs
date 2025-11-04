@@ -9,7 +9,7 @@ use rand::Rng;
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::process;
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
@@ -61,13 +61,14 @@ impl Kernel {
         let stdin_broker = Arc::new(Broker::new(format!("Stdin{}", kernel_id)));
         let control_broker = Arc::new(Broker::new(format!("Control{}", kernel_id)));
 
-        let heartbeat_tx = Self::loop_heartbeat(jupyter_channels.heartbeat);
+        let (stopper, monitor) = Self::loop_heartbeat(jupyter_channels.heartbeat);
         let iopub_tx = Self::listen_iopub(jupyter_channels.iopub, Arc::clone(&iopub_broker));
 
         let kernel_comm = KernelComm {
             session: jupyter_channels.session.clone(),
-            heartbeat_tx,
-            iopub_tx,
+            heartbeat_stopper: stopper,
+            heartbeat_monitor: Mutex::new(monitor),
+            iopub_stopper: iopub_tx,
             shell_channel: Mutex::new(jupyter_channels.shell),
             stdin_channel: Mutex::new(jupyter_channels.stdin),
             control_channel: Mutex::new(jupyter_channels.control),
@@ -77,7 +78,7 @@ impl Kernel {
             control_broker,
         };
 
-        let kernel_info_reply = kernel_comm.subscribe();
+        let kernel_info_reply = kernel_comm.subscribe()?;
 
         Ok(Self {
             id: kernel_id,
@@ -93,7 +94,7 @@ impl Kernel {
     }
 
     /// Spawn a thread that continuously receives IOPub messages and routes them through the broker
-    fn listen_iopub(iopub: Iopub, broker: Arc<Broker>) -> Sender<()> {
+    fn listen_iopub(iopub: Iopub, broker: Arc<Broker>) -> Sender<StopIopub> {
         let (stop_tx, stop_rx) = channel();
 
         spawn(move || {
@@ -127,8 +128,9 @@ impl Kernel {
     }
 
     /// Spawn a thread that periodically send heartbeat messages and verify replies
-    fn loop_heartbeat(heartbeat: Heartbeat) -> Sender<()> {
+    fn loop_heartbeat(heartbeat: Heartbeat) -> (Sender<StopHeartbeat>, Receiver<HeartbeatFailed>) {
         let (stop_tx, stop_rx) = channel();
+        let (failed_tx, failed_rx) = channel();
 
         spawn(move || {
             log::info!("Heartbeat thread started");
@@ -158,14 +160,14 @@ impl Kernel {
                     }
                 } else {
                     log::error!("Heartbeat timed out");
-                    panic!("Heartbeat timed out")
+                    failed_tx.send(HeartbeatFailed).unwrap();
                 }
 
                 sleep(Duration::from_millis(500));
             }
         });
 
-        stop_tx
+        (stop_tx, failed_rx)
     }
 
     pub fn shutdown(&self) -> anyhow::Result<()> {
@@ -201,3 +203,6 @@ impl Kernel {
     }
 }
 
+pub struct StopHeartbeat;
+pub struct HeartbeatFailed;
+pub struct StopIopub;

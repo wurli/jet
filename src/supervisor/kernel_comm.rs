@@ -17,9 +17,10 @@ use crate::msg::wire::message_id::Id;
 use crate::msg::wire::shutdown_request::ShutdownRequest;
 use crate::msg::wire::status::ExecutionState;
 use crate::supervisor::broker::Broker;
+use crate::supervisor::kernel::{HeartbeatFailed, StopHeartbeat, StopIopub};
 use crate::supervisor::reply_receivers::ReplyReceivers;
 use assert_matches::assert_matches;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 /// These are the channels on which we might want to send data (as well as receive)
@@ -28,10 +29,13 @@ pub struct KernelComm {
     pub session: Session,
 
     /// A sender which can be used to stop the heartbeat loop
-    pub heartbeat_tx: Sender<()>,
+    pub heartbeat_stopper: Sender<StopHeartbeat>,
+
+    /// A receiver which notifies when the heartbeat has failed
+    pub heartbeat_monitor: Mutex<Receiver<HeartbeatFailed>>,
 
     /// A sender which can be used to stop the iopub loop
-    pub iopub_tx: Sender<()>,
+    pub iopub_stopper: Sender<StopIopub>,
 
     /// The broker which routes messages received on the iopub channel
     pub iopub_broker: Arc<Broker>,
@@ -57,38 +61,38 @@ pub struct KernelComm {
 
 impl KernelComm {
     pub fn stop_heartbeat(&self) -> Result<(), Error> {
-        match self.heartbeat_tx.send(()) {
+        match self.heartbeat_stopper.send(StopHeartbeat) {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::CannotStopThread(String::from("heartbeat"))),
         }
     }
 
     pub fn stop_iopub(&self) -> Result<(), Error> {
-        match self.iopub_tx.send(()) {
+        match self.iopub_stopper.send(StopIopub) {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::CannotStopThread(String::from("iopub"))),
         }
     }
 
-    pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> ReplyReceivers {
+    pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
         let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id);
+        let receivers = self.register_request(&request_id)?;
         self.shell_channel.lock().unwrap().send(msg);
-        receivers
+        Ok(receivers)
     }
 
-    pub fn send_stdin<T: ProtocolMessage>(&self, msg: T) -> ReplyReceivers {
+    pub fn send_stdin<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
         let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id);
+        let receivers = self.register_request(&request_id)?;
         self.stdin_channel.lock().unwrap().send(msg);
-        receivers
+        Ok(receivers)
     }
 
-    pub fn send_control<T: ProtocolMessage>(&self, msg: T) -> ReplyReceivers {
+    pub fn send_control<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
         let (msg, request_id) = self.make_jupyter_message(msg);
-        let receivers = self.register_request(&request_id);
+        let receivers = self.register_request(&request_id)?;
         self.control_channel.lock().unwrap().send(msg);
-        receivers
+        Ok(receivers)
     }
 
     fn make_jupyter_message<T: ProtocolMessage>(&self, msg: T) -> (JupyterMessage<T>, Id) {
@@ -97,13 +101,26 @@ impl KernelComm {
         (message, id)
     }
 
-    fn register_request(&self, request_id: &Id) -> ReplyReceivers {
-        ReplyReceivers {
+    fn register_request(&self, request_id: &Id) -> Result<ReplyReceivers, Error> {
+        self.check_heartbeat()?;
+        Ok(ReplyReceivers {
             id: request_id.clone(),
             iopub: self.iopub_broker.register_request(request_id),
             stdin: self.stdin_broker.register_request(request_id),
             shell: self.shell_broker.register_request(request_id),
             control: self.control_broker.register_request(request_id),
+        })
+    }
+
+    fn check_heartbeat(&self) -> Result<(), Error> {
+        match self.heartbeat_monitor.lock().unwrap().try_recv() {
+            Ok(HeartbeatFailed) => Err(Error::HeartbeatFailed(String::from(
+                "Heartbeat monitor reported failure",
+            ))),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(Error::HeartbeatFailed(
+                String::from("Heartbeat monitor disconnected"),
+            )),
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(()),
         }
     }
 
@@ -188,12 +205,12 @@ impl KernelComm {
         self.control_broker.is_active(request_id)
     }
 
-    pub fn subscribe(&self) -> KernelInfoReply {
+    pub fn subscribe(&self) -> Result<KernelInfoReply, Error> {
         // When kernels up they often send a welcome message with no parent ID.
         let welcome_rx = self.iopub_broker.register_request(&Id::unparented());
         log::info!("Sending kernel info request for subscription");
 
-        let receivers = self.send_shell(KernelInfoRequest {});
+        let receivers = self.send_shell(KernelInfoRequest {})?;
         self.await_reply_shell(&receivers.id);
 
         let reply = receivers.shell.recv().unwrap();
@@ -240,7 +257,7 @@ impl KernelComm {
 
     fn request_shutdown_impl(&self, restart: bool) -> anyhow::Result<Message> {
         self.route_all_incoming_shell();
-        let receivers = self.send_control(ShutdownRequest { restart });
+        let receivers = self.send_control(ShutdownRequest { restart })?;
 
         loop {
             while let Ok(reply) = receivers.iopub.try_recv() {
