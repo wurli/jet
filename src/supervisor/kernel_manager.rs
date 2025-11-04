@@ -53,6 +53,8 @@ impl KernelManager {
     }
 
     pub fn shutdown(id: &Id) -> anyhow::Result<()> {
+        // Note, we probs don't _need_ the shutdown call since this happens on drop anyway, but
+        // probs best to be explicit.
         Self::take(id)?.shutdown()
     }
 

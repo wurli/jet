@@ -200,3 +200,12 @@ impl Kernel {
         Ok(())
     }
 }
+
+impl Drop for Kernel {
+    fn drop(&mut self) {
+        match self.shutdown() {
+            Ok(()) => log::trace!("Successfully shut down {self} on drop"),
+            Err(e) => log::error!("Failed to shut down {e} on drop"),
+        };
+    }
+}
