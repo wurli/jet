@@ -35,7 +35,9 @@ end
 ---@field transient table<string, any>
 
 ---@class Jet.MsgContent.ExecuteError
----@field exception { ename: string, evalue: string, traceback: string[] }
+---@field ename string
+---@field evalue string
+---@field traceback string[]
 
 ---@class Jet.MsgContent.ExecuteResult
 ---@field data table<string, any>
