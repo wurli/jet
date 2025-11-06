@@ -67,30 +67,11 @@ impl Broker {
     pub fn route(&self, msg: Message) {
         log::trace!("{}: Routing message: {}", self.name, msg.describe(),);
 
-        match msg.parent_id() {
-            Some(parent_id) => {
-                self.route_to_request(&parent_id.clone(), msg);
-            }
-            None => {
-                log::trace!(
-                    "{}: Routing unparented message: {}",
-                    self.name,
-                    msg.describe()
-                );
-                self.route_to_request(&Id::unparented(), msg);
-            }
-        }
-    }
+        let parent_id = msg.parent_id().unwrap_or(&Id::unparented()).clone();
 
-    /// Route a message to a specific request's channels, or buffer it as an orphan
-    fn route_to_request(&self, parent_id: &Id, msg: Message) {
-        // Right now we have no reason to drop the request as completed, but we might in a minute.
-        // Route the reply
-        match self.active_requests.read().unwrap().get(parent_id) {
+        match self.active_requests.read().unwrap().get(&parent_id) {
             // If there's no corresponding active request, the reply is an orphan
-            None => {
-                log::warn!("{}: Dropping orphan message {:#?}", self.name, msg);
-            }
+            None => log::warn!("{}: Dropping orphan message {:#?}", self.name, msg),
             // If there _is_ a corresponding active request, try routing to the corresponding
             // receiver
             Some(request) => {
