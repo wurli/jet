@@ -37,16 +37,24 @@ function jet_kernel:execute(code)
     self:_handle_text_output("\n> " .. code .. "\n")
     local callback = jet_engine.execute_code(self.id, code, {})
 
-    local function check_cb()
-        local result = callback()
-        if result.status == "idle" then
-            return
+    local function check_callback()
+        -- Continuously check for results until we fail to receive a result
+        while true do
+            local result = callback()
+            -- If idle then the execution is complete
+            if result.status == "idle" then
+                return
+            end
+            -- If no data yet, wait a bit (so we don't block the main thread)
+            -- and check again later
+            if not result.data then
+                return vim.defer_fn(check_callback, 50)
+            end
+            self:_handle_result(result)
         end
-        self:_handle_result(result)
-        vim.defer_fn(check_cb, 50)
     end
 
-    check_cb()
+    check_callback()
 end
 
 function jet_kernel:open_repl()
@@ -125,6 +133,31 @@ function jet_kernel:_init_repl()
             end)
         end
     })
+
+    vim.api.nvim_create_autocmd("WinResized", {
+        callback = function()
+            if vim.api.nvim_get_current_win() == self.repl_input_winnr then
+                vim.api.nvim_win_set_config(
+                    self.repl_output_winnr,
+                    {
+                        width = vim.api.nvim_win_get_width(self.repl_input_winnr),
+                    }
+                )
+            elseif vim.api.nvim_get_current_win() == self.repl_output_winnr then
+                vim.api.nvim_win_set_config(
+                    self.repl_input_winnr,
+                    {
+                        relative = "win",
+                        win = self.repl_output_winnr,
+                        col = 1,
+                        height = 1,
+                        row = vim.api.nvim_win_get_height(self.repl_output_winnr) - 1,
+                        width = vim.api.nvim_win_get_width(self.repl_output_winnr),
+                    }
+                )
+            end
+        end
+    })
 end
 
 function jet_kernel:_with_input_buf(fn)
@@ -167,8 +200,14 @@ function jet_kernel:_handle_result(msg)
         self:_handle_text_output(msg.data.prompt)
     end
 
-    vim.api.nvim_buf_call(self.repl_output_bufnr, function()
-        vim.fn.cursor(vim.fn.line("$"), 0)
+    self:_scroll_to_end()
+end
+
+function jet_kernel:_scroll_to_end()
+    self:_with_output_buf(function(output_buf)
+        vim.api.nvim_buf_call(output_buf, function()
+            vim.fn.cursor(vim.fn.line("$"), 0)
+        end)
     end)
 end
 
