@@ -40,8 +40,6 @@ pub fn start_kernel(spec_path: PathBuf) -> anyhow::Result<(Id, KernelInfo)> {
     Ok(out)
 }
 
-/// Long term this should maybe return a coroutine (i.e. generator) once they're stable:
-/// https://doc.rust-lang.org/beta/unstable-book/language-features/coroutines.html
 pub fn execute_code(
     kernel_id: Id,
     code: String,
