@@ -47,7 +47,7 @@ pub fn execute_code(
     code: String,
     user_expressions: HashMap<String, String>,
 ) -> anyhow::Result<impl Fn() -> CallbackOutput> {
-    log::trace!("Sending execute request `{}` to kernel {}", code, kernel_id);
+    log::trace!("Sending execute request `{code}` to kernel {kernel_id}");
 
     let kernel = KernelManager::get(&kernel_id)?;
 
@@ -122,12 +122,12 @@ pub fn execute_code(
 }
 
 pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<()> {
-    log::info!("Requesting shutdown of kernel {}", kernel_id);
+    log::info!("Requesting shutdown of kernel {kernel_id}");
     KernelManager::shutdown(kernel_id)
 }
 
 pub fn request_restart(kernel_id: &Id) -> anyhow::Result<Message> {
-    log::info!("Requesting restart of kernel {}", kernel_id);
+    log::info!("Requesting restart of kernel {kernel_id}");
     let kernel = KernelManager::get(kernel_id)?;
     kernel.comm.request_restart()
 }
@@ -143,11 +143,7 @@ pub fn get_completions(
     code: String,
     cursor_pos: u32,
 ) -> anyhow::Result<impl Fn() -> CallbackOutput> {
-    log::trace!(
-        "Sending completion request `{}` to kernel {}",
-        code,
-        kernel_id
-    );
+    log::trace!("Sending completion request `{code}` to kernel {kernel_id}");
 
     let kernel = KernelManager::get(&kernel_id)?;
 
@@ -184,12 +180,8 @@ pub fn get_completions(
     })
 }
 
-pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
-    log::trace!(
-        "Sending is complete request `{}` to kernel {}",
-        code,
-        kernel_id
-    );
+pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<impl Fn() -> CallbackOutput> {
+    log::trace!("Sending is complete request `{code}` to kernel {kernel_id}");
 
     let kernel = KernelManager::get(&kernel_id)?;
 
@@ -197,26 +189,23 @@ pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {
         .comm
         .send_shell(IsCompleteRequest { code: code.clone() })?;
 
-    loop {
+    Ok(move || {
         // We need to loop here because it's possible that the shell channel may receive any number
         // of replies to previous messages before we get the reply we're looking for.
-        kernel.comm.route_all_incoming_shell();
+        let comm = &kernel.comm;
+        comm.route_all_incoming_shell();
 
-        if let Ok(reply) = receivers.shell.try_recv() {
+        while let Ok(reply) = receivers.shell.try_recv() {
             match reply {
                 Message::IsCompleteReply(_) => {
                     log::trace!("Received is_complete_reply on the shell");
-                    kernel
-                        .comm
-                        .stdin_broker
-                        .unregister_request(&receivers.id, "reply received");
-                    return Ok(reply);
+                    comm.unregister_request(&receivers.id, "reply received");
                 }
-                _ => {
-                    log::warn!("Unexpected reply received on shell: {}", reply.describe());
-                    return Err(anyhow::anyhow!("Unexpected reply: {}", reply.describe()));
-                }
+                _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
             }
+            return CallbackOutput::Busy(Some(reply));
         }
-    }
+
+        return CallbackOutput::Busy(None);
+    })
 }

@@ -4,4 +4,3 @@ pub enum CallbackOutput {
     Busy(Option<Message>),
     Idle,
 }
-
