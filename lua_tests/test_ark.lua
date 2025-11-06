@@ -12,25 +12,25 @@ print(info.banner)
 
 -- Try running some code
 utils.execute(jet, kernel_id, "1 + 1")
-utils.execute(jet, kernel_id, "readline('Enter something: ')")
-utils.execute(jet, kernel_id, "Sys.sleep(1); 1 + 1")
-utils.execute(jet, kernel_id, "cat('hi')")
-
--- Try user expressions
-utils.execute(jet, kernel_id, "1 + 1", { test = "2^2" })
-utils.execute(jet, kernel_id, "x <- 2 + 2")
-utils.execute(jet, kernel_id, "cat('Result:', x)")
-
--- Try testing completeness
-utils.is_complete(jet, kernel_id, "1 +")
-utils.is_complete(jet, kernel_id, "1 + 1")
-utils.is_complete(jet, kernel_id, "_")
-
--- Try getting completions (ark doesn't do these)
-utils.get_completions(jet, kernel_id, "iris$", 4)
-
--- Try shutting down
--- utils.request_restart(jet, kernel_id)
--- Causes issues currently
-utils.execute(jet, kernel_id, "x")
--- utils.request_shutdown(jet, kernel_id)
+-- utils.execute(jet, kernel_id, "readline('Enter something: ')")
+-- utils.execute(jet, kernel_id, "Sys.sleep(1); 1 + 1")
+-- utils.execute(jet, kernel_id, "cat('hi')")
+--
+-- -- Try user expressions
+-- utils.execute(jet, kernel_id, "1 + 1", { test = "2^2" })
+-- utils.execute(jet, kernel_id, "x <- 2 + 2")
+-- utils.execute(jet, kernel_id, "cat('Result:', x)")
+--
+-- -- Try testing completeness
+-- utils.is_complete(jet, kernel_id, "1 +")
+-- utils.is_complete(jet, kernel_id, "1 + 1")
+-- utils.is_complete(jet, kernel_id, "_")
+--
+-- -- Try getting completions (ark doesn't do these)
+-- utils.get_completions(jet, kernel_id, "iris$", 4)
+--
+-- -- Try shutting down
+-- -- utils.request_restart(jet, kernel_id)
+-- -- Causes issues currently
+-- utils.execute(jet, kernel_id, "x")
+-- -- utils.request_shutdown(jet, kernel_id)

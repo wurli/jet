@@ -5,14 +5,6 @@
  *
  */
 
-/*
- * broker.rs
- *
- * Message broker for routing messages to appropriate handlers
- * based on parent message correlation.
- *
- */
-
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
@@ -20,7 +12,6 @@ use std::time::{Duration, Instant};
 
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::message_id::Id;
-use crate::msg::wire::status::ExecutionState;
 
 /// Context for tracking an active request that expects messages to be returned from the kernel
 struct RequestContext {
@@ -94,8 +85,6 @@ impl Broker {
     /// Route a message to a specific request's channels, or buffer it as an orphan
     fn route_to_request(&self, parent_id: &Id, msg: Message) {
         // Right now we have no reason to drop the request as completed, but we might in a minute.
-        let mut unregister_reason = None;
-
         // Route the reply
         match self.active_requests.read().unwrap().get(parent_id) {
             // If there's no corresponding active request, the reply is an orphan
@@ -105,25 +94,7 @@ impl Broker {
             // If there _is_ a corresponding active request, try routing to the corresponding
             // receiver
             Some(request) => {
-                unregister_reason = match &msg {
-                    Message::Status(m) if m.content.execution_state == ExecutionState::Idle => {
-                        Some("received idle status on iopub")
-                    }
-                    Message::InterruptReply(_)
-                    | Message::CommInfoReply(_)
-                    | Message::ExecuteReply(_)
-                    | Message::ExecuteReplyException(_)
-                    | Message::HandshakeReply(_)
-                    | Message::InputReply(_)
-                    | Message::InspectReply(_)
-                    | Message::IsCompleteReply(_)
-                    | Message::KernelInfoReply(_)
-                    | Message::ShutdownReply(_) => Some("reply received"),
-                    _ => None,
-                };
-
                 let description = msg.describe();
-
                 if request.channel.send(msg).is_err() {
                     log::warn!(
                         "{}: Failed to route {} for request {}: receiver dropped",
@@ -133,11 +104,6 @@ impl Broker {
                     );
                 }
             }
-        }
-
-        // We have to unregister after `active_requests` has gone out of scope to avoid a deadlock
-        if let Some(reason) = unregister_reason {
-            self.unregister_request(parent_id, reason);
         }
     }
 

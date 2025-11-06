@@ -73,14 +73,21 @@ pub fn execute_code(
         while let Ok(reply) = receivers.iopub.try_recv() {
             log::trace!("Receiving message from iopub: {}", reply.describe());
             match reply {
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    comm.iopub_broker
+                        .unregister_request(&receivers.id, "idle status received");
+                    return if comm.is_request_active(&receivers.id) {
+                        CallbackOutput::Busy(None)
+                    } else {
+                        CallbackOutput::Idle
+                    };
+                }
                 Message::ExecuteResult(_)
                 | Message::ExecuteError(_)
                 | Message::Stream(_)
                 | Message::DisplayData(_) => {
                     return CallbackOutput::Busy(Some(reply));
-                }
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                    return CallbackOutput::Idle;
                 }
                 Message::ExecuteInput(msg) => {
                     if msg.content.code != code {
@@ -91,7 +98,6 @@ pub fn execute_code(
                         );
                     };
                 }
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
                 _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
         }
@@ -112,7 +118,11 @@ pub fn execute_code(
                 _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
             }
             comm.unregister_request(&receivers.id, "reply received");
-            return CallbackOutput::Idle;
+            return if comm.is_request_active(&receivers.id) {
+                CallbackOutput::Busy(None)
+            } else {
+                CallbackOutput::Idle
+            };
         }
 
         CallbackOutput::Busy(None)

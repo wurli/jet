@@ -55,9 +55,7 @@ fn execute_in(id: Id, code: &str) -> impl Fn() -> CallbackOutput {
 
 fn await_result(callback: &impl Fn() -> CallbackOutput) -> Option<Message> {
     loop {
-        let res = callback();
-        println!("Callback returned: {:#?}", res);
-        match res {
+        match callback() {
             CallbackOutput::Idle => return None,
             CallbackOutput::Busy(Some(msg)) => return Some(msg),
             CallbackOutput::Busy(None) => {}

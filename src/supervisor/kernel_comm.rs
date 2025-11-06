@@ -112,7 +112,8 @@ impl KernelComm {
     }
 
     pub fn unregister_request(&self, request_id: &Id, reason: &str) {
-        self.iopub_broker.unregister_request(request_id, reason);
+        // We don't unregister from iopub here since that is done automatically when we receive an
+        // idle status
         self.stdin_broker.unregister_request(request_id, reason);
         self.shell_broker.unregister_request(request_id, reason);
         self.control_broker.unregister_request(request_id, reason);
@@ -222,6 +223,7 @@ impl KernelComm {
         self.is_request_active_shell(request_id)
             | self.is_request_active_stdin(request_id)
             | self.is_request_active_control(request_id)
+            | self.is_request_active_iopub(request_id)
     }
 
     pub fn is_request_active_shell(&self, request_id: &Id) -> bool {
@@ -234,6 +236,10 @@ impl KernelComm {
 
     pub fn is_request_active_control(&self, request_id: &Id) -> bool {
         self.control_broker.is_active(request_id)
+    }
+
+    pub fn is_request_active_iopub(&self, request_id: &Id) -> bool {
+        self.iopub_broker.is_active(request_id)
     }
 
     pub fn subscribe(&self) -> Result<KernelInfoReply, Error> {

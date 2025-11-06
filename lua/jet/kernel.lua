@@ -143,7 +143,7 @@ function jet_kernel:_init_repl()
                         width = vim.api.nvim_win_get_width(self.repl_input_winnr),
                     }
                 )
-            elseif vim.api.nvim_get_current_win() == self.repl_output_winnr then
+            else
                 vim.api.nvim_win_set_config(
                     self.repl_input_winnr,
                     {

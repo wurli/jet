@@ -3,18 +3,9 @@ local M = {}
 --------------------------------------------------
 -- Get the jet library
 --------------------------------------------------
-local libname = "jet"
-
-local get_lib_extension = function()
-    if jit.os:lower() == 'mac' or jit.os:lower() == 'osx' then return '.dylib' end
-    if jit.os:lower() == 'windows' then return '.dll' end
-    return '.so'
+M.jet_loader = function()
+    return require("../lua/jet/rust")
 end
-
-M.jet_loader = package.loadlib(
-    "./target/release/lib" .. libname .. get_lib_extension(),
-    "luaopen_" .. libname
-)
 
 --------------------------------------------------
 -- Helpers
@@ -69,6 +60,7 @@ local function big_header(action, name, context)
 end
 
 --- Execute code in the jet kernel and print results until the execution finishes
+---@param jet Jet.Engine
 function M.execute(jet, kernel_id, code, user_expressions, name)
     user_expressions = user_expressions or {}
 
@@ -82,22 +74,20 @@ function M.execute(jet, kernel_id, code, user_expressions, name)
 
     local i = 0
     while true do
-        i = i + 1
         local result = callback()
-        if M.tbl_len(result) == 0 then
-            -- if i > 10 then
+        if result.status == "idle" then
             break
         end
-        M.cat_header("Result " .. i)
-        print(M.dump(result))
-
-        if result.type == "input_request" then
-            local stdin = "Hello from Lua!"
-            M.cat_header(("Sending dummy val '%s'"):format(stdin), ".")
-            jet.provide_stdin(kernel_id, stdin)
+        if result.data then
+            i = i + 1
+            M.cat_header("Result " .. i)
+            print(M.dump(result))
+            if result.type == "input_request" then
+                local stdin = "Hello from Lua!"
+                M.cat_header(("Sending dummy val '%s'"):format(stdin), ".")
+                jet.provide_stdin(kernel_id, stdin)
+            end
         end
-
-        os.execute("sleep 0.1")
     end
 end
 
@@ -138,7 +128,6 @@ function M.list_running_kernels(jet, name)
         print(("* (%s) %s"):format(id:sub(1, 7), kernel.display_name))
     end
 end
-
 
 function M.discover_kernels(jet)
     big_header("Discovering available kernels")
