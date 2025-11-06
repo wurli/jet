@@ -111,6 +111,13 @@ impl KernelComm {
         })
     }
 
+    pub fn unregister_request(&self, request_id: &Id, reason: &str) {
+        self.iopub_broker.unregister_request(request_id, reason);
+        self.stdin_broker.unregister_request(request_id, reason);
+        self.shell_broker.unregister_request(request_id, reason);
+        self.control_broker.unregister_request(request_id, reason);
+    }
+
     fn check_heartbeat(&self) -> Result<(), Error> {
         match self.heartbeat_monitor.lock().unwrap().try_recv() {
             Ok(HeartbeatFailed) => Err(Error::HeartbeatFailed(String::from(
@@ -207,6 +214,10 @@ impl KernelComm {
         }
     }
 
+    /// Check if a request is still active on any of the input channels
+    ///
+    /// We don't check the iopub channel since requests on iopub are automatically unregistered
+    /// when we receive an idle status.
     pub fn is_request_active(&self, request_id: &Id) -> bool {
         self.is_request_active_shell(request_id)
             | self.is_request_active_stdin(request_id)

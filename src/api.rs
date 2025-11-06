@@ -51,8 +51,6 @@ pub fn execute_code(
 
     let kernel = KernelManager::get(&kernel_id)?;
 
-    kernel.comm.route_all_incoming_shell();
-
     let receivers = kernel.comm.send_shell(ExecuteRequest {
         code: code.clone(),
         silent: false,
@@ -63,7 +61,10 @@ pub fn execute_code(
     })?;
 
     Ok(move || {
-        if !kernel.comm.is_request_active(&receivers.id) {
+        // Just to make things a bit more readable
+        let comm = &kernel.comm;
+
+        if !comm.is_request_active(&receivers.id) {
             log::trace!(
                 "Request {} is no longer active, returning None",
                 receivers.id
@@ -97,8 +98,7 @@ pub fn execute_code(
             }
         }
 
-        kernel.comm.route_all_incoming_stdin();
-
+        comm.route_all_incoming_stdin();
         while let Ok(msg) = receivers.stdin.try_recv() {
             log::trace!("Received message from stdin: {}", msg.describe());
             if let Message::InputRequest(_) = msg {
@@ -107,27 +107,14 @@ pub fn execute_code(
             log::warn!("Dropping unexpected stdin message {}", msg.describe());
         }
 
-        kernel.comm.route_all_incoming_shell();
-
+        comm.route_all_incoming_shell();
         while let Ok(msg) = receivers.shell.try_recv() {
-            kernel
-                .comm
-                .control_broker
-                .unregister_request(&receivers.id, "reply received");
-            kernel
-                .comm
-                .shell_broker
-                .unregister_request(&receivers.id, "reply received");
-            kernel
-                .comm
-                .stdin_broker
-                .unregister_request(&receivers.id, "reply received");
             match msg {
-                Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {
-                    return CallbackOutput::Idle;
-                }
+                Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
                 _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
             }
+            comm.unregister_request(&receivers.id, "reply received");
+            return CallbackOutput::Idle;
         }
 
         CallbackOutput::Busy(None)
@@ -151,7 +138,11 @@ pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::Result<Message> {
+pub fn get_completions(
+    kernel_id: Id,
+    code: String,
+    cursor_pos: u32,
+) -> anyhow::Result<impl Fn() -> CallbackOutput> {
     log::trace!(
         "Sending completion request `{}` to kernel {}",
         code,
@@ -164,28 +155,33 @@ pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::
         .comm
         .send_shell(CompleteRequest { code, cursor_pos })?;
 
-    loop {
+    Ok(move || {
         // We need to loop here because it's possible that the shell channel may receive any number
         // of replies to previous messages before we get the reply we're looking for.
-        kernel.comm.route_all_incoming_shell();
+        let comm = &kernel.comm;
+        comm.route_all_incoming_shell();
 
-        if let Ok(reply) = receivers.shell.try_recv() {
+        if !comm.is_request_active(&receivers.id) {
+            log::trace!(
+                "Request {} is no longer active, returning None",
+                receivers.id
+            );
+            return CallbackOutput::Idle;
+        }
+
+        while let Ok(reply) = receivers.shell.try_recv() {
             match reply {
                 Message::CompleteReply(_) => {
                     log::trace!("Received completion_reply on the shell");
-                    kernel
-                        .comm
-                        .stdin_broker
-                        .unregister_request(&receivers.id, "reply received");
-                    return Ok(reply);
+                    comm.unregister_request(&receivers.id, "reply received");
                 }
-                _ => {
-                    log::warn!("Unexpected reply received on shell: {}", reply.describe());
-                    return Err(anyhow::anyhow!("Unexpected reply: {}", reply.describe()));
-                }
+                _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
             }
+            return CallbackOutput::Busy(Some(reply));
         }
-    }
+
+        return CallbackOutput::Busy(None);
+    })
 }
 
 pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<Message> {

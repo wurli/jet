@@ -25,24 +25,14 @@ pub fn execute_code(
     let callback = api::execute_code(Id::from(kernel_id), code, user_expressions).into_lua_err()?;
 
     lua.create_function_mut(move |lua, (): ()| -> LuaResult<LuaTable> {
-        let result = callback();
-
-        match result {
-            CallbackOutput::Idle => {
-                let table = lua.create_table().unwrap();
-                let _ = table.set("status", "idle");
-                Ok(table)
-            }
-            CallbackOutput::Busy(Some(Message::ExecuteResult(msg))) => to_lua(lua, &msg.content),
-            CallbackOutput::Busy(Some(Message::ExecuteError(msg))) => to_lua(lua, &msg.content),
-            CallbackOutput::Busy(Some(Message::Stream(msg))) => to_lua(lua, &msg.content),
-            CallbackOutput::Busy(Some(Message::InputRequest(msg))) => to_lua(lua, &msg.content),
-            CallbackOutput::Busy(Some(Message::DisplayData(msg))) => to_lua(lua, &msg.content),
-            CallbackOutput::Busy(None) => {
-                let table = lua.create_table().unwrap();
-                let _ = table.set("status", "busy");
-                Ok(table)
-            }
+        match callback() {
+            CallbackOutput::Idle => lua_idle_sentinel(lua),
+            CallbackOutput::Busy(None) => lua_busy_sentinel(lua),
+            CallbackOutput::Busy(Some(Message::ExecuteResult(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::ExecuteError(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::Stream(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::InputRequest(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::DisplayData(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(other)) => Err(LuaError::external(format!(
                 "Received unexpected message type {}",
                 other.kind()
@@ -53,7 +43,7 @@ pub fn execute_code(
 
 pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaTable> {
     match api::is_complete(Id::from(kernel_id), code) {
-        Ok(Message::IsCompleteReply(msg)) => to_lua(lua, &msg.content),
+        Ok(Message::IsCompleteReply(msg)) => msg.content.to_lua(lua),
         Ok(msg) => Err(LuaError::external(format!(
             "Received unexpected message type {}",
             msg.kind()
@@ -65,22 +55,45 @@ pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<
 pub fn get_completions(
     lua: &Lua,
     (kernel_id, code, cursor_pos): (String, String, u32),
-) -> LuaResult<LuaTable> {
-    match api::get_completions(Id::from(kernel_id), code, cursor_pos) {
-        Ok(Message::CompleteReply(msg)) => to_lua(lua, &msg.content),
-        Ok(msg) => Err(LuaError::external(format!(
-            "Received unexpected message type {}",
-            msg.kind()
-        ))),
-        Err(e) => Err(e.into_lua_err()),
+) -> LuaResult<LuaFunction> {
+    let callback = api::get_completions(Id::from(kernel_id), code, cursor_pos).into_lua_err()?;
+
+    lua.create_function_mut(move |lua, (): ()| -> LuaResult<LuaTable> {
+        match callback() {
+            CallbackOutput::Idle => lua_idle_sentinel(lua),
+            CallbackOutput::Busy(None) => lua_busy_sentinel(lua),
+            CallbackOutput::Busy(Some(Message::CompleteReply(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(other)) => Err(LuaError::external(format!(
+                "Received unexpected message type {}",
+                other.kind()
+            ))),
+        }
+    })
+}
+
+pub trait ToLua {
+    fn to_lua(&self, lua: &Lua) -> LuaResult<LuaTable>;
+}
+
+impl<T: Describe + serde::Serialize> ToLua for T {
+    fn to_lua(&self, lua: &Lua) -> LuaResult<LuaTable> {
+        let out = lua.create_table().unwrap();
+        let _ = out.set("status", "busy");
+        let _ = out.set("type", self.kind());
+        let _ = out.set("data", lua.to_value(self).unwrap());
+        Ok(out)
     }
 }
 
-fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
+fn lua_busy_sentinel(lua: &Lua) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
     let _ = out.set("status", "busy");
-    let _ = out.set("type", x.kind());
-    let _ = out.set("data", lua.to_value(x).unwrap());
+    Ok(out)
+}
+
+fn lua_idle_sentinel(lua: &Lua) -> LuaResult<LuaTable> {
+    let out = lua.create_table().unwrap();
+    let _ = out.set("status", "idle");
     Ok(out)
 }
 
