@@ -22,47 +22,61 @@ if not loader then
     error('Failed to load native module from: ' .. lib_path)
 end
 
----@class Jet.MsgContent.CompleteReply
+---@class Jet.Msg.CompleteReply
 ---@field status "ok" | "error"
 ---@field matches string[]
 ---@field cursor_start number
 ---@field cursor_end number
 ---@field metadata table<string, any>
 
----@class Jet.MsgContent.DisplayData
+---@class Jet.Msg.DisplayData
 ---@field data table<string, any>
 ---@field metadata table<string, any>
 ---@field transient table<string, any>
 
----@class Jet.MsgContent.ExecuteError
+---@class Jet.Msg.ExecuteError
 ---@field ename string
 ---@field evalue string
 ---@field traceback string[]
 
----@class Jet.MsgContent.ExecuteResult
+---@class Jet.Msg.ExecuteResult
 ---@field data table<string, any>
 ---@field execution_count number
 ---@field metadata table<string, any>
 
----@class Jet.MsgContent.InputRequest
+---@class Jet.Msg.InputRequest
 ---@field prompt string
 ---@field password boolean
 
----@class Jet.MsgContent.IsCompleteReply
+---@class Jet.Msg.IsCompleteReply
 ---@field status "complete" | "incomplete" | "invalid" | "unknown"
 ---@field indent string?
 
----@class Jet.MsgContent.Stream
+---@class Jet.Msg.Stream
 ---@field name "stdout" | "stderr"
 ---@field text string
 
----@alias Jet.Msg.CompleteReply   { type: "complete_reply",    data: Jet.MsgContent.CompleteReply }
----@alias Jet.Msg.DisplayData     { type: "display_data",      data: Jet.MsgContent.DisplayData }
----@alias Jet.Msg.ExecuteError    { type: "error",             data: Jet.MsgContent.ExecuteError }
----@alias Jet.Msg.ExecutionResult { type: "execute_result",    data: Jet.MsgContent.ExecuteResult }
----@alias Jet.Msg.InputRequest    { type: "input_request",     data: Jet.MsgContent.InputRequest }
----@alias Jet.Msg.IsCompleteReply { type: "is_complete_reply", data: Jet.MsgContent.IsCompleteReply }
----@alias Jet.Msg.Stream          { type: "stream",            data: Jet.MsgContent.Stream }
+---@alias Jet.Msg
+---| Jet.Msg.CompleteReply
+---| Jet.Msg.DisplayData
+---| Jet.Msg.ExecuteError
+---| Jet.Msg.ExecuteResult
+---| Jet.Msg.InputRequest
+---| Jet.Msg.IsCompleteReply
+---| Jet.Msg.Stream
+
+---@alias Jet.MsgType
+---| "complete_reply"
+---| "display_data"
+---| "error"
+---| "execute_result"
+---| "input_request"
+---| "is_complete_reply"
+---| "stream"
+
+---@alias Jet.ExecutionStatus
+---| "busy"
+---| "idle"
 
 ---@alias Jet.Kernel.Id string
 
@@ -104,15 +118,8 @@ end
 ---@field list_available_kernels fun(): table<Jet.Kernel.Spec.Path, Jet.Kernel.Spec>
 ---@field list_running_kernels fun(): table<Jet.Kernel.Id, Jet.Kernel.Info>
 
----@alias Jet.ExecuteCallback fun(): Jet.MsgGroup.ExecuteCode
-
----@alias Jet.MsgGroup.ExecuteCode
----| Jet.Msg.ExecutionResult
----| Jet.Msg.ExecuteError
----| Jet.Msg.Stream
----| Jet.Msg.DisplayData
----| Jet.Msg.InputRequest
----| {}
+---@alias Jet.ExecuteCallback.Result { status: Jet.ExecutionStatus, type: Jet.MsgType?, data: Jet.Msg? }
+---@alias Jet.ExecuteCallback fun(): Jet.ExecuteCallback.Result
 
 ---@type Jet.Engine
 local out = loader()

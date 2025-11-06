@@ -6,7 +6,9 @@
  */
 
 use crate::{
-    callback_output::CallbackOutput, kernel::kernel_spec::KernelSpec, msg::wire::{
+    callback_output::CallbackOutput,
+    kernel::kernel_spec::KernelSpec,
+    msg::wire::{
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
         input_reply::InputReply,
@@ -14,7 +16,8 @@ use crate::{
         jupyter_message::{Describe, Message},
         message_id::Id,
         status::ExecutionState,
-    }, supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager}
+    },
+    supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager},
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -68,7 +71,7 @@ pub fn execute_code(
             return CallbackOutput::Idle;
         }
 
-        if let Ok(reply) = receivers.iopub.try_recv() {
+        while let Ok(reply) = receivers.iopub.try_recv() {
             log::trace!("Receiving message from iopub: {}", reply.describe());
             match reply {
                 Message::ExecuteResult(_)
@@ -96,7 +99,7 @@ pub fn execute_code(
 
         kernel.comm.route_all_incoming_stdin();
 
-        if let Ok(msg) = receivers.stdin.try_recv() {
+        while let Ok(msg) = receivers.stdin.try_recv() {
             log::trace!("Received message from stdin: {}", msg.describe());
             if let Message::InputRequest(_) = msg {
                 return CallbackOutput::Busy(Some(msg));
@@ -107,15 +110,25 @@ pub fn execute_code(
         kernel.comm.route_all_incoming_shell();
 
         while let Ok(msg) = receivers.shell.try_recv() {
-            match msg {
-                Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
-                _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
-            }
+            kernel
+                .comm
+                .control_broker
+                .unregister_request(&receivers.id, "reply received");
+            kernel
+                .comm
+                .shell_broker
+                .unregister_request(&receivers.id, "reply received");
             kernel
                 .comm
                 .stdin_broker
                 .unregister_request(&receivers.id, "reply received");
-        };
+            match msg {
+                Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {
+                    return CallbackOutput::Idle;
+                }
+                _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
+            }
+        }
 
         CallbackOutput::Busy(None)
     })

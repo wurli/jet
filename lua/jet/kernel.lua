@@ -37,37 +37,32 @@ function jet_kernel:execute(code)
     self:_handle_text_output("\n> " .. code .. "\n")
     local callback = jet_engine.execute_code(self.id, code, {})
 
-    while true do
-        local msg = callback()
-        if vim.tbl_count(msg) > 0 then
-            self:_handle_result(msg)
-        else
-            break
+    local function check_cb()
+        local result = callback()
+        if result.status == "idle" then
+            return
         end
+        self:_handle_result(result)
+        vim.defer_fn(check_cb, 50)
     end
+
+    check_cb()
 end
 
 function jet_kernel:open_repl()
-    local output_winid = vim.api.nvim_open_win(self.repl_output_bufnr, true, {
+    self.repl_output_winnr = vim.api.nvim_open_win(self.repl_output_bufnr, true, {
         split = "right"
     })
 
-    local input_winid = vim.api.nvim_open_win(self.repl_input_bufnr, true, {
+    self.repl_input_winnr = vim.api.nvim_open_win(self.repl_input_bufnr, true, {
         relative = "win",
-        win = output_winid,
+        win = self.repl_output_winnr,
         col = 1,
         height = 1,
-        row = vim.api.nvim_win_get_height(output_winid) - 1,
-        width = vim.api.nvim_win_get_width(output_winid),
+        row = vim.api.nvim_win_get_height(self.repl_output_winnr) - 1,
+        width = vim.api.nvim_win_get_width(self.repl_output_winnr),
         border = "none"
     })
-
-    for _, key in ipairs({ "i", "I", "a", "A", "c", "C", "s", "S", "o", "O" }) do
-        vim.keymap.set("n", key, function()
-            vim.api.nvim_set_current_win(input_winid)
-            vim.cmd.startinsert()
-        end, { buffer = self.repl_output_bufnr })
-    end
 
     local jet_ns = vim.api.nvim_create_namespace("jet_repl_input")
 
@@ -75,14 +70,14 @@ function jet_kernel:open_repl()
         sign_text = "> ",
     })
 
-    vim.wo[output_winid].number = false
-    vim.wo[output_winid].relativenumber = false
-    vim.wo[output_winid].listchars = ""
-    vim.wo[input_winid].number = false
-    vim.wo[input_winid].relativenumber = false
-    vim.wo[input_winid].cursorline = false
+    vim.wo[self.repl_output_winnr].number = false
+    vim.wo[self.repl_output_winnr].relativenumber = false
+    vim.wo[self.repl_output_winnr].listchars = ""
+    vim.wo[self.repl_input_winnr].number = false
+    vim.wo[self.repl_input_winnr].relativenumber = false
+    vim.wo[self.repl_input_winnr].cursorline = false
 
-    vim.bo[self.repl_input_bufnr].filetype = "R"
+    -- vim.bo[self.repl_input_bufnr].filetype = "R"
 end
 
 function jet_kernel:_init_repl()
@@ -111,12 +106,59 @@ function jet_kernel:_init_repl()
     else
         self.repl_channel = vim.api.nvim_open_term(self.repl_output_bufnr, {})
     end
+
+    -- TODO: Improve keymaps
+    for _, key in ipairs({ "i", "I", "a", "A", "c", "C", "s", "S", "o", "O", "p", "P" }) do
+        vim.keymap.set("n", key, function()
+            self:_with_input_win(function(winnr)
+                vim.api.nvim_set_current_win(winnr)
+                vim.cmd.normal(key)
+            end)
+        end, { buffer = self.repl_output_bufnr })
+    end
+
+    vim.api.nvim_create_autocmd("WinClosed", {
+        buffer = self.repl_output_bufnr,
+        callback = function()
+            self:_with_input_win(function(winnr)
+                vim.api.nvim_win_close(winnr, true)
+            end)
+        end
+    })
 end
 
----@param msg Jet.MsgGroup.ExecuteCode
+function jet_kernel:_with_input_buf(fn)
+    if vim.api.nvim_buf_is_valid(self.repl_input_bufnr) then
+        fn(self.repl_input_bufnr)
+    end
+end
+
+function jet_kernel:_with_output_buf(fn)
+    if vim.api.nvim_buf_is_valid(self.repl_output_bufnr) then
+        fn(self.repl_output_bufnr)
+    end
+end
+
+function jet_kernel:_with_input_win(fn)
+    if vim.api.nvim_win_is_valid(self.repl_input_winnr) then
+        fn(self.repl_input_winnr)
+    end
+end
+
+function jet_kernel:_with_output_win(fn)
+    if vim.api.nvim_win_is_valid(self.repl_output_winnr) then
+        fn(self.repl_output_winnr)
+    end
+end
+
+---@param msg Jet.ExecuteCallback.Result
 function jet_kernel:_handle_result(msg)
+    if not msg.data then
+        return
+    end
+
     if msg.type == "execute_result" then
-        self:_handle_text_output(msg.data.data["text/plain"])
+        self:_handle_text_output(msg.data.data["text/plain"] .. "\n")
     elseif msg.type == "stream" then
         self:_handle_text_output(msg.data.text)
     elseif msg.type == "error" then
@@ -124,6 +166,10 @@ function jet_kernel:_handle_result(msg)
     elseif msg.type == "input_request" then
         self:_handle_text_output(msg.data.prompt)
     end
+
+    vim.api.nvim_buf_call(self.repl_output_bufnr, function()
+        vim.fn.cursor(vim.fn.line("$"), 0)
+    end)
 end
 
 ---@param text string

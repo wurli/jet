@@ -28,6 +28,11 @@ pub fn execute_code(
         let result = callback();
 
         match result {
+            CallbackOutput::Idle => {
+                let table = lua.create_table().unwrap();
+                let _ = table.set("status", "idle");
+                Ok(table)
+            }
             CallbackOutput::Busy(Some(Message::ExecuteResult(msg))) => to_lua(lua, &msg.content),
             CallbackOutput::Busy(Some(Message::ExecuteError(msg))) => to_lua(lua, &msg.content),
             CallbackOutput::Busy(Some(Message::Stream(msg))) => to_lua(lua, &msg.content),
@@ -37,16 +42,11 @@ pub fn execute_code(
                 let table = lua.create_table().unwrap();
                 let _ = table.set("status", "busy");
                 Ok(table)
-            },
+            }
             CallbackOutput::Busy(Some(other)) => Err(LuaError::external(format!(
                 "Received unexpected message type {}",
                 other.kind()
             ))),
-            CallbackOutput::Idle => {
-                let table = lua.create_table().unwrap();
-                let _ = table.set("status", "idle");
-                Ok(table)
-            },
         }
     })
 }
