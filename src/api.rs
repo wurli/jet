@@ -6,8 +6,7 @@
  */
 
 use crate::{
-    kernel::kernel_spec::KernelSpec,
-    msg::wire::{
+    callback_output::CallbackOutput, kernel::kernel_spec::KernelSpec, msg::wire::{
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
         input_reply::InputReply,
@@ -15,8 +14,7 @@ use crate::{
         jupyter_message::{Describe, Message},
         message_id::Id,
         status::ExecutionState,
-    },
-    supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager},
+    }, supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager}
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -45,7 +43,7 @@ pub fn execute_code(
     kernel_id: Id,
     code: String,
     user_expressions: HashMap<String, String>,
-) -> anyhow::Result<impl Fn() -> Option<Message>> {
+) -> anyhow::Result<impl Fn() -> CallbackOutput> {
     log::trace!("Sending execute request `{}` to kernel {}", code, kernel_id);
 
     let kernel = KernelManager::get(&kernel_id)?;
@@ -62,65 +60,64 @@ pub fn execute_code(
     })?;
 
     Ok(move || {
-        loop {
-            if !kernel.comm.is_request_active(&receivers.id) {
-                log::trace!(
-                    "Request {} is no longer active, returning None",
-                    receivers.id
-                );
-                return None;
-            }
+        if !kernel.comm.is_request_active(&receivers.id) {
+            log::trace!(
+                "Request {} is no longer active, returning None",
+                receivers.id
+            );
+            return CallbackOutput::Idle;
+        }
 
-            kernel.comm.route_all_incoming_shell();
-
-            if let Ok(reply) = receivers.iopub.try_recv() {
-                log::trace!("Receiving message from iopub: {}", reply.describe());
-                match reply {
-                    Message::ExecuteResult(_)
-                    | Message::ExecuteError(_)
-                    | Message::Stream(_)
-                    | Message::DisplayData(_) => {
-                        return Some(reply);
-                    }
-                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                        return None;
-                    }
-                    Message::ExecuteInput(msg) => {
-                        if msg.content.code != code {
-                            log::warn!(
-                                "Received {} with unexpected code: {}",
-                                msg.content.kind(),
-                                msg.content.code
-                            );
-                        };
-                    }
-                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
-                    }
-                    _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+        if let Ok(reply) = receivers.iopub.try_recv() {
+            log::trace!("Receiving message from iopub: {}", reply.describe());
+            match reply {
+                Message::ExecuteResult(_)
+                | Message::ExecuteError(_)
+                | Message::Stream(_)
+                | Message::DisplayData(_) => {
+                    return CallbackOutput::Busy(Some(reply));
                 }
-            }
-
-            kernel.comm.route_all_incoming_stdin();
-
-            if let Ok(msg) = receivers.stdin.try_recv() {
-                log::trace!("Received message from stdin: {}", msg.describe());
-                if let Message::InputRequest(_) = msg {
-                    return Some(msg);
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    return CallbackOutput::Idle;
                 }
-                log::warn!("Dropping unexpected stdin message {}", msg.describe());
-            }
-
-            while let Ok(msg) = receivers.shell.try_recv() {
-                match msg {
-                    Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
-                    _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
+                Message::ExecuteInput(msg) => {
+                    if msg.content.code != code {
+                        log::warn!(
+                            "Received {} with unexpected code: {}",
+                            msg.content.kind(),
+                            msg.content.code
+                        );
+                    };
                 }
-                kernel
-                    .comm
-                    .stdin_broker
-                    .unregister_request(&receivers.id, "reply received");
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
         }
+
+        kernel.comm.route_all_incoming_stdin();
+
+        if let Ok(msg) = receivers.stdin.try_recv() {
+            log::trace!("Received message from stdin: {}", msg.describe());
+            if let Message::InputRequest(_) = msg {
+                return CallbackOutput::Busy(Some(msg));
+            }
+            log::warn!("Dropping unexpected stdin message {}", msg.describe());
+        }
+
+        kernel.comm.route_all_incoming_shell();
+
+        while let Ok(msg) = receivers.shell.try_recv() {
+            match msg {
+                Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
+                _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
+            }
+            kernel
+                .comm
+                .stdin_broker
+                .unregister_request(&receivers.id, "reply received");
+        };
+
+        CallbackOutput::Busy(None)
     })
 }
 
@@ -150,7 +147,9 @@ pub fn get_completions(kernel_id: Id, code: String, cursor_pos: u32) -> anyhow::
 
     let kernel = KernelManager::get(&kernel_id)?;
 
-    let receivers = kernel.comm.send_shell(CompleteRequest { code, cursor_pos })?;
+    let receivers = kernel
+        .comm
+        .send_shell(CompleteRequest { code, cursor_pos })?;
 
     loop {
         // We need to loop here because it's possible that the shell channel may receive any number

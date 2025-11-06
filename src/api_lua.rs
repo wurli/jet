@@ -13,6 +13,7 @@ use mlua::LuaSerdeExt;
 use mlua::prelude::*;
 
 use crate::api;
+use crate::callback_output::CallbackOutput;
 use crate::msg::wire::jupyter_message::Describe;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::message_id::Id;
@@ -27,16 +28,25 @@ pub fn execute_code(
         let result = callback();
 
         match result {
-            Some(Message::ExecuteResult(msg)) => to_lua(lua, &msg.content),
-            Some(Message::ExecuteError(msg)) => to_lua(lua, &msg.content),
-            Some(Message::Stream(msg)) => to_lua(lua, &msg.content),
-            Some(Message::InputRequest(msg)) => to_lua(lua, &msg.content),
-            Some(Message::DisplayData(msg)) => to_lua(lua, &msg.content),
-            Some(msg) => Err(LuaError::external(format!(
+            CallbackOutput::Busy(Some(Message::ExecuteResult(msg))) => to_lua(lua, &msg.content),
+            CallbackOutput::Busy(Some(Message::ExecuteError(msg))) => to_lua(lua, &msg.content),
+            CallbackOutput::Busy(Some(Message::Stream(msg))) => to_lua(lua, &msg.content),
+            CallbackOutput::Busy(Some(Message::InputRequest(msg))) => to_lua(lua, &msg.content),
+            CallbackOutput::Busy(Some(Message::DisplayData(msg))) => to_lua(lua, &msg.content),
+            CallbackOutput::Busy(None) => {
+                let table = lua.create_table().unwrap();
+                let _ = table.set("status", "busy");
+                Ok(table)
+            },
+            CallbackOutput::Busy(Some(other)) => Err(LuaError::external(format!(
                 "Received unexpected message type {}",
-                msg.kind()
+                other.kind()
             ))),
-            _ => Ok(lua.create_table().unwrap()),
+            CallbackOutput::Idle => {
+                let table = lua.create_table().unwrap();
+                let _ = table.set("status", "idle");
+                Ok(table)
+            },
         }
     })
 }
@@ -68,6 +78,7 @@ pub fn get_completions(
 
 fn to_lua<T: Describe + serde::Serialize>(lua: &Lua, x: &T) -> LuaResult<LuaTable> {
     let out = lua.create_table().unwrap();
+    let _ = out.set("status", "busy");
     let _ = out.set("type", x.kind());
     let _ = out.set("data", lua.to_value(x).unwrap());
     Ok(out)
