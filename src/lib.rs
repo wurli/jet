@@ -13,6 +13,7 @@ pub mod kernel;
 pub mod msg;
 pub mod shutdown_guard;
 pub mod supervisor;
+pub mod callback_output;
 
 use mlua::prelude::*;
 

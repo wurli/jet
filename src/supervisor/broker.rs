@@ -13,9 +13,9 @@
  *
  */
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::msg::wire::jupyter_message::Message;
@@ -31,10 +31,6 @@ struct RequestContext {
 /// Configuration for the broker
 #[derive(Debug, Clone)]
 pub struct BrokerConfig {
-    /// Maximum number of orphan messages to buffer
-    pub orphan_buffer_max: usize,
-    /// Maximum age of orphan messages before cleanup
-    pub orphan_max_age: Duration,
     /// Maximum age of stale requests before cleanup
     pub request_timeout: Duration,
     /// Interval between cleanup operations
@@ -44,8 +40,6 @@ pub struct BrokerConfig {
 impl Default for BrokerConfig {
     fn default() -> Self {
         Self {
-            orphan_buffer_max: 1000,
-            orphan_max_age: Duration::from_secs(60),
             request_timeout: Duration::from_secs(300),
             cleanup_interval: Duration::from_secs(30),
         }
@@ -58,11 +52,6 @@ pub struct Broker {
 
     /// Active requests waiting for messages
     active_requests: Arc<RwLock<HashMap<Id, RequestContext>>>,
-
-    /// Buffer for "orphan" messages (no matching request)
-    /// TODO: do we really need this? I think if we _are_ getting orphan messages we should
-    /// probably change the code so this doesn't happen?
-    orphan_buffer: Arc<Mutex<VecDeque<(Message, Instant)>>>,
 
     /// Configuration
     pub config: BrokerConfig,
@@ -79,7 +68,6 @@ impl Broker {
         Self {
             name,
             active_requests: Arc::new(RwLock::new(HashMap::new())),
-            orphan_buffer: Arc::new(Mutex::new(VecDeque::new())),
             config,
         }
     }
@@ -93,7 +81,6 @@ impl Broker {
                 self.route_to_request(&parent_id.clone(), msg);
             }
             None => {
-                // No parent ID, handle as orphan
                 log::trace!(
                     "{}: Routing unparented message: {}",
                     self.name,
@@ -112,7 +99,9 @@ impl Broker {
         // Route the reply
         match self.active_requests.read().unwrap().get(parent_id) {
             // If there's no corresponding active request, the reply is an orphan
-            None => self.handle_orphan(msg),
+            None => {
+                log::warn!("{}: Dropping orphan message {:#?}", self.name, msg);
+            }
             // If there _is_ a corresponding active request, try routing to the corresponding
             // receiver
             Some(request) => {
@@ -149,31 +138,6 @@ impl Broker {
         // We have to unregister after `active_requests` has gone out of scope to avoid a deadlock
         if let Some(reason) = unregister_reason {
             self.unregister_request(parent_id, reason);
-        }
-    }
-
-    /// Handle a message that doesn't match any active request
-    fn handle_orphan(&self, msg: Message) {
-        log::trace!(
-            "{}: Orphan {} message {:#?}: no matching request found",
-            self.name,
-            msg.describe(),
-            &msg
-        );
-
-        let mut buffer = self.orphan_buffer.lock().unwrap();
-        buffer.push_back((msg, Instant::now()));
-
-        // Keep buffer size bounded
-        while buffer.len() > self.config.orphan_buffer_max {
-            if let Some((dropped_msg, _)) = buffer.pop_front() {
-                log::trace!(
-                    "{}: Dropped old {} orphan message {:#?} due to buffer limit",
-                    self.name,
-                    dropped_msg.describe(),
-                    &dropped_msg
-                );
-            }
         }
     }
 
@@ -240,41 +204,19 @@ impl Broker {
         }
     }
 
-    /// Clean up old orphan messages
-    pub fn drop_orphan_requests(&self) {
-        let max_age = self.config.orphan_max_age;
-        let now = Instant::now();
-
-        let mut buffer = self.orphan_buffer.lock().unwrap();
-        let before_count = buffer.len();
-
-        buffer.retain(|(_, timestamp)| now.duration_since(*timestamp) < max_age);
-
-        let removed = before_count - buffer.len();
-        if removed > 0 {
-            log::trace!(
-                "{}: Cleaned up {} old orphan message(s)",
-                self.name,
-                removed
-            );
-        }
-    }
-
     /// Perform all cleanup operations
     pub fn purge(&self) {
         self.log_stats();
         log::trace!("{}: Performing broker cleanup", self.name);
         self.drop_stale_requests();
-        self.drop_orphan_requests();
         self.log_stats();
     }
 
     pub fn log_stats(&self) {
         log::trace!(
-            "{} broker stats: {} active requests, {} orphans",
+            "{} broker stats: {} active requests",
             self.name,
             self.active_requests.read().unwrap().len(),
-            self.orphan_buffer.lock().unwrap().len(),
         );
     }
 }
