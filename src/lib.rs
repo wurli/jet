@@ -27,7 +27,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
-macro_rules! make_exports {
+macro_rules! lua_exports {
     ($lua:expr, $($func:ident),* $(,)?) => {{
         let exports = $lua.create_table()?;
         $(
@@ -54,7 +54,7 @@ pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     lua.set_app_data(ShutdownGuard {});
 
     // Return the Lua API
-    Ok(make_exports!(
+    Ok(lua_exports!(
         lua,
         start_kernel,
         list_running_kernels,
