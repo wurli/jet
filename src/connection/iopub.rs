@@ -100,14 +100,6 @@ impl Iopub {
         self.recv_stream(expect, Stream::Stderr)
     }
 
-    pub fn recv_comm_close(&self) -> String {
-        let msg = self.recv();
-
-        assert_matches!(msg, Message::CommClose(data) => {
-            data.content.comm_id
-        })
-    }
-
     /// Receive from IOPub Stream
     ///
     /// Stdout and Stderr Stream messages are buffered, so to reliably test against them

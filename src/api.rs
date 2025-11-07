@@ -5,10 +5,13 @@
  *
  */
 
+use serde_json::Value;
+
 use crate::{
     callback_output::CallbackOutput,
     kernel::kernel_spec::KernelSpec,
     msg::wire::{
+        comm_open::CommOpen,
         complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
         input_reply::InputReply,
@@ -38,6 +41,36 @@ pub fn start_kernel(spec_path: PathBuf) -> anyhow::Result<(Id, KernelInfo)> {
     KernelManager::add(kernel)?;
 
     Ok(out)
+}
+
+pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<()> {
+    log::info!("Requesting shutdown of kernel {kernel_id}");
+    KernelManager::shutdown(kernel_id)
+}
+
+pub fn request_restart(kernel_id: &Id) -> anyhow::Result<Message> {
+    log::info!("Requesting restart of kernel {kernel_id}");
+    let kernel = KernelManager::get(kernel_id)?;
+    kernel.comm.request_restart()
+}
+
+pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
+    let kernel = KernelManager::get(kernel_id)?;
+    kernel.comm.send_stdin(InputReply { value })?;
+    Ok(())
+}
+
+pub fn open_comm(
+    kernel_id: &Id,
+    target_name: String,
+    data: Value,
+) -> anyhow::Result<(Id, impl Fn() -> CallbackOutput)> {
+    let kernel = KernelManager::get(kernel_id)?;
+    let comm_id = kernel.comm.send_shell(CommOpen {
+        comm_id: Id::new(),
+        target_name,
+        data,
+    });
 }
 
 pub fn execute_code(
@@ -127,23 +160,6 @@ pub fn execute_code(
 
         CallbackOutput::Busy(None)
     })
-}
-
-pub fn request_shutdown(kernel_id: &Id) -> anyhow::Result<()> {
-    log::info!("Requesting shutdown of kernel {kernel_id}");
-    KernelManager::shutdown(kernel_id)
-}
-
-pub fn request_restart(kernel_id: &Id) -> anyhow::Result<Message> {
-    log::info!("Requesting restart of kernel {kernel_id}");
-    let kernel = KernelManager::get(kernel_id)?;
-    kernel.comm.request_restart()
-}
-
-pub fn provide_stdin(kernel_id: &Id, value: String) -> anyhow::Result<()> {
-    let kernel = KernelManager::get(kernel_id)?;
-    kernel.comm.send_stdin(InputReply { value })?;
-    Ok(())
 }
 
 pub fn get_completions(

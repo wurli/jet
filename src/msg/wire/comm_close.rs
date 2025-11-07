@@ -9,6 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::msg::wire::jupyter_message::Describe;
+use crate::msg::wire::message_id::Id;
 
 /// Represents a request to close a Jupyter communication channel that was
 /// previously opened with a comm_open message.
@@ -16,7 +17,7 @@ use crate::msg::wire::jupyter_message::Describe;
 /// (https://jupyter-client.readthedocs.io/en/stable/messaging.html#comm-close)
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommClose {
-    pub comm_id: String,
+    pub comm_id: Id,
 }
 
 impl Describe for CommClose {

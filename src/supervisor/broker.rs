@@ -62,6 +62,8 @@ impl Broker {
     pub fn with_config(name: String, config: BrokerConfig) -> Self {
         Self {
             name,
+            // TODO: add a dedicated sender/receiver pair for unparented messages. I think we
+            // should be able to clone the receiver as needed.
             active_requests: Arc::new(RwLock::new(HashMap::new())),
             open_comms: Arc::new(RwLock::new(HashMap::new())),
             config,
@@ -74,58 +76,61 @@ impl Broker {
 
         let parent_id = msg.parent_id().unwrap_or(&Id::unparented()).clone();
 
-        match msg {
-            Message::CommOpen(inner) => {
-                self.register_comm(&Id::from(inner.content.comm_id), inner.content.target_name);
-                return;
+        // If the message is about opening/closing comms, we should open or close as requested,
+        // _and then_ also route the message. This is because open/close messages may also include
+        // data that the user should see.
+        let comm_to_unregister = match msg {
+            Message::CommClose(ref inner) => Some(&inner.content.comm_id),
+            Message::CommOpen(ref inner) => {
+                self.register_comm(&inner.content.comm_id, inner.content.target_name.clone());
+                None
             }
-            Message::CommClose(inner) => {
-                self.unregister_comm(
-                    &Id::from(inner.content.comm_id),
-                    "received request to close from the kernel",
+            _ => None,
+        };
+
+        // For other messages, route to the channel for any corresponding request we previously
+        // made to the kernel
+        let active_requests = self.active_requests.read().unwrap();
+        if let Some(context) = active_requests.get(&parent_id) {
+            let description = msg.describe();
+            if context.channel.send(msg).is_err() {
+                log::warn!(
+                    "{}: Failed to route {} for request {}: receiver dropped",
+                    self.name,
+                    description,
+                    parent_id
                 );
-                return;
             }
-            Message::CommMsg(_) => {
-                match self.open_comms.read().unwrap().get(&parent_id) {
-                    // If there's no corresponding active request, the reply is an orphan
-                    None => log::warn!("{}: Dropping orphan comm message {:#?}", self.name, msg),
-                    // If there _is_ a corresponding active request, try routing to the corresponding
-                    // receiver
-                    Some(request) => {
-                        let description = msg.describe();
-                        if request.channel.send(msg).is_err() {
-                            log::warn!(
-                                "{}: Failed to route {} for request {}: receiver dropped",
-                                self.name,
-                                description,
-                                parent_id
-                            );
-                        }
-                    }
-                }
-                return;
-            }
-            _ => {}
+            return;
         }
 
-        match self.active_requests.read().unwrap().get(&parent_id) {
-            // If there's no corresponding active request, the reply is an orphan
-            None => log::warn!("{}: Dropping orphan message {:#?}", self.name, msg.clone()),
-            // If there _is_ a corresponding active request, try routing to the corresponding
-            // receiver
-            Some(request) => {
+        // If the message hasn't yet been routed, we can check if it's part of an open comm and
+        // route it there if so.
+        let open_comms = self.open_comms.read().unwrap();
+        if let Message::CommMsg(ref inner) = msg {
+            if let Some(context) = open_comms.get(&inner.content.comm_id) {
+                let comm_id = inner.content.comm_id.clone();
                 let description = msg.describe();
-                if request.channel.send(msg).is_err() {
+                if context.channel.send(msg).is_err() {
                     log::warn!(
-                        "{}: Failed to route {} for request {}: receiver dropped",
+                        "{}: Failed to route {} for comm {}: receiver dropped",
                         self.name,
                         description,
-                        parent_id
+                        comm_id
                     );
                 }
             }
+            return;
         }
+
+        // We action any comm close requests last of all since we don't want to drop the comm
+        // before we've shown the close message to the user
+        if let Some(comm_id) = comm_to_unregister {
+            self.unregister_comm(comm_id, "recieved comm close request from the kernel");
+        }
+
+        // Finally, drop any unrouted messages with a warning.
+        log::warn!("{}: Dropping orphan message {}", self.name, msg.describe());
     }
 
     /// Register a new request that expects messages

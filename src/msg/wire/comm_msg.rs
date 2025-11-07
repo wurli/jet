@@ -9,11 +9,12 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::msg::wire::jupyter_message::Describe;
+use crate::msg::wire::message_id::Id;
 
 /// Represents a message on a custom comm channel.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CommWireMsg {
-    pub comm_id: String,
+    pub comm_id: Id,
     pub data: serde_json::Value,
 }
 
