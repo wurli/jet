@@ -19,8 +19,8 @@ use mlua::prelude::*;
 
 use crate::{
     api_lua::{
-        execute_code, get_completions, is_complete, list_available_kernels, list_running_kernels,
-        provide_stdin, request_restart, request_shutdown, start_kernel,
+        comm_open, comm_send, execute_code, get_completions, is_complete, list_available_kernels,
+        list_running_kernels, provide_stdin, request_restart, request_shutdown, start_kernel,
     },
     shutdown_guard::ShutdownGuard,
 };
@@ -56,14 +56,16 @@ pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     // Return the Lua API
     Ok(lua_exports!(
         lua,
-        start_kernel,
-        list_running_kernels,
+        comm_open,
+        comm_send,
         execute_code,
-        is_complete,
         get_completions,
-        provide_stdin,
+        is_complete,
         list_available_kernels,
-        request_shutdown,
+        list_running_kernels,
+        provide_stdin,
         request_restart,
+        request_shutdown,
+        start_kernel,
     ))
 }

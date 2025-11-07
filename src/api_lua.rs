@@ -60,22 +60,22 @@ pub fn request_restart(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
     }
 }
 
-pub fn open_comm(
+pub fn comm_open(
     lua: &Lua,
     (kernel_id, target_name, data): (String, String, LuaValue),
 ) -> LuaResult<(String, LuaFunction)> {
     let data_json = lua.from_value::<serde_json::Value>(data).into_lua_err()?;
-    let (id, callback) = api::open_comm(kernel_id.into(), target_name, data_json).into_lua_err()?;
+    let (id, callback) = api::comm_open(kernel_id.into(), target_name, data_json).into_lua_err()?;
     let lua_callback = lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))?;
     Ok((String::from(id), lua_callback))
 }
 
-pub fn send_comm(
+pub fn comm_send(
     lua: &Lua,
     (kernel_id, comm_id, data): (String, String, LuaValue),
 ) -> LuaResult<LuaFunction> {
     let data_json = lua.from_value::<serde_json::Value>(data).into_lua_err()?;
-    let callback = api::send_comm(kernel_id.into(), comm_id.into(), data_json).into_lua_err()?;
+    let callback = api::comm_send(kernel_id.into(), comm_id.into(), data_json).into_lua_err()?;
     lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
 }
 
@@ -114,6 +114,9 @@ impl ToLua for CallbackOutput {
         match self {
             CallbackOutput::Idle => lua_idle_sentinel(lua),
             CallbackOutput::Busy(None) => lua_busy_sentinel(lua),
+            CallbackOutput::Busy(Some(Message::CommClose(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::CommMsg(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::CommOpen(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::CompleteReply(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::DisplayData(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::ExecuteError(msg))) => msg.content.to_lua(lua),

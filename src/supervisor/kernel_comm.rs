@@ -10,6 +10,8 @@ use crate::connection::shell::Shell;
 use crate::connection::stdin::Stdin;
 use crate::error::Error;
 use crate::msg::session::Session;
+use crate::msg::wire::comm_msg::CommWireMsg;
+use crate::msg::wire::comm_open::CommOpen;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::msg::wire::kernel_info_reply::KernelInfoReply;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
@@ -20,6 +22,7 @@ use crate::supervisor::broker::Broker;
 use crate::supervisor::kernel::{HeartbeatFailed, StopHeartbeat, StopIopub};
 use crate::supervisor::reply_receivers::ReplyReceivers;
 use assert_matches::assert_matches;
+use serde_json::Value;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 
@@ -72,6 +75,42 @@ impl KernelComm {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::CannotStopThread(String::from("iopub"))),
         }
+    }
+
+    pub fn comm_open(
+        &self,
+        target_name: String,
+        data: serde_json::Value,
+    ) -> (Id, Receiver<Message>) {
+        let comm_id = Id::new();
+
+        let receiver = self
+            .iopub_broker
+            .register_comm(&comm_id, target_name.clone());
+
+        let msg = self.make_jupyter_message(CommOpen {
+            comm_id: comm_id.clone(),
+            target_name,
+            data,
+        });
+
+        self.shell_channel.lock().unwrap().send(msg);
+
+        (comm_id, receiver)
+    }
+
+    pub fn comm_send(&self, comm_id: Id, data: Value) -> anyhow::Result<(Id, Receiver<Message>)> {
+        if !self.iopub_broker.is_comm_open(&comm_id) {
+            log::error!("Failed to send on closed comm {comm_id}");
+            anyhow::bail!("Comm {comm_id} is not open");
+        }
+
+        let msg = self.make_jupyter_message(CommWireMsg { comm_id, data });
+        let id = msg.header.msg_id.clone();
+        let receiver = self.iopub_broker.register_request(&msg.header.msg_id);
+        self.shell_channel.lock().unwrap().send(msg);
+
+        Ok((id, receiver))
     }
 
     pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
@@ -227,19 +266,19 @@ impl KernelComm {
     }
 
     pub fn is_request_active_shell(&self, request_id: &Id) -> bool {
-        self.shell_broker.is_active(request_id)
+        self.shell_broker.is_request_active(request_id)
     }
 
     pub fn is_request_active_stdin(&self, request_id: &Id) -> bool {
-        self.stdin_broker.is_active(request_id)
+        self.stdin_broker.is_request_active(request_id)
     }
 
     pub fn is_request_active_control(&self, request_id: &Id) -> bool {
-        self.control_broker.is_active(request_id)
+        self.control_broker.is_request_active(request_id)
     }
 
     pub fn is_request_active_iopub(&self, request_id: &Id) -> bool {
-        self.iopub_broker.is_active(request_id)
+        self.iopub_broker.is_request_active(request_id)
     }
 
     pub fn subscribe(&self) -> Result<KernelInfoReply, Error> {
