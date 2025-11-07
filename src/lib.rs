@@ -7,17 +7,23 @@
 
 pub mod api;
 pub mod api_lua;
+pub mod callback_output;
 pub mod connection;
 pub mod error;
 pub mod kernel;
 pub mod msg;
 pub mod shutdown_guard;
 pub mod supervisor;
-pub mod callback_output;
 
 use mlua::prelude::*;
 
-use crate::shutdown_guard::ShutdownGuard;
+use crate::{
+    api_lua::{
+        execute_code, get_completions, is_complete, list_available_kernels, list_running_kernels,
+        provide_stdin, request_restart, request_shutdown, start_kernel,
+    },
+    shutdown_guard::ShutdownGuard,
+};
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
@@ -39,33 +45,21 @@ pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
 
     // Return the Lua API
     let exports = lua.create_table()?;
-    exports.set("start_kernel", lua.create_function(api_lua::start_kernel)?)?;
+    exports.set("start_kernel", lua.create_function(start_kernel)?)?;
     exports.set(
         "list_running_kernels",
-        lua.create_function(api_lua::list_running_kernels)?,
+        lua.create_function(list_running_kernels)?,
     )?;
-    exports.set("execute_code", lua.create_function(api_lua::execute_code)?)?;
-    exports.set("is_complete", lua.create_function(api_lua::is_complete)?)?;
-    exports.set(
-        "get_completions",
-        lua.create_function(api_lua::get_completions)?,
-    )?;
-    exports.set(
-        "provide_stdin",
-        lua.create_function(api_lua::provide_stdin)?,
-    )?;
+    exports.set("execute_code", lua.create_function(execute_code)?)?;
+    exports.set("is_complete", lua.create_function(is_complete)?)?;
+    exports.set("get_completions", lua.create_function(get_completions)?)?;
+    exports.set("provide_stdin", lua.create_function(provide_stdin)?)?;
     exports.set(
         "list_available_kernels",
-        lua.create_function(api_lua::list_available_kernels)?,
+        lua.create_function(list_available_kernels)?,
     )?;
-    exports.set(
-        "request_shutdown",
-        lua.create_function(api_lua::request_shutdown)?,
-    )?;
-    exports.set(
-        "request_restart",
-        lua.create_function(api_lua::request_restart)?,
-    )?;
+    exports.set("request_shutdown", lua.create_function(request_shutdown)?)?;
+    exports.set("request_restart", lua.create_function(request_restart)?)?;
 
     Ok(exports)
 }
