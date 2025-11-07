@@ -50,13 +50,26 @@ M.cat_header = function(x, pad)
 end
 
 local function big_header(action, name, context)
-    name = name and ("in kernel: " .. name) or ""
+    name = name and (" in kernel: " .. name) or ""
     M.cat_header(nil, "=")
     print(action .. name)
     for k, v in pairs(context or {}) do
         print("*   " .. k .. ": " .. M.dump(v))
     end
     M.cat_header(nil, "=")
+end
+
+function M.comm_open(jet, kernel_id, target_name, data,  name)
+    big_header("Opening comm", name, {
+        target_name = target_name,
+        ["data"] = data
+    })
+
+    local id, callback = jet.comm_open(kernel_id, target_name, data)
+
+    print("Opened comm with id: " .. id)
+
+    return id, callback
 end
 
 --- Execute code in the jet kernel and print results until the execution finishes

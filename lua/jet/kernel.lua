@@ -136,6 +136,10 @@ function jet_kernel:_init_repl()
 
     vim.api.nvim_create_autocmd("WinResized", {
         callback = function()
+            if not vim.api.nvim_win_is_valid(self.repl_input_winnr) or
+                not vim.api.nvim_win_is_valid(self.repl_output_winnr) then
+                return
+            end
             if vim.api.nvim_get_current_win() == self.repl_input_winnr then
                 vim.api.nvim_win_set_config(
                     self.repl_output_winnr,
@@ -184,7 +188,7 @@ function jet_kernel:_with_output_win(fn)
     end
 end
 
----@param msg Jet.ExecuteCallback.Result
+---@param msg Jet.Callback.Execute.Result
 function jet_kernel:_handle_result(msg)
     if not msg.data then
         return
@@ -198,6 +202,8 @@ function jet_kernel:_handle_result(msg)
         self:_handle_text_output(msg.data.evalue)
     elseif msg.type == "input_request" then
         self:_handle_text_output(msg.data.prompt)
+    elseif msg.type == "display_data" then
+        self:_handle_text_output(vim.inspect(msg.data) .. "\n\n")
     end
 
     self:_scroll_to_end()
