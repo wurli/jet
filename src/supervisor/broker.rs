@@ -44,6 +44,10 @@ pub struct Broker {
     /// Active requests waiting for messages
     active_requests: Arc<RwLock<HashMap<Id, RequestContext>>>,
 
+    /// Open 'comms'
+    /// https://jupyter-client.readthedocs.io/en/latest/messaging.html#custom-messages
+    open_comms: Arc<RwLock<HashMap<Id, RequestContext>>>,
+
     /// Configuration
     pub config: BrokerConfig,
 }
@@ -59,6 +63,7 @@ impl Broker {
         Self {
             name,
             active_requests: Arc::new(RwLock::new(HashMap::new())),
+            open_comms: Arc::new(RwLock::new(HashMap::new())),
             config,
         }
     }
@@ -69,9 +74,44 @@ impl Broker {
 
         let parent_id = msg.parent_id().unwrap_or(&Id::unparented()).clone();
 
+        match msg {
+            Message::CommOpen(inner) => {
+                self.register_comm(&Id::from(inner.content.comm_id), inner.content.target_name);
+                return;
+            }
+            Message::CommClose(inner) => {
+                self.unregister_comm(
+                    &Id::from(inner.content.comm_id),
+                    "received request to close from the kernel",
+                );
+                return;
+            }
+            Message::CommMsg(_) => {
+                match self.open_comms.read().unwrap().get(&parent_id) {
+                    // If there's no corresponding active request, the reply is an orphan
+                    None => log::warn!("{}: Dropping orphan comm message {:#?}", self.name, msg),
+                    // If there _is_ a corresponding active request, try routing to the corresponding
+                    // receiver
+                    Some(request) => {
+                        let description = msg.describe();
+                        if request.channel.send(msg).is_err() {
+                            log::warn!(
+                                "{}: Failed to route {} for request {}: receiver dropped",
+                                self.name,
+                                description,
+                                parent_id
+                            );
+                        }
+                    }
+                }
+                return;
+            }
+            _ => {}
+        }
+
         match self.active_requests.read().unwrap().get(&parent_id) {
             // If there's no corresponding active request, the reply is an orphan
-            None => log::warn!("{}: Dropping orphan message {:#?}", self.name, msg),
+            None => log::warn!("{}: Dropping orphan message {:#?}", self.name, msg.clone()),
             // If there _is_ a corresponding active request, try routing to the corresponding
             // receiver
             Some(request) => {
@@ -89,10 +129,46 @@ impl Broker {
     }
 
     /// Register a new request that expects messages
+    pub fn register_comm(&self, request_id: &Id, name: String) -> Receiver<Message> {
+        log::trace!(
+            "{}: Registering new comm: {}{}",
+            self.name,
+            name,
+            request_id
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.open_comms.write().unwrap().insert(
+            request_id.clone(),
+            RequestContext {
+                started_at: Instant::now(),
+                channel: tx,
+            },
+        );
+        rx
+    }
+
+    /// Register a new request that expects messages
+    pub fn unregister_comm(&self, request_id: &Id, reason: &str) {
+        match self.open_comms.write().unwrap().remove(request_id) {
+            Some(_) => log::trace!(
+                "{}: Unregistered comm {}: {:?}",
+                self.name,
+                request_id,
+                reason
+            ),
+            None => log::warn!(
+                "{}: Attempted to unregister non-present comm {}: {:?}",
+                self.name,
+                request_id,
+                reason
+            ),
+        }
+    }
+
+    /// Register a new request that expects messages
     pub fn register_request(&self, request_id: &Id) -> Receiver<Message> {
         log::trace!("{}: Registering request: {}", self.name, request_id);
         let (tx, rx) = std::sync::mpsc::channel();
-
         self.active_requests.write().unwrap().insert(
             request_id.clone(),
             RequestContext {
@@ -100,19 +176,25 @@ impl Broker {
                 channel: tx,
             },
         );
-
         rx
     }
 
     /// Unregister a completed request
     pub fn unregister_request(&self, request_id: &Id, reason: &str) {
-        log::trace!(
-            "{}: Unregistering request {}: {:?}",
-            self.name,
-            request_id,
-            reason
-        );
-        self.active_requests.write().unwrap().remove(request_id);
+        match self.active_requests.write().unwrap().remove(request_id) {
+            Some(_) => log::trace!(
+                "{}: Unregistered request {}: {:?}",
+                self.name,
+                request_id,
+                reason
+            ),
+            None => log::warn!(
+                "{}: Attempted to unregister non-present request {}: {:?}",
+                self.name,
+                request_id,
+                reason
+            ),
+        }
     }
 
     pub fn is_active(&self, request_id: &Id) -> bool {
