@@ -202,7 +202,14 @@ impl Broker {
         }
     }
 
-    pub fn is_active(&self, request_id: &Id) -> bool {
+    pub fn is_comm_open(&self, comm_id: &Id) -> bool {
+        self.open_comms
+            .read()
+            .unwrap()
+            .contains_key(comm_id)
+    }
+
+    pub fn is_request_active(&self, request_id: &Id) -> bool {
         self.active_requests
             .read()
             .unwrap()

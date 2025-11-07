@@ -50,7 +50,7 @@ pub fn request_shutdown(_lua: &Lua, kernel_id: String) -> LuaResult<()> {
 }
 
 pub fn request_restart(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
-    let reply = api::request_restart(&Id::from(kernel_id)).into_lua_err()?;
+    let reply = api::request_restart(kernel_id.into()).into_lua_err()?;
     match reply {
         Message::ShutdownReply(msg) => lua.to_value(&msg.content),
         other => Err(LuaError::external(format!(
@@ -58,6 +58,25 @@ pub fn request_restart(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
             other.describe()
         ))),
     }
+}
+
+pub fn open_comm(
+    lua: &Lua,
+    (kernel_id, target_name, data): (String, String, LuaValue),
+) -> LuaResult<(String, LuaFunction)> {
+    let data_json = lua.from_value::<serde_json::Value>(data).into_lua_err()?;
+    let (id, callback) = api::open_comm(kernel_id.into(), target_name, data_json).into_lua_err()?;
+    let lua_callback = lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))?;
+    Ok((String::from(id), lua_callback))
+}
+
+pub fn send_comm(
+    lua: &Lua,
+    (kernel_id, comm_id, data): (String, String, LuaValue),
+) -> LuaResult<LuaFunction> {
+    let data_json = lua.from_value::<serde_json::Value>(data).into_lua_err()?;
+    let callback = api::send_comm(kernel_id.into(), comm_id.into(), data_json).into_lua_err()?;
+    lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
 }
 
 pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult<()> {
@@ -69,12 +88,12 @@ pub fn execute_code(
     lua: &Lua,
     (kernel_id, code, user_expressions): (String, String, HashMap<String, String>),
 ) -> LuaResult<LuaFunction> {
-    let callback = api::execute_code(Id::from(kernel_id), code, user_expressions).into_lua_err()?;
+    let callback = api::execute_code(kernel_id.into(), code, user_expressions).into_lua_err()?;
     lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
 }
 
 pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaFunction> {
-    let callback = api::is_complete(Id::from(kernel_id), code).into_lua_err()?;
+    let callback = api::is_complete(kernel_id.into(), code).into_lua_err()?;
     lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
 }
 
@@ -82,7 +101,7 @@ pub fn get_completions(
     lua: &Lua,
     (kernel_id, code, cursor_pos): (String, String, u32),
 ) -> LuaResult<LuaFunction> {
-    let callback = api::get_completions(Id::from(kernel_id), code, cursor_pos).into_lua_err()?;
+    let callback = api::get_completions(kernel_id.into(), code, cursor_pos).into_lua_err()?;
     lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
 }
 
