@@ -27,6 +27,16 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
+macro_rules! make_exports {
+    ($lua:expr, $($func:ident),* $(,)?) => {{
+        let exports = $lua.create_table()?;
+        $(
+            exports.set(stringify!($func), $lua.create_function($func)?)?;
+        )*
+        exports
+    }};
+}
+
 #[mlua::lua_module(skip_memory_check)]
 pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     // Initialise the logger
@@ -44,22 +54,16 @@ pub fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     lua.set_app_data(ShutdownGuard {});
 
     // Return the Lua API
-    let exports = lua.create_table()?;
-    exports.set("start_kernel", lua.create_function(start_kernel)?)?;
-    exports.set(
-        "list_running_kernels",
-        lua.create_function(list_running_kernels)?,
-    )?;
-    exports.set("execute_code", lua.create_function(execute_code)?)?;
-    exports.set("is_complete", lua.create_function(is_complete)?)?;
-    exports.set("get_completions", lua.create_function(get_completions)?)?;
-    exports.set("provide_stdin", lua.create_function(provide_stdin)?)?;
-    exports.set(
-        "list_available_kernels",
-        lua.create_function(list_available_kernels)?,
-    )?;
-    exports.set("request_shutdown", lua.create_function(request_shutdown)?)?;
-    exports.set("request_restart", lua.create_function(request_restart)?)?;
-
-    Ok(exports)
+    Ok(make_exports!(
+        lua,
+        start_kernel,
+        list_running_kernels,
+        execute_code,
+        is_complete,
+        get_completions,
+        provide_stdin,
+        list_available_kernels,
+        request_shutdown,
+        request_restart,
+    ))
 }
