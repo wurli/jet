@@ -195,7 +195,7 @@ pub fn execute_code(
                 | Message::DisplayData(_) => {
                     return CallbackOutput::Busy(Some(reply));
                 }
-                Message::ExecuteInput(msg) => {
+                Message::ExecuteInput(ref msg) => {
                     if msg.content.code != code {
                         log::warn!(
                             "Received {} with unexpected code: {}",
@@ -203,6 +203,7 @@ pub fn execute_code(
                             msg.content.code
                         );
                     };
+                    return CallbackOutput::Busy(Some(reply));
                 }
                 _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }

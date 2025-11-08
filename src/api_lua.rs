@@ -120,6 +120,7 @@ impl ToLua for CallbackOutput {
             CallbackOutput::Busy(Some(Message::CompleteReply(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::DisplayData(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::ExecuteError(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::ExecuteInput(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::ExecuteResult(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::InputRequest(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::IsCompleteReply(msg))) => msg.content.to_lua(lua),
