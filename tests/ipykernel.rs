@@ -50,7 +50,13 @@ fn execute(code: &str) -> impl Fn() -> CallbackOutput {
 }
 
 fn execute_in(id: Id, code: &str) -> impl Fn() -> CallbackOutput {
-    api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code")
+    let callback =
+        api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code");
+    // We should always get an ExecuteInput message first
+    assert_matches!(await_result(&callback), Some(Message::ExecuteInput(msg)) => {
+        assert_eq!(msg.content.code, code)
+    });
+    callback
 }
 
 fn await_result(callback: &impl Fn() -> CallbackOutput) -> Option<Message> {
