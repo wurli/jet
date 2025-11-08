@@ -2,10 +2,12 @@ Jet = require("jet.rust")
 Kernel = require("jet.kernel")
 Ark = Kernel.new("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 
--- -- Ark:execute("hist(rnorm(100))")
--- Ark:execute({ "options(cli.num_colors = 256)" })
--- Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
--- Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
+
+-- Ark:execute("hist(rnorm(100))")
+Ark:execute({ "options(cli.num_colors = 256)" })
+Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
+Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
+
 
 local _comm_id, callback = Jet.comm_open(Ark.id, "lsp", { ip_address = "127.0.0.1" })
 local function check_callback()

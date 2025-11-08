@@ -10,11 +10,13 @@ local M = {}
 ---| "handle" Pass the result to `handler()`
 ---| "retry" Continue polling after `interval` milliseconds
 ---@field handler fun(result: any): any
+---@field on_exit? fun(): any
 
 ---@param callback fun(): any
 ---@param opts Jet.Utils.Listen.Options
 M.listen = function(callback, opts)
     local handler = opts.handler or function() end
+    local on_exit = opts.on_exit or function() end
 
     local function loop()
         while true do
@@ -22,6 +24,7 @@ M.listen = function(callback, opts)
             local action = opts.action(result)
 
             if action == "exit" then
+                on_exit()
                 return
             elseif action == "retry" then
                 return vim.defer_fn(loop, opts.interval or 50)
