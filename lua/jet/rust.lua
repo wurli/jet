@@ -59,6 +59,10 @@ end
 ---@field evalue string
 ---@field traceback string[]
 
+---@class Jet.Msg.ExecuteInput
+---@field code string
+---@field execution_count number
+
 ---@class Jet.Msg.ExecuteResult
 ---@field data table<string, any>
 ---@field execution_count number
@@ -83,6 +87,7 @@ end
 ---@alias Jet.MsgGroup.Execute
 ---| Jet.Msg.DisplayData
 ---| Jet.Msg.ExecuteError
+---| Jet.Msg.ExecuteInput
 ---| Jet.Msg.ExecuteResult
 ---| Jet.Msg.InputRequest
 ---| Jet.Msg.Stream
@@ -90,6 +95,7 @@ end
 ---@alias Jet.MsgType.Execute
 ---| "display_data"
 ---| "error"
+---| "execute_input"
 ---| "execute_result"
 ---| "input_request"
 ---| "stream"
@@ -107,6 +113,10 @@ end
 ---@alias Jet.ExecutionStatus
 ---| "busy"
 ---| "idle"
+
+---@alias Jet.MsgType.IsCompleteReply
+---| "is_complete_reply"
+
 
 ------ Kernel information -----------------------------------------------------
 -- When a kernel starts up, Jet stores the following information about it.
@@ -149,7 +159,7 @@ end
 ---@field comm_send fun(kernel_id: string, comm_id: Jet.Comm.Id, data: table): Jet.Callback.Comm
 ---@field execute_code fun(kernel_id: Jet.Kernel.Id, code: string, user_expression: table?): Jet.Callback.Execute
 ---@field get_completions fun(kernel_id: Jet.Kernel.Id, code: string): Jet.Msg.CompleteReply
----@field is_complete fun(kernel_id: Jet.Kernel.Id, code: string): Jet.Msg.IsCompleteReply
+---@field is_complete fun(kernel_id: Jet.Kernel.Id, code: string): Jet.Callback.IsComplete
 ---@field list_available_kernels fun(): table<Jet.Kernel.Spec.Path, Jet.Kernel.Spec>
 ---@field list_running_kernels fun(): table<Jet.Kernel.Id, Jet.Kernel.Info>
 ---@field provide_stdin fun(kernel_id: Jet.Kernel.Id, value: string): nil
@@ -162,6 +172,8 @@ end
 ---@alias Jet.Callback.Comm.Result { status: Jet.ExecutionStatus, type: Jet.MsgType.Comm?, data: Jet.MsgGroup.Comm? }
 ---@alias Jet.Callback.Execute fun(): Jet.Callback.Execute.Result
 ---@alias Jet.Callback.Execute.Result { status: Jet.ExecutionStatus, type: Jet.MsgType.Execute?, data: Jet.MsgGroup.Execute? }
+---@alias Jet.Callback.IsComplete fun(): Jet.Callback.IsComplete.Result
+---@alias Jet.Callback.IsComplete.Result { status: Jet.ExecutionStatus, type: Jet.MsgType.IsCompleteReply?, data: Jet.Msg.IsCompleteReply? }
 ---@alias Jet.Kernel.Id string
 ---@alias Jet.Kernel.Spec.Path string
 

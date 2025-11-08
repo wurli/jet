@@ -2,13 +2,12 @@ Jet = require("jet.rust")
 Kernel = require("jet.kernel")
 Ark = Kernel.new("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 
--- Ark:execute("hist(rnorm(100))")
--- Ark:execute("options(cli.num_colors = 256)")
--- Ark:execute("dplyr::tibble(x = 1:5, y = rnorm(5))")
--- Ark:execute("for (i in 1:3) {Sys.sleep(0.5); print(i)}")
+-- -- Ark:execute("hist(rnorm(100))")
+-- Ark:execute({ "options(cli.num_colors = 256)" })
+-- Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
+-- Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
 
 local _comm_id, callback = Jet.comm_open(Ark.id, "lsp", { ip_address = "127.0.0.1" })
-
 local function check_callback()
     -- Continuously check for results until we fail to receive a result
     while true do
@@ -22,24 +21,50 @@ local function check_callback()
         if not result.data then
             return vim.defer_fn(check_callback, 100)
         end
-
         local port = result.data.data.params.port
-
         print(("'Connecting to LSP on port %s'"):format(port))
-
-
         vim.lsp.config.ark = {
             cmd = vim.lsp.rpc.connect("127.0.0.1", port),
             root_markers = { ".git", ".Rprofile", ".Rproj", "DESCRIPTION" },
-            filetypes = { "r", "R" }
+            filetypes = { "r", "R" },
         }
-
         vim.lsp.enable("ark")
     end
 end
-
 check_callback()
 
+Ark:execute({ "my_df <- dplyr::tibble(x = 1:5, y = rnorm(5))" })
+
+VariablesId, VariablesCb = Jet.comm_open(Ark.id, "positron.variables", {})
+
+os.execute("sleep 0.5")
+
+VariablesReqCb = Jet.comm_send(Ark.id, VariablesId, {
+    method = "show_help_topic",
+    params = {
+        topic = "mean"
+    }
+})
+
+os.execute("sleep 0.5")
+
+for _ = 1, 5 do
+    local result = VariablesReqCb()
+    print(vim.inspect(result))
+    if result.status == "idle" then
+        break
+    end
+    os.execute("sleep 0.5")
+end
 
 
--- vim.lsp.buf_attach_client(0, vim.lsp.get_clients({ name = "ark" })[1].id)
+for _ = 1, 5 do
+    local result = VariablesCb()
+    print(vim.inspect(result))
+    if result.status == "idle" then
+        break
+    end
+    os.execute("sleep 0.5")
+end
+
+
