@@ -1,6 +1,7 @@
-Jet = require("jet.rust")
-Kernel = require("jet.kernel")
-Ark = Kernel.new("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
+Jet = require("jet.core.rust")
+Kernel = require("jet.core.kernel")
+-- Ipy = Kernel.new("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
+Ark = Kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 
 
 -- Ark:execute("hist(rnorm(100))")

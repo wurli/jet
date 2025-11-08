@@ -4,8 +4,8 @@ local function get_lib_extension()
     return '.so'
 end
 
--- local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../target/release/')
-local base_path = debug.getinfo(1).source:match('@?(.*/)') .. '../../target/release/'
+-- local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/')
+local base_path = debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/'
 local lib_name = 'jet'
 local lib_extension = get_lib_extension()
 
