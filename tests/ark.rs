@@ -50,7 +50,13 @@ fn execute(code: &str) -> impl Fn() -> CallbackOutput {
 }
 
 fn execute_in(id: Id, code: &str) -> impl Fn() -> CallbackOutput {
-    api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code")
+    let callback =
+        api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code");
+    // We should always get an ExecuteInput message first
+    assert_matches!(await_result(&callback), Some(Message::ExecuteInput(msg)) => {
+        assert_eq!(msg.content.code, code)
+    });
+    callback
 }
 
 fn await_result(callback: &impl Fn() -> CallbackOutput) -> Option<Message> {
@@ -66,31 +72,19 @@ fn await_result(callback: &impl Fn() -> CallbackOutput) -> Option<Message> {
 #[test]
 fn test_ark_can_run_simple_code() {
     let callback = execute("1 + 1");
-
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    // Initial callback should give the execute result
-    assert_matches!(res, Message::ExecuteResult(msg) => {
+    assert_matches!(await_result(&callback), Some(Message::ExecuteResult(msg)) => {
         assert_eq!(msg.content.data["text/plain"], "[1] 2")
     });
-
-    // The following callback should give None
     assert_matches!(await_result(&callback), None);
 }
 
 #[test]
 fn test_ark_persists_environment() {
     let callback = execute("x <- 1");
-
-    // The callback shouldn't have an output
     assert_matches!(await_result(&callback), None);
 
     let callback = execute("x");
-
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    // Initial callback should give the execute result
-    assert_matches!(res, Message::ExecuteResult(msg) => {
+    assert_matches!(await_result(&callback), Some(Message::ExecuteResult(msg)) => {
         assert_eq!(msg.content.data["text/plain"], "[1] 1")
     });
 }
@@ -98,32 +92,21 @@ fn test_ark_persists_environment() {
 #[test]
 fn test_ark_returns_stdout() {
     let callback = execute("cat('Hi!')");
-
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    assert_matches!(res, Message::Stream(msg) => {
+    assert_matches!(await_result(&callback), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "Hi!")
     });
-
-    // The following callback should give None
     assert_matches!(await_result(&callback), None);
 }
 
 #[test]
 fn test_ark_handles_stdin() {
     let callback = execute("readline('Enter something:')");
-
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    assert_matches!(res, Message::InputRequest(msg) => {
+    assert_matches!(await_result(&callback), Some(Message::InputRequest(msg)) => {
         assert_eq!(msg.content.prompt, "Enter something:")
     });
 
     api::provide_stdin(&ark_id(), String::from("Hello tests!")).expect("Could not provide stdin");
-
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    assert_matches!(res, Message::ExecuteResult(msg) => {
+    assert_matches!(await_result(&callback), Some(Message::ExecuteResult(msg)) => {
         assert_matches!(msg.content.data["text/plain"], Value::String(ref string) => {
             assert_eq!(string, "[1] \"Hello tests!\"")
         })
@@ -142,26 +125,20 @@ fn test_ark_streams_results() {
     // Here we just print "a" then "b" at 0.5s intervals
     let callback = execute_in(start_ark(), "cat('a')\nSys.sleep(0.5)\ncat('b')");
 
-    // Receive the first result
-    let res = await_result(&callback).expect("Callback returned `None`");
-
     // We only set the timer afer we receive the first result. This is because tests may be
     // run in parallel, meaning the kernel may be busy executing other stuff when we first send the
     // execute request. Once we get the first 'a' through, we should expect the 'b' to come through
     // within 0.5s.
-    let execute_time = Instant::now();
-
-    assert_matches!(res, Message::Stream(msg) => {
+    assert_matches!(await_result(&callback), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "a")
     });
+    let execute_time = Instant::now();
 
     // Receive the second result
-    let res = await_result(&callback).expect("Callback returned `None`");
-    let elapsed = execute_time.elapsed();
-
-    assert_matches!(res, Message::Stream(msg) => {
+    assert_matches!(await_result(&callback), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "b")
     });
+    let elapsed = execute_time.elapsed();
 
     assert!(
         Duration::from_millis(400) < elapsed,
@@ -177,7 +154,6 @@ fn test_ark_streams_results() {
     // The following callback should give None
     assert_matches!(await_result(&callback), None);
 }
-
 fn is_complete(code: &str) -> impl Fn() -> CallbackOutput {
     api::is_complete(ark_id(), String::from(code)).expect("Could not send is_complete request")
 }
