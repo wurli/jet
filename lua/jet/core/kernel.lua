@@ -44,7 +44,8 @@ local spin = require("jet.core.spinners")
 ---The augroup for autocommands
 ---@field _augroup number
 ---
----@field indent { input: string, continue: string }
+---@field prompt { input: string, continue: string }
+---@field prompt_template { input: string, continue: string }
 ---
 ---@field last_win number
 ---@field last_normal_win number
@@ -68,9 +69,13 @@ setmetatable(kernel, {
 function kernel.start(spec_path)
     local self = setmetatable({}, kernel)
     self.history = {}
-    self.indent = vim.tbl_deep_extend("keep", self.indent or {}, {
-        input = "> ",
-        continue = "+   ",
+    self.prompt = vim.tbl_deep_extend("keep", self.prompt or {}, {
+        input = ">",
+        continue = "+",
+    })
+    self.prompt_template = vim.tbl_deep_extend("keep", self.prompt_template or {}, {
+        input = "%s ",
+        continue = "%s ",
     })
     self.id, self.instance = engine.start_kernel(spec_path)
     self._ns = vim.api.nvim_create_namespace("jet_repl_" .. self.id)
@@ -195,20 +200,17 @@ function kernel:ui_hide()
 end
 
 function kernel:_init_repl()
-    ---------------------------------------------------------------------------
+    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     -- Create REPL buffers (if they don't already exist)
-    ---------------------------------------------------------------------------
+    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     for _, jet_ui in ipairs({ "background", "input", "output" }) do
         local buf_name = "repl_" .. jet_ui .. "_bufnr"
         if self[buf_name] and vim.api.nvim_buf_is_valid(self[buf_name]) then
             utils.log_warn("REPL %s buffer already exists with bufnr %s", buf_name, self[buf_name])
         else
-            -- NOTE:
-            -- Setting scratch=true or buftype=nofile stops LSP auto-attach,
-            -- e.g. using vim.lsp.enable(). need an alternative.
-            local buf = vim.api.nvim_create_buf(false, false)
+            local buf = vim.api.nvim_create_buf(false, true)
             self[buf_name] = buf
-            -- vim.bo[buf].buftype = "nofile"
+            vim.bo[buf].buftype = "nofile"
             vim.b[buf].jet = {
                 type = "repl_" .. jet_ui,
                 id = self.id,
@@ -224,11 +226,11 @@ function kernel:_init_repl()
         self.repl_channel = vim.api.nvim_open_term(self.repl_output_bufnr, {})
     end
 
-    self:_indent_reset()
+    self:_prompt_reset()
 
-    ---------------------------------------------------------------------------
+    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     --- Set keymaps
-    ---------------------------------------------------------------------------
+    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     vim.keymap.set(
         { "n", "i" }, "<CR>",
         function() self:_try_send_input() end,
@@ -246,16 +248,43 @@ function kernel:_init_repl()
     end
 
     vim.keymap.set({ "n", "i" }, "<c-p>", function()
-        self:_prompt_set(self:_history_get(-1))
+        self:_input_set(self:_history_get(-1))
     end, { buffer = self.repl_input_bufnr })
 
     vim.keymap.set({ "n", "i" }, "<c-n>", function()
-        self:_prompt_set(self:_history_get(1))
+        self:_input_set(self:_history_get(1))
     end, { buffer = self.repl_input_bufnr })
 
-    ---------------------------------------------------------------------------
+    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     --- Set autocommands
-    ---------------------------------------------------------------------------
+    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    --- Attach LSP to the REPL input buffer
+    --- (TODO: give the user the ability to disable this)
+    vim.api.nvim_create_autocmd("BufEnter", {
+        group = self._augroup,
+        buffer = self.repl_input_bufnr,
+        callback = function()
+            for _, cfg in pairs(vim.lsp._enabled_configs) do
+                if cfg.resolved_config then
+                    local ft = cfg.resolved_config.filetypes
+                    if ft and vim.tbl_contains(ft, self.filetype) or (not ft) then
+                        vim.lsp.start(cfg.resolved_config, {
+                            bufnr = self.repl_input_bufnr
+                        })
+                    end
+                end
+            end
+        end
+    })
+
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+        group = self._augroup,
+        buffer = self.repl_input_bufnr,
+        callback = function()
+            self:_prompt_reset()
+        end
+    })
+
     --- We do have guards in place to stop us ever entering insert in the
     --- background/output buffers, but just in case...
     for _, buf in ipairs({ self.repl_background_bufnr, self.repl_output_bufnr }) do
@@ -355,6 +384,7 @@ function kernel:_set_layout()
         height = math.max(bg_height - input_height - 2, 1)
     })
 
+    self:_prompt_reset()
     self:_title_set()
 end
 
@@ -376,9 +406,16 @@ function kernel:_try_send_input()
         handler = function(res)
             if res.data.status == "incomplete" then
                 if res.data.indent then
-                    self.indent.continue = res.data.indent .. "   "
+                    self.prompt.continue = vim.trim(res.data.indent)
                 end
-                self:_input_continue()
+                -- In rare cases that the kernel has taken a while to respond
+                -- and the user has moved to a different buffer, don't send
+                -- the new line
+                if vim.fn.bufnr() == self.repl_input_bufnr then
+                    -- We use regular old feedkeys here since we want to
+                    -- trigger any other normal stuff, e.g. the indenexpr()
+                    vim.api.nvim_feedkeys("\r", "n", false)
+                end
             else
                 self:_input_send()
             end
@@ -389,18 +426,10 @@ end
 
 function kernel:_input_send()
     local code = vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false)
-    self:_indent_reset()
+    self:_prompt_reset()
     vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, {})
     self:execute(code)
     vim.api.nvim_win_set_config(self.repl_input_winnr, { height = 1 })
-end
-
-function kernel:_input_continue(indent)
-    local last_line = vim.fn.line("$") + 1
-    vim.api.nvim_buf_set_lines(self.repl_input_bufnr, -1, -1, true, { "" })
-    self:_indent_set((indent or "+   "), last_line - 1)
-    vim.api.nvim_buf_call(self.repl_input_bufnr, function() vim.fn.cursor(last_line, 0) end)
-    vim.api.nvim_win_set_config(self.repl_input_winnr, { height = last_line })
 end
 
 ---@param fn fun(bufnr: number?)
@@ -438,7 +467,7 @@ function kernel:_handle_result(msg)
     end
 
     if msg.type == "execute_input" then
-        local code = self.indent.input .. msg.data.code:gsub("\n", "\n" .. self.indent.continue)
+        local code = self:_prompt_get_input() .. msg.data.code:gsub("\n", "\n" .. self:_prompt_get_continue())
         self:_display_repl_text(code .. "\n")
     elseif msg.type == "execute_result" then
         self:_display_repl_text(msg.data.data["text/plain"])
@@ -458,39 +487,55 @@ function kernel:_handle_result(msg)
     self:_scroll_to_end()
 end
 
-function kernel:_indent_reset()
-    self:_indent_clear(0, -1)
-    self:_indent_set(self.indent.input, 0)
+function kernel:_prompt_reset()
+    if self.repl_input_winnr then
+        local n_lines = #vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false)
+        vim.api.nvim_win_set_config(self.repl_input_winnr, { height = n_lines })
+    end
+    self:_prompt_clear(0, -1)
+    for i = 1, vim.fn.line("$", self.repl_input_winnr) do
+        self:_prompt_set(i - 1)
+    end
 end
 
 ---@param line_start number
 ---@param line_end number
-function kernel:_indent_clear(line_start, line_end)
+function kernel:_prompt_clear(line_start, line_end)
     self:_with_input_buf(function(input_buf)
         vim.api.nvim_buf_clear_namespace(input_buf, self._ns, line_start, line_end)
     end)
 end
 
----@param indent string
----@param lnum number
-function kernel:_indent_set(indent, lnum)
+---@param lnum number 0-indexed
+---@param text? string Defaults to the kernel prompt for `lnum`
+function kernel:_prompt_set(lnum, text)
+    text = text or (lnum == 0 and self:_prompt_get_input() or self:_prompt_get_continue())
+
     self:_with_input_buf(function(input_buf)
         vim.api.nvim_buf_set_extmark(input_buf, self._ns, lnum, 0, {
             -- TODO: add Jet highlight groups
-            virt_text = { { indent, "FloatTitle" } },
+            virt_text = { { text, "FloatTitle" } },
             virt_text_pos = "inline",
             right_gravity = false,
         })
     end)
 end
 
----@param prompt string[]
-function kernel:_prompt_set(prompt)
-    if not prompt then
+function kernel:_prompt_get_input()
+    return (self.prompt_template.input or "%s "):format(self.prompt.input or ">")
+end
+
+function kernel:_prompt_get_continue()
+    return (self.prompt_template.continue or "%s   "):format(self.prompt.continue or "+")
+end
+
+---@param text string[]
+function kernel:_input_set(text)
+    if not text then
         return
     end
-    vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, prompt)
-    self:_indent_reset()
+    vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, text)
+    self:_prompt_reset()
 end
 
 ---@param increment number
