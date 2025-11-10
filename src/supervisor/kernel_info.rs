@@ -5,12 +5,12 @@
  *
  */
 
-use std::path::PathBuf;
+use std::{path::PathBuf};
 
 use crate::msg::wire::language_info::LanguageInfo;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct KernelInfo {
     /// The path to the kernel's spec file
     pub spec_path: PathBuf,
@@ -20,4 +20,9 @@ pub struct KernelInfo {
     pub banner: String,
     /// The language info given by the kernel's `KernelInfoReply`
     pub language: LanguageInfo,
+    /// The time the kernel was started in seconds since the UNIX epoch We don't use an Instant
+    /// because they're not supported by Serde, and we don't use a SystemTime because they
+    /// (currently) don't play nicely with mlua.
+    pub start_time: u64,
 }
+

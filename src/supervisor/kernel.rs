@@ -12,7 +12,7 @@ use std::process;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::{sleep, spawn};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::connection::connection::JupyterChannels;
 use crate::connection::heartbeat::Heartbeat;
@@ -89,6 +89,9 @@ impl Kernel {
                 display_name: spec.display_name,
                 banner: kernel_info_reply.banner,
                 language: kernel_info_reply.language_info,
+                start_time: SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)?
+                    .as_secs() as u64,
             },
         })
     }
