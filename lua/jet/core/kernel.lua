@@ -18,7 +18,7 @@ local spin = require("jet.core.spinners")
 ---@field history_index number
 ---
 ---Information about the kernel
----@field info Jet.Kernel.Info
+---@field instance Jet.Kernel.Instance
 ---
 ---The REPL input buffer number
 ---@field repl_input_bufnr number
@@ -55,6 +55,8 @@ local spin = require("jet.core.spinners")
 local kernel = {}
 kernel.__index = kernel
 
+vim.print(package.path)
+
 setmetatable(kernel, {
     ---@return Jet.Kernel
     __call = function(self, ...)
@@ -67,17 +69,16 @@ function kernel.start(spec_path)
     local self = setmetatable({}, kernel)
     self.history = {}
     self.indent = vim.tbl_deep_extend("keep", self.indent or {}, {
-        input = ">",
-        continue = "+",
+        input = "> ",
+        continue = "+   ",
     })
-    self.id, self.info = engine.start_kernel(spec_path)
+    self.id, self.instance = engine.start_kernel(spec_path)
     self._ns = vim.api.nvim_create_namespace("jet_repl_" .. self.id)
     self._augroup = vim.api.nvim_create_augroup("jet_repl_" .. self.id, {})
     self:_init_repl()
-    self:ui_show()
-    self:_title_set()
     self:_set_filetype()
-    self:_display_repl_text(self.info.banner)
+    self:ui_show()
+    self:_display_repl_text(self.instance.banner)
 
     vim.api.nvim_create_autocmd("WinLeave", {
         group = self._augroup,
@@ -202,9 +203,12 @@ function kernel:_init_repl()
         if self[buf_name] and vim.api.nvim_buf_is_valid(self[buf_name]) then
             utils.log_warn("REPL %s buffer already exists with bufnr %s", buf_name, self[buf_name])
         else
-            local buf = vim.api.nvim_create_buf(false, true)
+            -- NOTE:
+            -- Setting scratch=true or buftype=nofile stops LSP auto-attach,
+            -- e.g. using vim.lsp.enable(). need an alternative.
+            local buf = vim.api.nvim_create_buf(false, false)
             self[buf_name] = buf
-            vim.bo[buf].buftype = "nofile"
+            -- vim.bo[buf].buftype = "nofile"
             vim.b[buf].jet = {
                 type = "repl_" .. jet_ui,
                 id = self.id,
@@ -350,6 +354,8 @@ function kernel:_set_layout()
         -- bottom border should overlap with the input's top border)
         height = math.max(bg_height - input_height - 2, 1)
     })
+
+    self:_title_set()
 end
 
 function kernel:_try_send_input()
@@ -369,7 +375,10 @@ function kernel:_try_send_input()
         ---@param res Jet.Callback.IsComplete.Result
         handler = function(res)
             if res.data.status == "incomplete" then
-                self:_input_continue(res.data.indent)
+                if res.data.indent then
+                    self.indent.continue = res.data.indent .. "   "
+                end
+                self:_input_continue()
             else
                 self:_input_send()
             end
@@ -389,7 +398,7 @@ end
 function kernel:_input_continue(indent)
     local last_line = vim.fn.line("$") + 1
     vim.api.nvim_buf_set_lines(self.repl_input_bufnr, -1, -1, true, { "" })
-    self:_indent_set((indent or "+") .. "  ", last_line - 1)
+    self:_indent_set((indent or "+   "), last_line - 1)
     vim.api.nvim_buf_call(self.repl_input_bufnr, function() vim.fn.cursor(last_line, 0) end)
     vim.api.nvim_win_set_config(self.repl_input_winnr, { height = last_line })
 end
@@ -429,13 +438,15 @@ function kernel:_handle_result(msg)
     end
 
     if msg.type == "execute_input" then
-        self:_display_repl_text(msg.data.code .. "\n")
+        local code = self.indent.input .. msg.data.code:gsub("\n", "\n" .. self.indent.continue)
+        self:_display_repl_text(code .. "\n")
     elseif msg.type == "execute_result" then
         self:_display_repl_text(msg.data.data["text/plain"])
     elseif msg.type == "stream" then
         self:_display_repl_text(msg.data.text)
     elseif msg.type == "error" then
         self:_display_repl_text(msg.data.evalue)
+        self:_display_repl_text("\n" .. table.concat(msg.data.traceback, "\n"))
     elseif msg.type == "input_request" then
         self:_display_repl_text(msg.data.prompt)
     elseif msg.type == "display_data" then
@@ -466,7 +477,7 @@ function kernel:_indent_set(indent, lnum)
     self:_with_input_buf(function(input_buf)
         vim.api.nvim_buf_set_extmark(input_buf, self._ns, lnum, 0, {
             -- TODO: add Jet highlight groups
-            virt_text = { { indent .. " ", "FloatTitle" } },
+            virt_text = { { indent, "FloatTitle" } },
             virt_text_pos = "inline",
             right_gravity = false,
         })
@@ -505,8 +516,8 @@ end
 
 ---@param title string?
 function kernel:_title_set(title)
-    title = title or (self.info and self.info.display_name)
-    title = title or (self.info.language and self.info.language.name)
+    title = title or (self.instance and self.instance.display_name)
+    title = title or (self.instance.language and self.instance.language.name)
 
     if title then
         vim.api.nvim_win_set_config(self.repl_output_winnr, {
@@ -525,9 +536,9 @@ function kernel:_subtitle_set(info)
 end
 
 function kernel:_set_filetype()
-    self.filetype = utils.ext_to_filetype(self.info.language.file_extension)
-        or self.info.language.name
-        or self.info.language.file_extension
+    self.filetype = utils.ext_to_filetype(self.instance.language.file_extension)
+        or self.instance.language.name
+        or self.instance.language.file_extension
     vim.bo[self.repl_input_bufnr].filetype = self.filetype
 end
 

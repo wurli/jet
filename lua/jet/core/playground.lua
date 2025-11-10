@@ -1,11 +1,36 @@
 Jet = require("jet.core.rust")
+Manager = require("jet.core.manager")
 Kernel = require("jet.core.kernel")
--- Ipy = Kernel.new("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
-Ark = Kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
+Ark = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
+Jet.execute_code(Ark.id, "options(cli.num_colors = 256)", {})
+Ipy = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
 
+require("jet.core.ui.float"):show()
 
--- Ark:execute("hist(rnorm(100))")
-Ark:execute({ "options(cli.num_colors = 256)" })
+vim.ui.select(
+    Manager:list_kernels({ language = "python" }),
+    {
+        ---@param item Jet.Manager.Kernel
+        format_item = function(item)
+            local out = item.spec.display_name
+            if #item.instances > 0 then
+                local s = #item.instances == 1 and "" or "s"
+                out = out .. (" (%d running instance%s)"):format(#item.instances, s)
+            end
+            return out
+        end
+    },
+    function(choice)
+        vim.print(choice)
+    end
+)
+
+Ark:ui_hide()
+Ark:ui_show()
+Ipy:ui_hide()
+Ipy:ui_show()
+
+Ark:execute({ "jkhist(rnorm(100))" })
 Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
 Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
 
@@ -69,5 +94,3 @@ for _ = 1, 5 do
     end
     os.execute("sleep 0.5")
 end
-
-

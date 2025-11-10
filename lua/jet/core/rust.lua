@@ -30,6 +30,7 @@ end
 -- providing the raw jupyter messages should make Jet more extensible. The
 -- following are the message types that Jet currently uses.
 -------------------------------------------------------------------------------
+
 ---@class Jet.Msg.CommClose
 ---@field comm_id Jet.Comm.Id
 
@@ -84,6 +85,7 @@ end
 -- Not all functions return all message types; they are grouped here for
 -- clarity.
 -------------------------------------------------------------------------------
+
 ---@alias Jet.MsgGroup.Execute
 ---| Jet.Msg.DisplayData
 ---| Jet.Msg.ExecuteError
@@ -121,9 +123,11 @@ end
 ------ Kernel information -----------------------------------------------------
 -- When a kernel starts up, Jet stores the following information about it.
 -------------------------------------------------------------------------------
----@class Jet.Kernel.Info
+
+---@class Jet.Kernel.Instance
 ---@field spec_path string
 ---@field display_name string
+---@field start_time string
 ---@field banner string
 ---@field language Jet.Kernel.LanguageInfo
 
@@ -141,6 +145,7 @@ end
 -- Kernels make thesmelves available through JSON spec files. Jet detects and
 -- parses these into this format.
 -------------------------------------------------------------------------------
+
 ---@class Jet.Kernel.Spec
 ---@field argv string[]
 ---@field display_name string
@@ -154,6 +159,7 @@ end
 -- The Jet engine (rust) exposes the following functions to interact with
 -- Jupyter kernels.
 -------------------------------------------------------------------------------
+
 ---@class Jet.Engine
 ---@field comm_open fun(kernel_id: string, target_name: string, data: table): (Jet.Comm.Id, Jet.Callback.Comm)
 ---@field comm_send fun(kernel_id: string, comm_id: Jet.Comm.Id, data: table): Jet.Callback.Comm
@@ -161,11 +167,11 @@ end
 ---@field get_completions fun(kernel_id: Jet.Kernel.Id, code: string): Jet.Msg.CompleteReply
 ---@field is_complete fun(kernel_id: Jet.Kernel.Id, code: string): Jet.Callback.IsComplete
 ---@field list_available_kernels fun(): table<Jet.Kernel.Spec.Path, Jet.Kernel.Spec>
----@field list_running_kernels fun(): table<Jet.Kernel.Id, Jet.Kernel.Info>
+---@field list_running_kernels fun(): table<Jet.Kernel.Id, Jet.Kernel.Instance>
 ---@field provide_stdin fun(kernel_id: Jet.Kernel.Id, value: string): nil
 ---@field request_restart fun(kernel_id: Jet.Kernel.Id): table?
 ---@field request_shutdown fun(kernel_id: Jet.Kernel.Id): nil
----@field start_kernel fun(spec_path: string): (Jet.Kernel.Id, Jet.Kernel.Info)
+---@field start_kernel fun(spec_path: string): (Jet.Kernel.Id, Jet.Kernel.Instance)
 
 ---@alias Jet.Comm.Id string
 ---@alias Jet.Callback.Comm fun(): Jet.Callback.Comm.Result
