@@ -118,41 +118,42 @@ end
 -- <q>: quit
 -- <tab>: expand section
 --
--- ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
--- │                                          Jet: Jupyter Kernels                                            │
--- │               <enter> Open   <x> Stop   <n> New instance   <tab> Expand   <q> Quit                       │
--- │                                                                                                          │
--- │  Active Kernels                                                                                          │
--- │                                                                                                          │
--- │    ● Ark R Kernel   /Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark                                      │
--- │       󰆍  REPL  <1h31m>                                                                                  │
--- │        - Last command                                                                                    │
--- │          my_table |>                                                                                     │
--- │            mutate(my_col = my_other_col * 2)                                                             │
--- │                                                                                                          │
--- │        - Startup command                                                                                 │
--- │          /Users/JACOB.SCOTT1/Repos/ark/target/debug/ark \                                                │
--- │            --connection_file \                                                                           │
--- │            some_connection_file.json \                                                                   │
--- │            --sesion-mode \                                                                               │
--- │            notebook \                                                                                    │
--- │            --log                                                                                         │
--- │            ark.log                                                                                       │
--- │                                                                                                          │
--- │        - Environment                                                                                     │
--- │          - RUST_LOG=trace                                                                                │
--- │                                                                                                          │
--- │       󰈙  docs/test.qmd <30m>                                                                            │
--- │       󰈙  docs/test2.qmd <5m>                                                                            │
--- │                                                                                                          │
--- │    ● Ipykernel  /Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3                                      │
--- │       󰆍  REPL <45s>                                                                                     │
--- │                                                                                                          │
--- │  Inactive Kernels                                                                                        │
--- │                                                                                                          │
--- │    ● Evecxr  /Users/JACOB.SCOTT1/Library/Jupyter/kernels/rust                                            │
--- │    ● Ark R Kernel  /Users/JACOB.SCOTT1/Repos/jet/kernels/ark                                             │
--- │                                                                                                          │
--- ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+-- ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+-- │                                         Jet                                                 │
+-- │          <enter> Open   <x> Stop   <n> New instance   <tab> Expand   <q> Quit                │
+-- │                                                                                              │
+-- │  Active Kernels (6)                                                                          │
+-- │                                                                                              │
+-- │    ●  Ark R Kernel   /Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark                        │
+-- │        - Startup command                                                                     │
+-- │          /Users/JACOB.SCOTT1/Repos/ark/target/debug/ark \                                    │
+-- │            --connection_file \                                                               │
+-- │            some_connection_file.json \                                                       │
+-- │            --sesion-mode \                                                                   │
+-- │            notebook \                                                                        │
+-- │            --log                                                                             │
+-- │            ark.log                                                                           │
+-- │                                                                                              │
+-- │        - Environment                                                                         │
+-- │          - RUST_LOG=trace                                                                    │
+-- │                                                                                              │
+-- │       󰆍  REPL <1h31m>                                                                       │
+-- │        - Last command                                                                        │
+-- │          my_table |>                                                                         │
+-- │            mutate(my_col = my_other_col * 2)                                                 │
+-- │                                                                                              │
+-- │       󰆍  REPL <1h31m>                                                                       │
+-- │       󰈙  docs/test.qmd <30m>                                                                │
+-- │       󰈙  docs/test2.qmd <5m>                                                                │
+-- │                                                                                              │
+-- │    ●  Ipykernel  /Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3                        │
+-- │       󰆍  REPL <45s>                                                                         │
+-- │       󰆍  REPL <45s> (inactive REPLs should be grey)                                         │
+-- │                                                                                              │
+-- │  Inactive Kernels (2)                                                                        │
+-- │    ●  Evecxr  /Users/JACOB.SCOTT1/Library/Jupyter/kernels/rust                              │
+-- │    ●  Ark R Kernel  /Users/JACOB.SCOTT1/Repos/jet/kernels/ark                               │
+-- │                                                                                              │
+-- ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
 
 return ui
