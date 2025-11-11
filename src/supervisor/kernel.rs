@@ -34,7 +34,7 @@ pub struct Kernel {
 
 impl Display for Kernel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{}'{}", self.info.display_name, self.id)
+        write!(f, "'{}'{}", self.info.spec.display_name, self.id)
     }
 }
 
@@ -86,9 +86,8 @@ impl Kernel {
             process: Mutex::new(process),
             info: KernelInfo {
                 spec_path,
-                display_name: spec.display_name,
-                banner: kernel_info_reply.banner,
-                language: kernel_info_reply.language_info,
+                spec: spec,
+                info: kernel_info_reply,
                 start_time: SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)?
                     .as_secs() as u64,
