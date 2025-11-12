@@ -18,6 +18,10 @@ M.tbl_len = function(t)
     return count
 end
 
+function M.print(x)
+    print(M.dump(x))
+end
+
 --- Dump a Lua object as a string
 function M.dump(o, level)
     level = level or 4
