@@ -44,7 +44,7 @@ impl Kernel {
 
         let kernel_id = Id::new();
         let mut cf_path = std::env::temp_dir();
-        cf_path.push(format!("jet_connection_file_{}.json", kernel_id));
+        cf_path.push(format!("jet_connection_file_{}.json", kernel_id.as_str()));
         let kernel_cmd = spec.build_command(&cf_path);
 
         let (jupyter_channels, process) = match spec.get_connection_method() {
@@ -55,6 +55,8 @@ impl Kernel {
                 JupyterChannels::init_with_connection_file(kernel_cmd, cf_path)?
             }
         };
+
+        log::info!("Kernel '{}' started with id {}", spec.display_name, kernel_id);
 
         let iopub_broker = Arc::new(Broker::new(format!("IOPub{}", kernel_id)));
         let shell_broker = Arc::new(Broker::new(format!("Shell{}", kernel_id)));

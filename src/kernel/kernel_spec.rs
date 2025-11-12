@@ -124,7 +124,7 @@ impl KernelSpec {
     pub fn from_file(path: &PathBuf) -> Result<Self, Error> {
         let file = match File::open(path) {
             Ok(file) => Ok(file),
-            Err(e) => Err(Error::CannotOpenFile(e)),
+            Err(e) => Err(Error::CannotOpenFile(path.to_owned(), e)),
         }?;
 
         match serde_json::from_reader(BufReader::new(file)) {

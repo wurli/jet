@@ -5,7 +5,6 @@
  *
  */
 
-use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -13,6 +12,7 @@ use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::Error;
 use crate::msg::connection_file::ConnectionFile;
 
 /// The contents of the Registration File as implied in JEP 66.
@@ -39,7 +39,7 @@ impl RegistrationFile {
     /// Create a RegistrationFile by parsing the contents of a registration file.
     pub fn from_file<P: AsRef<Path>>(
         registration_file: P,
-    ) -> Result<RegistrationFile, Box<dyn Error>> {
+    ) -> Result<RegistrationFile, Box<dyn std::error::Error>> {
         let file = File::open(registration_file)?;
         let reader = BufReader::new(file);
         let control = serde_json::from_reader(reader)?;
@@ -48,10 +48,16 @@ impl RegistrationFile {
     }
 
     /// Write to an actual file
-    pub fn to_file(&self, file: PathBuf) -> Result<(), Box<dyn Error>> {
-        let json = serde_json::to_string_pretty(&self)?;
-        log::info!("Registration file contents: {json}");
-        fs::write(&file, &json)?;
+    pub fn to_file(&self, file: PathBuf) -> Result<(), Error> {
+        let json = match serde_json::to_string_pretty(&self) {
+            Ok(j) => j,
+            Err(e) => return Err(Error::CannotSerialize(e)),
+        };
+        log::info!("Connection file contents: {json}");
+        match fs::write(&file, &json) {
+            Ok(_) => log::info!("Wrote connection file to {:?}", file),
+            Err(e) => return Err(Error::CannotOpenFile(file, e)),
+        };
         Ok(())
     }
 
