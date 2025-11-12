@@ -188,9 +188,12 @@ impl KernelSpec {
             dirs.push(PathBuf::from(&var).join("Library/Jupyter/kernels"));
         }
 
-        // Python kernels.
-        // We do the user a favour and check for an available venv too.
-        for py_cmd in ["python3", "python", ".venv/bin/python"] {
+        // Python kernels, as per https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs
+        // NB, I tried also using ".venv/bin/python" but it caused an issue where the kernel would
+        // be correctly discovered, but would not start up using the expected version of Python -
+        // which makes sense. Better to only discover venv kernels if the venv is already
+        // activated, which is exactly what happens here.
+        for py_cmd in ["python3", "python"] {
             if let Some(sys_prefix) = Self::get_sys_prefix(py_cmd.into()) {
                 dirs.push(sys_prefix.join("share/jupyter/kernels"));
             }
