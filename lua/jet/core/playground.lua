@@ -1,38 +1,41 @@
-Jet = require("jet.core.rust")
 Manager = require("jet.core.manager")
-Kernel = require("jet.core.kernel")
-Ark = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
-Jet.execute_code(Ark.id, "options(cli.num_colors = 256)", {})
-Ipy = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
+Manager:open_kernel()
 
-require("jet.core.ui.float"):show()
 
-vim.ui.select(
-    Manager:list_kernels({ language = "python" }),
-    {
-        ---@param item Jet.Manager.Kernel
-        format_item = function(item)
-            local out = item.spec.display_name
-            if #item.instances > 0 then
-                local s = #item.instances == 1 and "" or "s"
-                out = out .. (" (%d running instance%s)"):format(#item.instances, s)
-            end
-            return out
-        end
-    },
-    function(choice)
-        vim.print(choice)
-    end
-)
+-- Error executing vim.schedule lua callback: Could not start kernel process '"python" "-m" "ipykernel_launcher" "-f" "/var/folders/8j/1g_zx_yd4hjfbcwg6npwhyq40000gn/T/jet_connection_file_6dc8e356-9f99-4d34-829f-dab339786127.json"': No such file or directory (os error 2)
 
-Ark:ui_hide()
-Ark:ui_show()
-Ipy:ui_hide()
-Ipy:ui_show()
 
-Ark:execute({ "jkhist(rnorm(100))" })
-Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
-Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
+Jet = require("jet.core.rust")
+local id, inst = Jet.start_kernel("/Users/JACOB.SCOTT1/Repos/jet/.venv/share/jupyter/kernels/python3/kernel.json")
+vim.print(id)
+
+-- Kernel = require("jet.core.kernel")
+-- Ark = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
+-- Jet.execute_code(Ark.id, "options(cli.num_colors = 256)", {})
+-- Ipy = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
+
+
+-- vim.ui.select(
+--     Manager:list_kernels({ language = "python" }),
+--     {
+--         ---@param item Jet.Manager.Kernel
+--         format_item = function(item)
+--             local out = item.spec.display_name
+--             if #item.instances > 0 then
+--                 local s = #item.instances == 1 and "" or "s"
+--                 out = out .. (" (%d running instance%s)"):format(#item.instances, s)
+--             end
+--             return out
+--         end
+--     },
+--     function(choice)
+--         vim.print(choice)
+--     end
+-- )
+
+-- Ark:execute({ "jkhist(rnorm(100))" })
+-- Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
+-- Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
 
 
 local _comm_id, callback = Jet.comm_open(Ark.id, "lsp", { ip_address = "127.0.0.1" })

@@ -7,23 +7,170 @@ local utils = require("jet.core.utils")
 ---buffer IDs, etc. This is not necessarily an exhaustive list of all active
 ---kernels (although usually it is). For a complete list of active kernels, use
 ---the Rust engine.
----@field kernels table<string, Jet.Kernel>
+---@field running table<string, Jet.Kernel>
+---
+---A mapping of filetypes to kernel IDs. This map is checked when choosing
+---which kernel to execute with in the event that multiple kernels are running
+---for a particular filetype.
+---@field map_kernel_filetype table<string, string>
+---
+---A mapping of buffer numbers to kernels. This supports running dedicated
+---kernel instances for particular buffers. This is most often used for
+---notebooks. NB, linking buffers (rather than files) to kernels brings the
+---limitation that if the buffer quits and reopens (i.e. with a differnt bufnr)
+---the link is broken. This feels like intuitive behaviour, so this is a
+---conscious design decision.
+---@field map_kernel_buffer table<string, string>
 local manager = {
-    kernels = {},
+	running = {},
+	map_kernel_filetype = {},
+	map_kernel_buffer = {},
 }
 manager.__index = manager
 
-setmetatable(manager, {
-    ---@return Jet.Manager
-    __call = function(self, ...)
-        return self.start(...)
-    end
+local jet_global_augroup = vim.api.nvim_create_augroup("jet-global", {})
+
+vim.api.nvim_create_autocmd("BufEnter", {
+	group = jet_global_augroup,
+	callback = function()
+		local id = (vim.b.jet and vim.b.jet.id)
+
+		if not id then
+			-- This shouldn't ever happen
+			return
+		end
+
+		manager.map_kernel_filetype[vim.bo.filetype] = id
+	end,
 })
+
+setmetatable(manager, {
+	---@return Jet.Manager
+	__call = function(self, ...)
+		return self.start(...)
+	end,
+})
+
+---@param opts? Jet.Manager.Filter
+function manager:open_kernel(opts)
+	self:get_kernel(function(spec_path, id)
+        vim.print({ spec_path = spec_path, id = id })
+		if id then
+			self.running[id]:ui_show()
+		elseif spec_path then
+			require("jet.core.kernel").start(spec_path)
+		end
+	end, opts)
+end
+
+---@param opts? Jet.Manager.Filter
+---@param callback fun(spec_path: string?, id: string?)
+function manager:get_kernel(callback, opts)
+	local kernels = self:_filter(self:list_kernels(), opts)
+
+	if vim.tbl_count(kernels) <= 1 then
+		local k = kernels[1]
+		callback(k and k.spec_path, k and k.id)
+		return
+	end
+
+	-- Formatting stuff for a nicer display
+	kernels = vim.tbl_map(function(k)
+		local time = k.start_time and utils.time_since(k.start_time)
+		return {
+			kernel = k,
+			name = k.spec.display_name,
+			status = (k.id and time and "(running for " .. time .. ")") or (k.id and "(running)") or "",
+			path = utils.path_shorten(k.spec_path):gsub("/kernel%.json$", ""),
+		}
+	end, kernels)
+
+	local widths = {}
+	for _, field in ipairs({ "name", "status", "path" }) do
+		widths[field] = math.max(unpack(vim.tbl_map(function(k)
+			return #k[field]
+		end, kernels)))
+	end
+
+	local pad = function(s, w)
+		return s .. (#s < w and string.rep(" ", w - #s) or "")
+	end
+
+	---@param k { kernel: Jet.Manager.ListItem, path: string, name: string, status: string }
+	kernels = vim.tbl_map(function(k)
+		return {
+			kernel = k.kernel,
+			desc = ("%s %s %s"):format(
+				pad(k.name, widths.name),
+				pad(k.status, widths.status),
+				pad(k.path, math.min(widths.path, 40))
+			),
+		}
+	end, kernels)
+
+	table.sort(kernels, function(a, b)
+		return a.desc < b.desc
+	end)
+
+	vim.ui.select(
+		kernels,
+		{
+			prompt = "Select a kernel",
+			---@param k { kernel: Jet.Manager.ListItem, desc: string }
+			format_item = function(k)
+				return k.desc
+			end,
+		},
+		---@param k { kernel: Jet.Manager.ListItem, desc: string }
+		function(k)
+			local kernel = k and k.kernel or {}
+			callback(kernel.spec_path, kernel.id)
+		end
+	)
+end
+
+---@class Jet.Manager.ListItem
+---@field spec_path string
+---@field spec Jet.Kernel.Spec
+---@field id? string
+---@field info? Jet.Kernel.Info
+---@field start_time? number
+
+---@return Jet.Manager.ListItem[]
+function manager:list_kernels()
+	local available = engine.list_available_kernels()
+	local running = engine.list_running_kernels()
+
+	local kernels = {}
+
+	for path, spec in pairs(available) do
+		table.insert(kernels, {
+			spec_path = path,
+			spec = spec,
+		})
+	end
+
+	for id, instance in pairs(running) do
+		table.insert(kernels, {
+			spec_path = instance.spec_path,
+			spec = instance.spec,
+			id = id,
+			info = instance.info,
+			start_time = instance.start_time,
+		})
+	end
+
+	return kernels
+end
 
 ---@class Jet.Manager.Filter
 ---
 ---Case-insensitive Lua pattern; matched against the kernel spec path
 ---@field spec_path? string
+---
+---A buffer number. Note: this filters for (a) the linked kernel for the buffer
+---if it exists, and if not, (b) the primary kernel for the buffer's filetype
+---@field buf? number
 ---
 ---Case-insensitive language name (not a pattern); matched against the language
 ---as given in the kernel spec
@@ -32,139 +179,82 @@ setmetatable(manager, {
 ---Case-insensitive pattern; matched against the kernel display name
 ---@field name? string
 ---
+---The ID of an existing kernel instance to get
+---@field id? string
+---
 ---Active status
 ---@field status? "active" | "inactive"
 
----@alias Jet.Manager.Kernel {spec_path: string, spec: Jet.Kernel.Spec, instances: { id: string, instance: Jet.Kernel.Instance}}
+---@param kernels Jet.Manager.ListItem[]
+---@param opts? Jet.Manager.Filter
+function manager:_filter(kernels, opts)
+	if not opts then
+		return kernels
+	end
 
----@param filter? Jet.Manager.Filter
----@return Jet.Manager.Kernel[]
-function manager:list(filter)
-    local available = engine.list_available_kernels()
-    local running = engine.list_running_kernels()
+	if opts.buf then
+		opts.id = self.map_kernel_buffer[opts.buf]
+		-- TODO: language ain't filetype!
+		opts.language = vim.bo[opts.buf].filetype or opts.language
+	end
 
-    local kernels = {}
+	if opts.id then
+		kernels = vim.tbl_filter(
+			---@param k Jet.Manager.ListItem
+			function(k)
+				return k.id == opts.id
+			end,
+			kernels
+		)
+	end
 
-    for path, spec in pairs(available) do
-        local info = {
-            spec_path = path,
-            spec = spec,
-            instances = {}
-        }
+	if opts.spec_path then
+		kernels = vim.tbl_filter(
+			---@param k Jet.Manager.ListItem
+			function(k)
+				return k.spec_path:lower():find(opts.spec_path:lower()) ~= nil
+			end,
+			kernels
+		)
+	end
 
-        for id, instance in pairs(running) do
-            if instance.spec_path == path then
-                table.insert(info.instances, {
-                    id = id,
-                    instance = instance,
-                })
-                running[id] = nil
-            end
-        end
+	if opts.language then
+		kernels = vim.tbl_filter(
+			---@param k Jet.Manager.ListItem
+			function(k)
+				return k.spec.language:lower() == opts.language:lower()
+			end,
+			kernels
+		)
+	end
 
-        table.insert(kernels, info)
-    end
+	if opts.name then
+		kernels = vim.tbl_filter(
+			---@param k Jet.Manager.ListItem
+			function(k)
+				return k.spec.display_name:lower():find(opts.name:lower()) ~= nil
+			end,
+			kernels
+		)
+	end
 
-    if vim.tbl_count(running) > 0 then
-        utils.log_warn(
-            "Some kernels from `list_running_kernels()` were not returned by `list_available_kernels()`"
-        )
-    end
+	if opts.status then
+		kernels = vim.tbl_filter(
+			---@param k Jet.Manager.ListItem
+			function(k)
+				if opts.status == "active" then
+					return k.id ~= nil
+				elseif opts.status == "inactive" then
+					return k.id == nil
+				else
+					return true
+				end
+			end,
+			kernels
+		)
+	end
 
-    if filter then
-        kernels = self._filter(kernels, filter)
-    end
-
-    return kernels
-end
-
-function manager:kernel_from_buf(buf)
-    local kernels = self:list()
-
-    if vim.bo[buf].filetype then
-        local filtered = self._filter(kernels, {
-            language = vim.bo[buf].filetype,
-        })
-        if vim.tbl_count(filtered) > 0 then
-            kernels = filtered
-        end
-    end
-
-    if vim.tbl_count(kernels) == 1 then
-        return kernels[1]
-    end
-
-    return self:_select(kernels)
-end
-
-function manager:_select(kernels)
-    local out
-    vim.ui.select(
-        kernels or self:list(),
-        {
-            prompt = "Select a kernel to start",
-            format_item = function(item)
-                local text = item.spec.display_name
-                if #item.instances > 0 then
-                    local s = #item.instances == 1 and "" or "s"
-                    text = text .. (" (%d running instance%s)"):format(#item.instances, s)
-                end
-                return text
-            end,
-        },
-        function(choice)
-            out = choice
-        end
-    )
-    return out
-end
-
----@param kernels Jet.Manager.Kernel[]
----@param f Jet.Manager.Filter
-function manager._filter(kernels, f)
-    if not f then return kernels end
-
-    if f.spec_path then
-        kernels = vim.tbl_filter(
-        ---@param k Jet.Manager.Kernel
-            function(k) return k.spec_path:lower():find(f.spec_path:lower()) ~= nil end,
-            kernels
-        )
-    end
-
-    if f.language then
-        kernels = vim.tbl_filter(
-        ---@param k Jet.Manager.Kernel
-            function(k) return k.spec.language:lower() == f.language:lower() end,
-            kernels
-        )
-    end
-
-    if f.name then
-        kernels = vim.tbl_filter(
-        ---@param k Jet.Manager.Kernel
-            function(k) return k.spec.display_name:lower():find(f.name:lower()) ~= nil end,
-            kernels
-        )
-    end
-
-    if f.status then
-        kernels = vim.tbl_filter(
-        ---@param k Jet.Manager.Kernel
-            function(k)
-                if f.status == "active" then
-                    return vim.tbl_count(k.instances) > 0
-                elseif f.status == "inactive" then
-                    return vim.tbl_count(k.instances) == 0
-                else
-                    return true
-                end
-            end,
-            kernels
-        )
-    end
-
-    return kernels
+	return kernels
 end
 
 return manager

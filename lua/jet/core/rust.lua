@@ -1,28 +1,31 @@
 local function get_lib_extension()
-    if jit.os:lower() == 'mac' or jit.os:lower() == 'osx' then return '.dylib' end
-    if jit.os:lower() == 'windows' then return '.dll' end
-    return '.so'
+	if jit.os:lower() == "mac" or jit.os:lower() == "osx" then
+		return ".dylib"
+	end
+	if jit.os:lower() == "windows" then
+		return ".dll"
+	end
+	return ".so"
 end
 
 -- local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/')
-local base_path = debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/'
-local lib_name = 'jet'
+local base_path = debug.getinfo(1).source:match("@?(.*/)") .. "../../../target/release/"
+local lib_name = "jet"
 local lib_extension = get_lib_extension()
 
 -- Try loading with lib prefix first (Unix-style)
-local lib_path = base_path .. 'lib' .. lib_name .. lib_extension
-local loader = package.loadlib(lib_path, 'luaopen_' .. lib_name)
+local lib_path = base_path .. "lib" .. lib_name .. lib_extension
+local loader = package.loadlib(lib_path, "luaopen_" .. lib_name)
 
 -- If that fails, try without lib prefix (Windows-style)
 if not loader then
-    lib_path = base_path .. lib_name .. lib_extension
-    loader = package.loadlib(lib_path, 'luaopen_' .. lib_name)
+	lib_path = base_path .. lib_name .. lib_extension
+	loader = package.loadlib(lib_path, "luaopen_" .. lib_name)
 end
 
 if not loader then
-    error('Failed to load native module from: ' .. lib_path)
+	error("Failed to load native module from: " .. lib_path)
 end
-
 
 ------ Message Types ----------------------------------------------------------
 -- The Jet engine (rust) doesn't do any pre-processing of jupyter messages
@@ -119,17 +122,25 @@ end
 ---@alias Jet.MsgType.IsCompleteReply
 ---| "is_complete_reply"
 
-
 ------ Kernel information -----------------------------------------------------
 -- When a kernel starts up, Jet stores the following information about it.
 -------------------------------------------------------------------------------
 
 ---@class Jet.Kernel.Instance
 ---@field spec_path string
----@field display_name string
----@field start_time string
+---@field spec Jet.Kernel.Spec
+---@field info Jet.Kernel.Info
+---@field start_time number
+
+---@class Jet.Kernel.Info
+---@field status "ok" | "error"
+---@field protocol_version? string
+---@field implementation? string
+---@field language_info Jet.Kernel.LanguageInfo
 ---@field banner string
----@field language Jet.Kernel.LanguageInfo
+---@field debugger? boolean
+---@field help_links table<string, string>
+---@field supported_features? table<string>
 
 ---@class Jet.Kernel.LanguageInfo
 ---@field name string

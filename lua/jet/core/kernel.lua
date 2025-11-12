@@ -56,544 +56,568 @@ local spin = require("jet.core.spinners")
 local kernel = {}
 kernel.__index = kernel
 
-vim.print(package.path)
-
 setmetatable(kernel, {
-    ---@return Jet.Kernel
-    __call = function(self, ...)
-        return self.start(...)
-    end
+	---@return Jet.Kernel
+	__call = function(self, ...)
+		return self.start(...)
+	end,
 })
 
 ---@param spec_path Jet.Kernel.Spec.Path
 function kernel.start(spec_path)
-    local self = setmetatable({}, kernel)
-    self.history = {}
-    self.prompt = vim.tbl_deep_extend("keep", self.prompt or {}, {
-        input = ">",
-        continue = "+",
-    })
-    self.prompt_template = vim.tbl_deep_extend("keep", self.prompt_template or {}, {
-        input = "%s ",
-        continue = "%s ",
-    })
-    self.id, self.instance = engine.start_kernel(spec_path)
-    self._ns = vim.api.nvim_create_namespace("jet_repl_" .. self.id)
-    self._augroup = vim.api.nvim_create_augroup("jet_repl_" .. self.id, {})
-    self:_init_repl()
-    self:_set_filetype()
-    self:ui_show()
-    self:_display_repl_text(self.instance.banner)
+	local self = setmetatable({}, kernel)
+	self.history = {}
+	self.prompt = vim.tbl_deep_extend("keep", self.prompt or {}, {
+		input = ">",
+		continue = "+",
+	})
+	self.prompt_template = vim.tbl_deep_extend("keep", self.prompt_template or {}, {
+		input = "%s ",
+		continue = "%s ",
+	})
+	self.id, self.instance = engine.start_kernel(spec_path)
+	self._ns = vim.api.nvim_create_namespace("jet_repl_" .. self.id)
+	self._augroup = vim.api.nvim_create_augroup("jet_repl_" .. self.id, {})
+	self:_init_repl()
+	self:_filetype_set()
+	self:ui_show()
+	self:_display_repl_text(self.instance.info and self.instance.info.banner)
 
-    vim.api.nvim_create_autocmd("WinLeave", {
-        group = self._augroup,
-        callback = function()
-            self.last_win = vim.api.nvim_get_current_win()
-            self[vim.b.jet and vim.b.jet.id == self.id and "last_jet_win" or "last_normal_win"] = self.last_win
-        end,
-    })
+	vim.api.nvim_create_autocmd("WinLeave", {
+		group = self._augroup,
+		callback = function()
+			self.last_win = vim.api.nvim_get_current_win()
+			self[vim.b.jet and vim.b.jet.id == self.id and "last_jet_win" or "last_normal_win"] = self.last_win
+		end,
+	})
 
-    manager.kernels[self.id] = self
+	manager.running[self.id] = self
 
-    return self
+	return self
 end
 
 function kernel:stop()
-    -- Request kernel shutdown
-    engine.request_shutdown(self.id)
-    --- Hide the UI
-    self:ui_hide()
-    --- Delete REPL buffers
-    for _, buf in ipairs({
-        self.repl_background_bufnr,
-        self.repl_input_bufnr,
-        self.repl_output_bufnr,
-    }) do
-        if vim.api.nvim_buf_is_valid(buf) then
-            vim.api.nvim_buf_delete(buf, { force = true })
-        end
-    end
-    --- Delete autocommands
-    vim.api.nvim_delete_augroup_by_id(self._augroup)
-    --- Remove from manager
-    manager.kernels[self.id] = nil
+	-- Request kernel shutdown
+	engine.request_shutdown(self.id)
+	--- Hide the UI
+	self:ui_hide()
+	--- Delete REPL buffers
+	for _, buf in ipairs({
+		self.repl_background_bufnr,
+		self.repl_input_bufnr,
+		self.repl_output_bufnr,
+	}) do
+		if vim.api.nvim_buf_is_valid(buf) then
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end
+	end
+	--- Delete autocommands
+	vim.api.nvim_delete_augroup_by_id(self._augroup)
+	--- Remove from manager
+	manager.running[self.id] = nil
 end
 
 ---@param code string[]
-function kernel:execute(code)
-    if not self.id then
-        error("Kernel is not active; use `start()` to activate the kernel.")
-    end
+---@param callback? fun(msg: Jet.Callback.Execute.Result)
+function kernel:execute(code, callback)
+	if not self.id then
+		error("Kernel is not active; use `start()` to activate the kernel.")
+	end
 
-    local callback = engine.execute_code(self.id, table.concat(code, "\n"), {})
-    self:_history_append(code)
-    local stop_spinner = spin.run(
-        function(frame) self:_subtitle_set(frame) end,
-        function() self:_subtitle_set() end,
-        "concentric", 500
-    )
+	local callback1 = engine.execute_code(self.id, table.concat(code, "\n"), {})
+	self:_history_append(code)
+	local stop_spinner = spin.run(function(frame)
+		self:_subtitle_set(frame)
+	end, function()
+		self:_subtitle_set()
+	end, "concentric", 500)
 
-    utils.listen(callback, {
-        action = function(res)
-            return res.status == "idle" and "exit"
-                or res.data and "handle"
-                or "retry"
-        end,
-        handler = function(res) self:_handle_result(res) end,
-        on_exit = function()
-            self:_display_repl_text("\n")
-            stop_spinner()
-        end,
-        interval = 50,
-    })
+	utils.listen(callback1, {
+		action = function(res)
+			return res.status == "idle" and "exit" or res.data and "handle" or "retry"
+		end,
+		handler = function(res)
+			self:_handle_result(res)
+			if callback then
+				callback(res)
+			end
+		end,
+		on_exit = function()
+			self:_display_repl_text("\n")
+			stop_spinner()
+		end,
+		interval = 50,
+	})
+end
+
+---Execute code in a kernel without displaying any output in the REPL/notebook.
+---
+---@param code string[] Code to execute.
+---@param callback? fun(msg: Jet.Callback.Execute.Result) Optional handler for results.
+function kernel:execute_quiet(code, callback)
+	if not self.id then
+		error("Kernel is not active; use `start()` to activate the kernel.")
+	end
+
+	local callback1 = engine.execute_code(self.id, table.concat(code, "\n"), {})
+
+	utils.listen(callback1, {
+		action = function(res)
+			return res.status == "idle" and "exit" or res.data and "handle" or "retry"
+		end,
+		handler = callback or function(_) end,
+		on_exit = function() end,
+		interval = 50,
+	})
 end
 
 function kernel:ui_show()
-    -- ╭───────────╮
-    -- │ box chars │
-    -- ╰───────────╯
+	-- ╭───────────╮
+	-- │ box chars │
+	-- ╰───────────╯
 
-    self.repl_background_winnr = vim.api.nvim_open_win(self.repl_background_bufnr, false, {
-        split = "right",
-        focusable = false
-    })
+	self.repl_background_winnr = vim.api.nvim_open_win(self.repl_background_bufnr, false, {
+		split = "right",
+		focusable = false,
+	})
 
-    self.repl_output_winnr = vim.api.nvim_open_win(self.repl_output_bufnr, false, {
-        relative = "win",
-        win = self.repl_background_winnr,
-        col = 0,
-        row = 0,
-        height = vim.api.nvim_win_get_height(self.repl_background_winnr) - 4,
-        width = vim.api.nvim_win_get_width(self.repl_background_winnr) - 4,
-        border = { "╭", "─", "╮", "│", "│", " ", "│", "│" },
-        zindex = 10,
-        style = "minimal",
-    })
+	self.repl_output_winnr = vim.api.nvim_open_win(self.repl_output_bufnr, false, {
+		relative = "win",
+		win = self.repl_background_winnr,
+		col = 0,
+		row = 0,
+		height = vim.api.nvim_win_get_height(self.repl_background_winnr) - 4,
+		width = vim.api.nvim_win_get_width(self.repl_background_winnr) - 4,
+		border = { "╭", "─", "╮", "│", "│", " ", "│", "│" },
+		zindex = 10,
+		style = "minimal",
+	})
 
-    self.repl_input_winnr = vim.api.nvim_open_win(self.repl_input_bufnr, false, {
-        relative = "win",
-        win = self.repl_background_winnr,
-        height = 1,
-        col = 0,
-        row = vim.api.nvim_win_get_height(self.repl_background_winnr),
-        width = vim.api.nvim_win_get_width(self.repl_background_winnr) - 4,
-        border = { "│", "─", "│", "│", "╯", "─", "╰", "│" },
-        zindex = 20,
-        style = "minimal",
-    })
+	self.repl_input_winnr = vim.api.nvim_open_win(self.repl_input_bufnr, false, {
+		relative = "win",
+		win = self.repl_background_winnr,
+		height = 1,
+		col = 0,
+		row = vim.api.nvim_win_get_height(self.repl_background_winnr),
+		width = vim.api.nvim_win_get_width(self.repl_background_winnr) - 4,
+		border = { "│", "─", "│", "│", "╯", "─", "╰", "│" },
+		zindex = 20,
+		style = "minimal",
+	})
 
-    vim.wo[self.repl_output_winnr].listchars = ""
+	vim.wo[self.repl_output_winnr].listchars = ""
 
-    self:_set_layout()
+	self:_set_layout()
 end
 
 function kernel:ui_hide()
-    for _, winnr in ipairs({
-        self.repl_background_winnr,
-        self.repl_input_winnr,
-        self.repl_output_winnr,
-    }) do
-        if vim.api.nvim_win_is_valid(winnr) then
-            vim.api.nvim_win_close(winnr, true)
-        end
-    end
+	for _, winnr in ipairs({
+		self.repl_background_winnr,
+		self.repl_input_winnr,
+		self.repl_output_winnr,
+	}) do
+		if vim.api.nvim_win_is_valid(winnr) then
+			vim.api.nvim_win_close(winnr, true)
+		end
+	end
 end
 
 function kernel:_init_repl()
-    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    -- Create REPL buffers (if they don't already exist)
-    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    for _, jet_ui in ipairs({ "background", "input", "output" }) do
-        local buf_name = "repl_" .. jet_ui .. "_bufnr"
-        if self[buf_name] and vim.api.nvim_buf_is_valid(self[buf_name]) then
-            utils.log_warn("REPL %s buffer already exists with bufnr %s", buf_name, self[buf_name])
-        else
-            local buf = vim.api.nvim_create_buf(false, true)
-            self[buf_name] = buf
-            vim.bo[buf].buftype = "nofile"
-            vim.b[buf].jet = {
-                type = "repl_" .. jet_ui,
-                id = self.id,
-            }
-        end
-    end
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	-- Create REPL buffers (if they don't already exist)
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	for _, jet_ui in ipairs({ "background", "input", "output" }) do
+		local buf_name = "repl_" .. jet_ui .. "_bufnr"
+		if self[buf_name] and vim.api.nvim_buf_is_valid(self[buf_name]) then
+			utils.log_warn("REPL %s buffer already exists with bufnr %s", buf_name, self[buf_name])
+		else
+			local buf = vim.api.nvim_create_buf(false, true)
+			self[buf_name] = buf
+			vim.bo[buf].buftype = "nofile"
+			vim.b[buf].jet = {
+				type = "repl_" .. jet_ui,
+				id = self.id,
+			}
+		end
+	end
 
-    -- Jet sends output from the kernel to a terminal channel in order to
-    -- format ansi formatting.
-    if self.repl_channel then
-        utils.log_warn("REPL output channel `%s` already exists!", self.repl_channel)
-    else
-        self.repl_channel = vim.api.nvim_open_term(self.repl_output_bufnr, {})
-    end
+	-- Jet sends output from the kernel to a terminal channel in order to
+	-- format ansi formatting.
+	if self.repl_channel then
+		utils.log_warn("REPL output channel `%s` already exists!", self.repl_channel)
+	else
+		self.repl_channel = vim.api.nvim_open_term(self.repl_output_bufnr, {})
+	end
 
-    self:_prompt_reset()
+	self:_prompt_reset()
 
-    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    --- Set keymaps
-    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    vim.keymap.set(
-        { "n", "i" }, "<CR>",
-        function() self:_try_send_input() end,
-        { buffer = self.repl_input_bufnr }
-    )
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	--- Set keymaps
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	vim.keymap.set({ "n", "i" }, "<CR>", function()
+		self:_try_send_input()
+	end, { buffer = self.repl_input_bufnr })
 
-    -- TODO: Improve keymaps
-    for _, key in ipairs({ "i", "I", "a", "A", "c", "C", "s", "S", "o", "O", "p", "P" }) do
-        vim.keymap.set("n", key, function()
-            self:_with_input_win(function(winnr)
-                vim.api.nvim_set_current_win(winnr)
-                vim.fn.feedkeys(key, "n")
-            end)
-        end, { buffer = self.repl_output_bufnr })
-    end
+	-- TODO: Improve keymaps
+	for _, key in ipairs({ "i", "I", "a", "A", "c", "C", "s", "S", "o", "O", "p", "P" }) do
+		vim.keymap.set("n", key, function()
+			self:_with_input_win(function(winnr)
+				vim.api.nvim_set_current_win(winnr)
+				vim.fn.feedkeys(key, "n")
+			end)
+		end, { buffer = self.repl_output_bufnr })
+	end
 
-    vim.keymap.set({ "n", "i" }, "<c-p>", function()
-        self:_input_set(self:_history_get(-1))
-    end, { buffer = self.repl_input_bufnr })
+	vim.keymap.set({ "n", "i" }, "<c-p>", function()
+		self:_input_set(self:_history_get(-1))
+	end, { buffer = self.repl_input_bufnr })
 
-    vim.keymap.set({ "n", "i" }, "<c-n>", function()
-        self:_input_set(self:_history_get(1))
-    end, { buffer = self.repl_input_bufnr })
+	vim.keymap.set({ "n", "i" }, "<c-n>", function()
+		self:_input_set(self:_history_get(1))
+	end, { buffer = self.repl_input_bufnr })
 
-    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    --- Set autocommands
-    --~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    --- Attach LSP to the REPL input buffer
-    --- (TODO: give the user the ability to disable this)
-    vim.api.nvim_create_autocmd("BufEnter", {
-        group = self._augroup,
-        buffer = self.repl_input_bufnr,
-        callback = function()
-            for _, cfg in pairs(vim.lsp._enabled_configs) do
-                if cfg.resolved_config then
-                    local ft = cfg.resolved_config.filetypes
-                    if ft and vim.tbl_contains(ft, self.filetype) or (not ft) then
-                        vim.lsp.start(cfg.resolved_config, {
-                            bufnr = self.repl_input_bufnr
-                        })
-                    end
-                end
-            end
-        end
-    })
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	--- Set autocommands
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	--- Attach LSP to the REPL input buffer
+	--- (TODO: give the user the ability to disable this)
+	vim.api.nvim_create_autocmd("BufEnter", {
+		group = self._augroup,
+		buffer = self.repl_input_bufnr,
+		callback = function()
+			for _, cfg in pairs(vim.lsp._enabled_configs) do
+				if cfg.resolved_config then
+					local ft = cfg.resolved_config.filetypes
+					if ft and vim.tbl_contains(ft, self.filetype) or not ft then
+						vim.lsp.start(cfg.resolved_config, {
+							bufnr = self.repl_input_bufnr,
+						})
+					end
+				end
+			end
+		end,
+	})
 
-    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-        group = self._augroup,
-        buffer = self.repl_input_bufnr,
-        callback = function()
-            self:_prompt_reset()
-        end
-    })
+	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+		group = self._augroup,
+		buffer = self.repl_input_bufnr,
+		callback = function()
+			self:_prompt_reset()
+		end,
+	})
 
-    --- We do have guards in place to stop us ever entering insert in the
-    --- background/output buffers, but just in case...
-    for _, buf in ipairs({ self.repl_background_bufnr, self.repl_output_bufnr }) do
-        vim.api.nvim_create_autocmd("InsertEnter", {
-            group = self._augroup,
-            buffer = buf,
-            callback = function()
-                if vim.api.nvim_win_is_valid(self.repl_input_winnr) then
-                    vim.api.nvim_set_current_win(self.repl_input_winnr)
-                end
-            end
-        })
-    end
+	--- We do have guards in place to stop us ever entering insert in the
+	--- background/output buffers, but just in case...
+	for _, buf in ipairs({ self.repl_background_bufnr, self.repl_output_bufnr }) do
+		vim.api.nvim_create_autocmd("InsertEnter", {
+			group = self._augroup,
+			buffer = buf,
+			callback = function()
+				if vim.api.nvim_win_is_valid(self.repl_input_winnr) then
+					vim.api.nvim_set_current_win(self.repl_input_winnr)
+				end
+			end,
+		})
+	end
 
-    vim.api.nvim_create_autocmd("WinEnter", {
-        group = self._augroup,
-        buffer = self.repl_background_bufnr,
-        callback = function()
-            -- When we enter the background window we want to automatically
-            -- enter a different window. The approach is:
-            -- *  Entering from the repl input     => go to repl output
-            -- *  Entering from the repl output    => go to last normal window
-            -- *  Entering from last normal window => go to repl input
-            -- This should hopefully make entering/leaving the REPL windows
-            -- feel natural and work well with the user's existing keymaps.
-            vim.api.nvim_set_current_win(
-                (self.last_win == self.repl_input_winnr and self.repl_output_winnr)
-                or (self.last_win == self.repl_output_winnr and self.last_normal_win)
-                or (self.last_win == self.last_normal_win and self.repl_input_winnr)
-                or self.last_win
-            )
-        end
-    })
+	vim.api.nvim_create_autocmd("WinEnter", {
+		group = self._augroup,
+		buffer = self.repl_background_bufnr,
+		callback = function()
+			-- When we enter the background window we want to automatically
+			-- enter a different window. The approach is:
+			-- *  Entering from the repl input     => go to repl output
+			-- *  Entering from the repl output    => go to last normal window
+			-- *  Entering from last normal window => go to repl input
+			-- This should hopefully make entering/leaving the REPL windows
+			-- feel natural and work well with the user's existing keymaps.
+			vim.api.nvim_set_current_win(
+				(self.last_win == self.repl_input_winnr and self.repl_output_winnr)
+					or (self.last_win == self.repl_output_winnr and self.last_normal_win)
+					or (self.last_win == self.last_normal_win and self.repl_input_winnr)
+					or self.last_win
+			)
+		end,
+	})
 
-    vim.api.nvim_create_autocmd("WinClosed", {
-        group = self._augroup,
-        callback = function(e)
-            local repl_wins = { self.repl_background_winnr, self.repl_input_winnr, self.repl_output_winnr }
-            local repl_bufs = { self.repl_background_bufnr, self.repl_input_bufnr, self.repl_output_bufnr }
+	vim.api.nvim_create_autocmd("WinClosed", {
+		group = self._augroup,
+		callback = function(e)
+			local repl_wins = { self.repl_background_winnr, self.repl_input_winnr, self.repl_output_winnr }
+			local repl_bufs = { self.repl_background_bufnr, self.repl_input_bufnr, self.repl_output_bufnr }
 
-            if not vim.tbl_contains(repl_bufs, e.buf) then
-                return
-            end
+			if not vim.tbl_contains(repl_bufs, e.buf) then
+				return
+			end
 
-            for _, winnr in ipairs(repl_wins) do
-                if vim.api.nvim_win_is_valid(winnr) then
-                    vim.api.nvim_win_close(winnr, true)
-                end
-            end
-        end
-    })
+			for _, winnr in ipairs(repl_wins) do
+				if vim.api.nvim_win_is_valid(winnr) then
+					vim.api.nvim_win_close(winnr, true)
+				end
+			end
+		end,
+	})
 
-    vim.api.nvim_create_autocmd("WinResized", {
-        group = self._augroup,
-        callback = function()
-            self:_set_layout()
-        end
-    })
+	vim.api.nvim_create_autocmd("WinResized", {
+		group = self._augroup,
+		callback = function()
+			self:_set_layout()
+		end,
+	})
 end
 
 function kernel:_set_layout()
-    if not vim.api.nvim_win_is_valid(self.repl_input_winnr)
-        or not vim.api.nvim_win_is_valid(self.repl_output_winnr) then
-        return
-    end
+	if
+		not vim.api.nvim_win_is_valid(self.repl_input_winnr) or not vim.api.nvim_win_is_valid(self.repl_output_winnr)
+	then
+		return
+	end
 
-    -- First, if we're in either the input or output window, resize the background
-    -- according to the current window width
-    local cur_win = vim.api.nvim_get_current_win()
-    if cur_win == self.repl_output_winnr or cur_win == self.repl_input_winnr then
-        vim.api.nvim_win_set_config(self.repl_background_winnr, {
-            width = vim.api.nvim_win_get_width(cur_win) + 2,
-        })
-    end
+	-- First, if we're in either the input or output window, resize the background
+	-- according to the current window width
+	local cur_win = vim.api.nvim_get_current_win()
+	if cur_win == self.repl_output_winnr or cur_win == self.repl_input_winnr then
+		vim.api.nvim_win_set_config(self.repl_background_winnr, {
+			width = vim.api.nvim_win_get_width(cur_win) + 2,
+		})
+	end
 
-    -- Now we're sure the background is the right size, set both input and output
-    -- to match its width
-    for _, win in ipairs({ self.repl_input_winnr, self.repl_output_winnr }) do
-        vim.api.nvim_win_set_config(win, {
-            width = math.max(vim.api.nvim_win_get_width(self.repl_background_winnr) - 2, 1),
-        })
-    end
+	-- Now we're sure the background is the right size, set both input and output
+	-- to match its width
+	for _, win in ipairs({ self.repl_input_winnr, self.repl_output_winnr }) do
+		vim.api.nvim_win_set_config(win, {
+			width = math.max(vim.api.nvim_win_get_width(self.repl_background_winnr) - 2, 1),
+		})
+	end
 
-    -- TODO: if we've just resized the output window vertically, adjust the input
-    -- window height accordingly
-    -- if cur_win == self.repl_output_winnr then
-    --     vim.api.nvim_win_set_config(self.repl_input_winnr, {
-    --         height =
-    --     })
-    -- end
+	-- TODO: if we've just resized the output window vertically, adjust the input
+	-- window height accordingly
+	-- if cur_win == self.repl_output_winnr then
+	--     vim.api.nvim_win_set_config(self.repl_input_winnr, {
+	--         height =
+	--     })
+	-- end
 
-    local bg_height = vim.api.nvim_win_get_height(self.repl_background_winnr)
-    local input_height = vim.api.nvim_win_get_height(self.repl_input_winnr)
-    vim.api.nvim_win_set_config(self.repl_output_winnr, {
-        -- We need to subtract 1 to account for the borders (the output's
-        -- bottom border should overlap with the input's top border)
-        height = math.max(bg_height - input_height - 2, 1)
-    })
+	local bg_height = vim.api.nvim_win_get_height(self.repl_background_winnr)
+	local input_height = vim.api.nvim_win_get_height(self.repl_input_winnr)
+	vim.api.nvim_win_set_config(self.repl_output_winnr, {
+		-- We need to subtract 1 to account for the borders (the output's
+		-- bottom border should overlap with the input's top border)
+		height = math.max(bg_height - input_height - 2, 1),
+	})
 
-    self:_prompt_reset()
-    self:_title_set()
+	self:_prompt_reset()
+	self:_title_set()
 end
 
 function kernel:_try_send_input()
-    local code = table.concat(
-        vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false),
-        "\n"
-    )
-    local callback = engine.is_complete(self.id, code)
+	local code = table.concat(vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false), "\n")
+	local callback = engine.is_complete(self.id, code)
 
-    utils.listen(callback, {
-        action = function(res)
-            return res.status == "idle" and "exit"
-                or res.type == "is_complete_reply" and "handle"
-                or "retry"
-        end,
-        -- TODO: add a timeout here
-        ---@param res Jet.Callback.IsComplete.Result
-        handler = function(res)
-            if res.data.status == "incomplete" then
-                if res.data.indent then
-                    self.prompt.continue = vim.trim(res.data.indent)
-                end
-                -- In rare cases that the kernel has taken a while to respond
-                -- and the user has moved to a different buffer, don't send
-                -- the new line
-                if vim.fn.bufnr() == self.repl_input_bufnr then
-                    -- We use regular old feedkeys here since we want to
-                    -- trigger any other normal stuff, e.g. the indenexpr()
-                    vim.api.nvim_feedkeys("\r", "n", false)
-                end
-            else
-                self:_input_send()
-            end
-        end,
-        interval = 10,
-    })
+	utils.listen(callback, {
+		action = function(res)
+			return res.status == "idle" and "exit" or res.type == "is_complete_reply" and "handle" or "retry"
+		end,
+		-- TODO: add a timeout here
+		---@param res Jet.Callback.IsComplete.Result
+		handler = function(res)
+			if res.data.status == "incomplete" then
+				if res.data.indent then
+					self.prompt.continue = vim.trim(res.data.indent)
+				end
+				-- In rare cases that the kernel has taken a while to respond
+				-- and the user has moved to a different buffer, don't send
+				-- the new line
+				if vim.fn.bufnr() == self.repl_input_bufnr then
+					-- We use regular old feedkeys here since we want to
+					-- trigger any other normal stuff, e.g. the indenexpr()
+					vim.api.nvim_feedkeys("\r", "n", false)
+				end
+			else
+				self:_input_send()
+			end
+		end,
+		interval = 10,
+	})
 end
 
 function kernel:_input_send()
-    local code = vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false)
-    self:_prompt_reset()
-    vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, {})
-    self:execute(code)
-    vim.api.nvim_win_set_config(self.repl_input_winnr, { height = 1 })
+	local code = vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false)
+	self:_prompt_reset()
+	vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, {})
+	self:execute(code)
+	vim.api.nvim_win_set_config(self.repl_input_winnr, { height = 1 })
 end
 
 ---@param fn fun(bufnr: number?)
 function kernel:_with_input_buf(fn)
-    if vim.api.nvim_buf_is_valid(self.repl_input_bufnr) then
-        fn(self.repl_input_bufnr)
-    end
+	if vim.api.nvim_buf_is_valid(self.repl_input_bufnr) then
+		fn(self.repl_input_bufnr)
+	end
 end
 
 ---@param fn fun(bufnr: number?)
 function kernel:_with_output_buf(fn)
-    if vim.api.nvim_buf_is_valid(self.repl_output_bufnr) then
-        fn(self.repl_output_bufnr)
-    end
+	if vim.api.nvim_buf_is_valid(self.repl_output_bufnr) then
+		fn(self.repl_output_bufnr)
+	end
 end
 
 ---@param fn fun(winnr: number?)
 function kernel:_with_input_win(fn)
-    if vim.api.nvim_win_is_valid(self.repl_input_winnr) then
-        fn(self.repl_input_winnr)
-    end
+	if vim.api.nvim_win_is_valid(self.repl_input_winnr) then
+		fn(self.repl_input_winnr)
+	end
 end
 
 ---@param fn fun(winnr: number?)
 function kernel:_with_output_win(fn)
-    if vim.api.nvim_win_is_valid(self.repl_output_winnr) then
-        fn(self.repl_output_winnr)
-    end
+	if vim.api.nvim_win_is_valid(self.repl_output_winnr) then
+		fn(self.repl_output_winnr)
+	end
 end
 
 ---@param msg Jet.Callback.Execute.Result
 function kernel:_handle_result(msg)
-    if not msg.data then
-        return
-    end
+	if not msg.data then
+		return
+	end
 
-    if msg.type == "execute_input" then
-        local code = self:_prompt_get_input() .. msg.data.code:gsub("\n", "\n" .. self:_prompt_get_continue())
-        self:_display_repl_text(code .. "\n")
-    elseif msg.type == "execute_result" then
-        self:_display_repl_text(msg.data.data["text/plain"])
-    elseif msg.type == "stream" then
-        self:_display_repl_text(msg.data.text)
-    elseif msg.type == "error" then
-        self:_display_repl_text(msg.data.evalue)
-        self:_display_repl_text("\n" .. table.concat(msg.data.traceback, "\n"))
-    elseif msg.type == "input_request" then
-        self:_display_repl_text(msg.data.prompt)
-    elseif msg.type == "display_data" then
-        self:_display_repl_text(vim.inspect(msg.data))
-    else
-        utils.log_warn("Unhandled kernel message type: '%s'", msg.type)
-    end
+	if msg.type == "execute_input" then
+		local code = self:_prompt_get_input() .. msg.data.code:gsub("\n", "\n" .. self:_prompt_get_continue())
+		self:_display_repl_text(code .. "\n")
+	elseif msg.type == "execute_result" then
+		self:_display_repl_text(msg.data.data["text/plain"])
+	elseif msg.type == "stream" then
+		self:_display_repl_text(msg.data.text)
+	elseif msg.type == "error" then
+		self:_display_repl_text(msg.data.evalue)
+		self:_display_repl_text("\n" .. table.concat(msg.data.traceback, "\n"))
+	elseif msg.type == "input_request" then
+		self:_display_repl_text(msg.data.prompt)
+	elseif msg.type == "display_data" then
+		self:_display_repl_text(vim.inspect(msg.data))
+	else
+		utils.log_warn("Unhandled kernel message type: '%s'", msg.type)
+	end
 
-    self:_scroll_to_end()
+	self:_scroll_to_end()
 end
 
 function kernel:_prompt_reset()
-    if self.repl_input_winnr then
-        local n_lines = #vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false)
-        vim.api.nvim_win_set_config(self.repl_input_winnr, { height = n_lines })
-    end
-    self:_prompt_clear(0, -1)
-    for i = 1, vim.fn.line("$", self.repl_input_winnr) do
-        self:_prompt_set(i - 1)
-    end
+	if self.repl_input_winnr then
+		local n_lines = #vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false)
+		vim.api.nvim_win_set_config(self.repl_input_winnr, { height = n_lines })
+	end
+	self:_prompt_clear(0, -1)
+	for i = 1, vim.fn.line("$", self.repl_input_winnr) do
+		self:_prompt_set(i - 1)
+	end
 end
 
 ---@param line_start number
 ---@param line_end number
 function kernel:_prompt_clear(line_start, line_end)
-    self:_with_input_buf(function(input_buf)
-        vim.api.nvim_buf_clear_namespace(input_buf, self._ns, line_start, line_end)
-    end)
+	self:_with_input_buf(function(input_buf)
+		vim.api.nvim_buf_clear_namespace(input_buf, self._ns, line_start, line_end)
+	end)
 end
 
 ---@param lnum number 0-indexed
 ---@param text? string Defaults to the kernel prompt for `lnum`
 function kernel:_prompt_set(lnum, text)
-    text = text or (lnum == 0 and self:_prompt_get_input() or self:_prompt_get_continue())
+	text = text or (lnum == 0 and self:_prompt_get_input() or self:_prompt_get_continue())
 
-    self:_with_input_buf(function(input_buf)
-        vim.api.nvim_buf_set_extmark(input_buf, self._ns, lnum, 0, {
-            -- TODO: add Jet highlight groups
-            virt_text = { { text, "FloatTitle" } },
-            virt_text_pos = "inline",
-            right_gravity = false,
-        })
-    end)
+	self:_with_input_buf(function(input_buf)
+		vim.api.nvim_buf_set_extmark(input_buf, self._ns, lnum, 0, {
+			-- TODO: add Jet highlight groups
+			virt_text = { { text, "FloatTitle" } },
+			virt_text_pos = "inline",
+			right_gravity = false,
+		})
+	end)
 end
 
 function kernel:_prompt_get_input()
-    return (self.prompt_template.input or "%s "):format(self.prompt.input or ">")
+	return (self.prompt_template.input or "%s "):format(self.prompt.input or ">")
 end
 
 function kernel:_prompt_get_continue()
-    return (self.prompt_template.continue or "%s   "):format(self.prompt.continue or "+")
+	return (self.prompt_template.continue or "%s   "):format(self.prompt.continue or "+")
 end
 
 ---@param text string[]
 function kernel:_input_set(text)
-    if not text then
-        return
-    end
-    vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, text)
-    self:_prompt_reset()
+	if not text then
+		return
+	end
+	vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, text)
+	self:_prompt_reset()
 end
 
 ---@param increment number
 ---@return string[]
 function kernel:_history_get(increment)
-    local new_index = self.history_index + increment
-    self.history_index = math.max(1, math.min(new_index, #self.history + 1))
-    return self.history[self.history_index] or {}
+	local new_index = self.history_index + increment
+	self.history_index = math.max(1, math.min(new_index, #self.history + 1))
+	return self.history[self.history_index] or {}
 end
 
 function kernel:_history_append(code)
-    table.insert(self.history, code)
-    self.history_index = #self.history + 1
+	table.insert(self.history, code)
+	self.history_index = #self.history + 1
 end
 
 function kernel:_scroll_to_end()
-    self:_with_output_buf(function(output_buf)
-        vim.api.nvim_buf_call(output_buf, function()
-            vim.fn.cursor(vim.fn.line("$"), 0)
-        end)
-    end)
+	self:_with_output_buf(function(output_buf)
+		vim.api.nvim_buf_call(output_buf, function()
+			vim.fn.cursor(vim.fn.line("$"), 0)
+		end)
+	end)
 end
 
 ---@param title string?
 function kernel:_title_set(title)
-    title = title or (self.instance and self.instance.display_name)
-    title = title or (self.instance.language and self.instance.language.name)
+	local inst = self.instance
+	local spec = inst and inst.spec
+	local info = inst and inst.info
+	title = title or (spec and spec.display_name) or (info and info.language_info.name)
 
-    if title then
-        vim.api.nvim_win_set_config(self.repl_output_winnr, {
-            title = title,
-            title_pos = "center",
-        })
-    end
+	if title then
+		vim.api.nvim_win_set_config(self.repl_output_winnr, {
+			title = title,
+			title_pos = "center",
+		})
+	end
 end
 
 ---@param info string?
 function kernel:_subtitle_set(info)
-    vim.api.nvim_win_set_config(self.repl_input_winnr, {
-        title = info or "",
-        title_pos = "right"
-    })
+	vim.api.nvim_win_set_config(self.repl_input_winnr, {
+		title = info or "",
+		title_pos = "right",
+	})
 end
 
-function kernel:_set_filetype()
-    self.filetype = utils.ext_to_filetype(self.instance.language.file_extension)
-        or self.instance.language.name
-        or self.instance.language.file_extension
-    vim.bo[self.repl_input_bufnr].filetype = self.filetype
+function kernel:_filetype_set(filetype)
+	self.filetype = filetype or self:_filetype_get()
+	vim.bo[self.repl_input_bufnr].filetype = self.filetype
+end
+
+---@return string?
+function kernel:_filetype_get()
+	local spec_lang = self.instance.spec.language
+	local lang = self.instance.info and self.instance.info.language_info or {}
+	return utils.ext_to_filetype(lang.file_extension) or lang.name or lang.file_extension or spec_lang
 end
 
 ---@param text string
 function kernel:_display_repl_text(text)
-    if not text then
-        return
-    end
+	if not text then
+		return
+	end
 
-    vim.api.nvim_chan_send(self.repl_channel, text)
+	vim.api.nvim_chan_send(self.repl_channel, text)
 end
 
 return kernel

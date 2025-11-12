@@ -1,9 +1,9 @@
 local Jet = {}
 
 
--- ============================================================================
--- ============== API =========================================================
--- ============================================================================
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+--                API
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 --
 -- Main commands:
 --
@@ -27,6 +27,27 @@ local Jet = {}
 --
 -- All the above should use vim.ui.select if no kernel is provided. Can also
 -- pass parameters as in Lua api, e.g. like trouble.nvim.
+
+---@class Jet.CmdOpts.Open
+---
+---Kernel name or id to open.
+---@field name? string
+---
+---Kernel language to open.
+---@field langugage? string
+---
+---Interaction mode
+---@field mode? "repl" | "notebook" | "both"
+---
+---Whether to focus the opened window.
+---@field focus? boolean
+
+---@param opts Jet.CmdOpts.Open
+function Jet.open(opts)
+    vim.print(opts)
+end
+
+
 -- ----------------------------------------------------------------------------
 -- CONCEPTS:
 --
@@ -49,7 +70,8 @@ local Jet = {}
 -- - linked_buffers: number[]
 --
 -- Buffers should have the following data in `vim.b`:
--- - jet.mode: "notebook" | "repl" (if not present fall back to ft default or "repl")
+-- - jet.mode: "notebook" | "repl" (if not present fall back to ft default or
+--   "repl")
 --
 -- ----------------------------------------------------------------------------
 -- PRIMARY REQUIREMENT:
