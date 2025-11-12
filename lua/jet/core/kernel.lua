@@ -298,6 +298,16 @@ function kernel:_init_repl()
 		end,
 	})
 
+	for _, buffer in ipairs({ self.repl_input_bufnr, self.repl_output_bufnr }) do
+		vim.api.nvim_create_autocmd("BufDelete", {
+			group = self._augroup,
+			buffer = buffer,
+			callback = function()
+                self:stop()
+			end,
+		})
+	end
+
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		group = self._augroup,
 		buffer = self.repl_input_bufnr,
@@ -367,9 +377,7 @@ function kernel:_init_repl()
 end
 
 function kernel:_set_layout()
-	if
-		not vim.api.nvim_win_is_valid(self.repl_input_winnr) or not vim.api.nvim_win_is_valid(self.repl_output_winnr)
-	then
+	if not (vim.api.nvim_win_is_valid(self.repl_input_winnr) and vim.api.nvim_win_is_valid(self.repl_output_winnr)) then
 		return
 	end
 
@@ -485,14 +493,14 @@ function kernel:_handle_result(msg)
 
 	if msg.type == "execute_input" then
 		local code = self:_prompt_get_input() .. msg.data.code:gsub("\n", "\n" .. self:_prompt_get_continue())
-		self:_display_repl_text(code .. "\n")
+		self:_display_repl_text(utils.add_linebreak(code))
 	elseif msg.type == "execute_result" then
-		self:_display_repl_text(msg.data.data["text/plain"])
+		self:_display_repl_text(utils.add_linebreak(msg.data.data["text/plain"]))
 	elseif msg.type == "stream" then
 		self:_display_repl_text(msg.data.text)
 	elseif msg.type == "error" then
-		self:_display_repl_text(msg.data.evalue)
-		self:_display_repl_text("\n" .. table.concat(msg.data.traceback, "\n"))
+		self:_display_repl_text(utils.add_linebreak(msg.data.evalue))
+		self:_display_repl_text(utils.add_linebreak(table.concat(msg.data.traceback, "\n")))
 	elseif msg.type == "input_request" then
 		self:_display_repl_text(msg.data.prompt)
 	elseif msg.type == "display_data" then

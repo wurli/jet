@@ -5,10 +5,6 @@ Manager:open_kernel()
 -- Error executing vim.schedule lua callback: Could not start kernel process '"python" "-m" "ipykernel_launcher" "-f" "/var/folders/8j/1g_zx_yd4hjfbcwg6npwhyq40000gn/T/jet_connection_file_6dc8e356-9f99-4d34-829f-dab339786127.json"': No such file or directory (os error 2)
 
 
-Jet = require("jet.core.rust")
-local id, inst = Jet.start_kernel("/Users/JACOB.SCOTT1/Repos/jet/.venv/share/jupyter/kernels/python3/kernel.json")
-vim.print(id)
-
 -- Kernel = require("jet.core.kernel")
 -- Ark = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 -- Jet.execute_code(Ark.id, "options(cli.num_colors = 256)", {})

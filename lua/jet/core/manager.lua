@@ -54,7 +54,6 @@ setmetatable(manager, {
 ---@param opts? Jet.Manager.Filter
 function manager:open_kernel(opts)
 	self:get_kernel(function(spec_path, id)
-        vim.print({ spec_path = spec_path, id = id })
 		if id then
 			self.running[id]:ui_show()
 		elseif spec_path then

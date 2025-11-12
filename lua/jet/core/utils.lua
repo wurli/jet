@@ -110,6 +110,10 @@ M.path_shorten = function(path)
 	return path
 end
 
+M.add_linebreak = function(x)
+	return x .. (x:sub(-1) == "\n" and "" or "\n")
+end
+
 -- vim.fn.expand(string, nosuf, list)
 
 M.log_debug = function(msg, ...)
