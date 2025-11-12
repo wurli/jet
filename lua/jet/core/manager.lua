@@ -30,7 +30,7 @@ manager.__index = manager
 
 local jet_global_augroup = vim.api.nvim_create_augroup("jet-global", {})
 
-vim.api.nvim_create_autocmd("BufEnter", {
+vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
 	group = jet_global_augroup,
 	callback = function()
 		local id = (vim.b.jet and vim.b.jet.id)
@@ -40,7 +40,7 @@ vim.api.nvim_create_autocmd("BufEnter", {
 			return
 		end
 
-		manager.map_kernel_filetype[vim.bo.filetype] = id
+		manager.map_kernel_filetype[vim.bo.filetype:lower()] = id
 	end,
 })
 
@@ -107,6 +107,7 @@ function manager:get_kernel(callback, opts)
 		}
 	end, kernels)
 
+	-- TODO: more helpful sorting
 	table.sort(kernels, function(a, b)
 		return a.desc < b.desc
 	end)
@@ -162,28 +163,6 @@ function manager:list_kernels()
 	return kernels
 end
 
----@class Jet.Manager.Filter
----
----Case-insensitive Lua pattern; matched against the kernel spec path
----@field spec_path? string
----
----A buffer number. Note: this filters for (a) the linked kernel for the buffer
----if it exists, and if not, (b) the primary kernel for the buffer's filetype
----@field buf? number
----
----Case-insensitive language name (not a pattern); matched against the language
----as given in the kernel spec
----@field language? string
----
----Case-insensitive pattern; matched against the kernel display name
----@field name? string
----
----The ID of an existing kernel instance to get
----@field id? string
----
----Active status
----@field status? "active" | "inactive"
-
 ---@param kernels Jet.Manager.ListItem[]
 ---@param opts? Jet.Manager.Filter
 function manager:_filter(kernels, opts)
@@ -192,9 +171,17 @@ function manager:_filter(kernels, opts)
 	end
 
 	if opts.buf then
+		-- First we try and get a kernel which may have been explicitly linked
+		-- to the buffer
+		opts.buf = opts.buf ~= 0 and opts.buf or vim.api.nvim_get_current_buf()
 		opts.id = self.map_kernel_buffer[opts.buf]
-		-- TODO: language ain't filetype!
-		opts.language = vim.bo[opts.buf].filetype or opts.language
+		-- If no linked kernel, then try and get the 'primary' kernel for the
+		-- current filetype
+		if not opts.id then
+			-- Try to get kernel from filetype mapping
+			local ft = vim.bo[opts.buf].filetype
+            opts.id = self.map_kernel_filetype[ft:lower()]
+		end
 	end
 
 	if opts.id then

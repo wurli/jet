@@ -1,5 +1,6 @@
-local Jet = {}
+local manager = require("jet.core.manager")
 
+local Jet = {}
 
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 --                API
@@ -28,25 +29,47 @@ local Jet = {}
 -- All the above should use vim.ui.select if no kernel is provided. Can also
 -- pass parameters as in Lua api, e.g. like trouble.nvim.
 
----@class Jet.CmdOpts.Open
+---@class Jet.Manager.Filter
 ---
----Kernel name or id to open.
+---A buffer number; 0 for the current buffer. Note: this filters for (a) the
+---linked kernel for the buffer if it exists, and if not, (b) the primary
+---kernel for the buffer's filetype.
+---@field buf? number
+---
+---Case-insensitive Lua pattern; matched against the kernel spec path
+---@field spec_path? string
+---
+---Case-insensitive language name (not a pattern); matched against the language
+---as given in the kernel spec
+---@field language? string
+---
+---Case-insensitive pattern; matched against the kernel display name
 ---@field name? string
 ---
----Kernel language to open.
----@field langugage? string
+---The ID of an existing kernel instance to get
+---@field id? string
 ---
----Interaction mode
----@field mode? "repl" | "notebook" | "both"
----
----Whether to focus the opened window.
----@field focus? boolean
+---Active status
+---@field status? "active" | "inactive"
 
----@param opts Jet.CmdOpts.Open
+---By default opens the kernel for the current buffer.
+---@param opts Jet.Manager.Filter
 function Jet.open(opts)
-    vim.print(opts)
+	manager:open_kernel(opts or { buf = 0 })
 end
 
+function Jet.send()
+    local pos = vim.fn.getpos(".")
+	manager:get_kernel(function(_, id)
+		if id then
+            -- Restore the cursor position after getting the kernel (e.g.
+            -- in case the user had to enter a dialog to choose a kernel)
+            -- so  the kernel can resolve the code to send.
+            vim.fn.setpos(".", pos)
+			manager.running[id]:send_from_buf()
+		end
+	end, { buf = 0 })
+end
 
 -- ----------------------------------------------------------------------------
 -- CONCEPTS:
@@ -125,9 +148,6 @@ end
 --   style just involves unhiding the REPL and not showing code cells.
 --
 
-
-Jet.setup = function(_)
-end
-
+Jet.setup = function(_) end
 
 return Jet

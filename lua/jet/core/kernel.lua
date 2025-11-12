@@ -51,10 +51,14 @@ local spin = require("jet.core.spinners")
 ---@field last_normal_win number
 ---@field last_jet_win number
 ---
+---@field test number
+---
 ---The namespace for virtual text indent text
 ---@field _ns number
 local kernel = {}
 kernel.__index = kernel
+
+kernel.test = 1
 
 setmetatable(kernel, {
 	---@return Jet.Kernel
@@ -81,7 +85,7 @@ function kernel.start(spec_path)
 	self:_init_repl()
 	self:_filetype_set()
 	self:ui_show()
-	self:_display_repl_text(self.instance.info and self.instance.info.banner)
+	self:_display_repl_text(self.instance.info and utils.add_linebreak(self.instance.info.banner))
 
 	vim.api.nvim_create_autocmd("WinLeave", {
 		group = self._augroup,
@@ -122,6 +126,10 @@ end
 function kernel:execute(code, callback)
 	if not self.id then
 		error("Kernel is not active; use `start()` to activate the kernel.")
+	end
+
+	if vim.tbl_count(code) == 0 then
+		return
 	end
 
 	local callback1 = engine.execute_code(self.id, table.concat(code, "\n"), {})
@@ -298,15 +306,14 @@ function kernel:_init_repl()
 		end,
 	})
 
-	for _, buffer in ipairs({ self.repl_input_bufnr, self.repl_output_bufnr }) do
-		vim.api.nvim_create_autocmd("BufDelete", {
-			group = self._augroup,
-			buffer = buffer,
-			callback = function()
-                self:stop()
-			end,
-		})
-	end
+	vim.api.nvim_create_autocmd("BufUnload", {
+		group = self._augroup,
+		callback = function(e)
+			if vim.tbl_contains({ self.repl_input_bufnr, self.repl_output_bufnr }, e.buf) then
+				self:stop()
+			end
+		end,
+	})
 
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		group = self._augroup,
@@ -315,20 +322,6 @@ function kernel:_init_repl()
 			self:_prompt_reset()
 		end,
 	})
-
-	--- We do have guards in place to stop us ever entering insert in the
-	--- background/output buffers, but just in case...
-	for _, buf in ipairs({ self.repl_background_bufnr, self.repl_output_bufnr }) do
-		vim.api.nvim_create_autocmd("InsertEnter", {
-			group = self._augroup,
-			buffer = buf,
-			callback = function()
-				if vim.api.nvim_win_is_valid(self.repl_input_winnr) then
-					vim.api.nvim_set_current_win(self.repl_input_winnr)
-				end
-			end,
-		})
-	end
 
 	vim.api.nvim_create_autocmd("WinEnter", {
 		group = self._augroup,
@@ -442,19 +435,55 @@ function kernel:_try_send_input()
 					vim.api.nvim_feedkeys("\r", "n", false)
 				end
 			else
-				self:_input_send()
+				self:_send_from_repl()
 			end
 		end,
 		interval = 10,
 	})
 end
 
-function kernel:_input_send()
+function kernel:_send_from_repl()
 	local code = vim.api.nvim_buf_get_lines(self.repl_input_bufnr, 0, -1, false)
 	self:_prompt_reset()
 	vim.api.nvim_buf_set_lines(self.repl_input_bufnr, 0, -1, false, {})
 	self:execute(code)
 	vim.api.nvim_win_set_config(self.repl_input_winnr, { height = 1 })
+end
+
+function kernel:send_from_buf()
+	local mode = vim.fn.mode()
+
+	local code = (
+		mode == "n" and self.get_buf_text_normal()
+		or mode == "i" and self.get_buf_text_insert()
+		or mode:lower() == "v" and self.get_buf_text_visual()
+		or {}
+	)
+
+    vim.print(code)
+
+	self:execute(code)
+end
+
+---@return string[]
+function kernel.get_buf_text_normal()
+	local line = vim.fn.line(".")
+	return vim.api.nvim_buf_get_lines(0, line - 1, line, false)
+end
+
+---@return string[]
+function kernel.get_buf_text_insert()
+	local line = vim.fn.line(".")
+	return vim.api.nvim_buf_get_lines(0, line - 1, line, false)
+end
+
+---@return string[]
+function kernel.get_buf_text_visual()
+	local start, stop = vim.fn.getpos("v"), vim.fn.getpos(".")
+	-- local escape_keycode = "\27"
+	-- vim.fn.feedkeys(escape_keycode, "L")
+	-- vim.fn.cursor(math.min(vim.fn.nextnonblank(stop[2] + 1), stop[2]), 0)
+	return vim.fn.getregion(start, stop, { type = vim.fn.mode() })
 end
 
 ---@param fn fun(bufnr: number?)
