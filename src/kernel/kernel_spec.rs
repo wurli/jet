@@ -188,6 +188,14 @@ impl KernelSpec {
             dirs.push(PathBuf::from(&var).join("Library/Jupyter/kernels"));
         }
 
+        // Python kernels.
+        // We do the user a favour and check for an available venv too.
+        for py_cmd in ["python3", "python", ".venv/bin/python"] {
+            if let Some(sys_prefix) = Self::get_sys_prefix(py_cmd.into()) {
+                dirs.push(sys_prefix.join("share/jupyter/kernels"));
+            }
+        }
+
         // System kernels
         dirs.push("/usr/share/jupyter/kernels".into());
         dirs.push("/usr/local/share/jupyter/kernels".into());
@@ -197,11 +205,31 @@ impl KernelSpec {
             dirs.push(PathBuf::from(var).join("share/jupyter/kernels"));
         }
 
+        // Remove duplicates (sort is needed for dedup to work) so we don't get multiple reads of
+        // the same directory.
+        dirs.sort();
+        dirs.dedup();
+
         dirs.into_iter()
             .filter_map(|dir| read_dir(dir).ok())
             .flat_map(|entries| entries.flatten())
             .map(|entry| entry.path().join("kernel.json"))
             .filter(|path| path.exists())
             .collect()
+    }
+
+    fn get_sys_prefix(py_cmd: String) -> Option<PathBuf> {
+        let output = Command::new(py_cmd)
+            .arg("-c")
+            .arg("import sys; print(sys.prefix)")
+            .output()
+            .ok()?;
+
+        if output.status.success() {
+            let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Some(prefix.into())
+        } else {
+            None
+        }
     }
 }
