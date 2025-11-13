@@ -12,6 +12,7 @@ use crate::error::Error;
 use crate::msg::session::Session;
 use crate::msg::wire::comm_msg::CommWireMsg;
 use crate::msg::wire::comm_open::CommOpen;
+use crate::msg::wire::interrupt_request::InterruptRequest;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::msg::wire::kernel_info_reply::KernelInfoReply;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
@@ -351,8 +352,9 @@ impl KernelComm {
                 }
             }
 
+            // Some kernels might ask for input; "Do you really want to quit?" and that sort of
+            // thing.
             self.route_all_incoming_stdin();
-
             if let Ok(reply) = receivers.stdin.try_recv() {
                 match reply {
                     Message::InputRequest(_) => return Ok(reply),
@@ -377,6 +379,50 @@ impl KernelComm {
                         );
                         return Err(anyhow::anyhow!(
                             "Expected shutdown_reply but received unexpected message: {:#?}",
+                            other
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn request_interrupt(&self) -> anyhow::Result<Message> {
+        self.route_all_incoming_shell();
+        let receivers = self.send_control(InterruptRequest {})?;
+
+        loop {
+            while let Ok(reply) = receivers.iopub.try_recv() {
+                match reply {
+                    Message::InterruptReply(_) => {
+                        log::info!("Received interrupt_reply on iopub (non-standard)");
+                        return Ok(reply);
+                    }
+                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
+                    }
+                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                        break;
+                    }
+                    _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+                }
+            }
+
+            self.route_all_incoming_control();
+            if let Ok(reply) = receivers.control.try_recv() {
+                match reply {
+                    Message::InterruptReply(_) => {
+                        log::info!("Received interrupt_reply on control");
+                        self.control_broker
+                            .unregister_request(&receivers.id, "reply received");
+                        return Ok(reply);
+                    }
+                    other => {
+                        log::warn!(
+                            "Expected interrupt_reply but received unexpected message: {:#?}",
+                            other
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Expected interrupt_reply but received unexpected message: {:#?}",
                             other
                         ));
                     }

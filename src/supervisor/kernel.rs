@@ -17,7 +17,8 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::connection::connection::JupyterChannels;
 use crate::connection::heartbeat::Heartbeat;
 use crate::connection::iopub::Iopub;
-use crate::kernel::kernel_spec::KernelSpec;
+use crate::error::Error;
+use crate::kernel::kernel_spec::{InterruptMode, KernelSpec};
 use crate::kernel::startup_method::StartupMethod;
 use crate::msg::wire::jupyter_message::{Message, Status};
 use crate::msg::wire::message_id::Id;
@@ -56,7 +57,11 @@ impl Kernel {
             }
         };
 
-        log::info!("Kernel '{}' started with id {}", spec.display_name, kernel_id);
+        log::info!(
+            "Kernel '{}' started with id {}",
+            spec.display_name,
+            kernel_id
+        );
 
         let iopub_broker = Arc::new(Broker::new(format!("IOPub{}", kernel_id)));
         let shell_broker = Arc::new(Broker::new(format!("Shell{}", kernel_id)));
@@ -202,6 +207,51 @@ impl Kernel {
                 process.kill()?;
             }
         }
+
+        Ok(())
+    }
+
+    pub fn interrupt(&self) -> Result<Option<Message>, Error> {
+        let interrupt_mode = match self.info.spec.interrupt_mode {
+            Some(ref mode) => mode.clone(),
+            None => InterruptMode::Signal,
+        };
+
+        match interrupt_mode {
+            InterruptMode::Signal => {
+                #[cfg(unix)]
+                match self.interrupt_signal() {
+                    Ok(()) => return Ok(None),
+                    Err(e) => return Err(e),
+                };
+
+                #[cfg(not(unix))]
+                return Err(Error::UnsupportedPlatform(
+                    "Can't send interrupt using OS signal",
+                ));
+            }
+            InterruptMode::Message => {
+                // return interrupt_message(kernel);
+                match self.comm.request_interrupt() {
+                    Ok(msg) => return Ok(Some(msg)),
+                    Err(e) => return Err(Error::Anyhow(e))
+                }
+            }
+        }
+    }
+
+    /// Pairs with `KernelComm.interrupt_message()`
+    fn interrupt_signal(&self) -> Result<(), Error> {
+        use nix::sys::signal::{self, Signal};
+        use nix::unistd::Pid;
+
+        let process_id = Pid::from_raw(self.process.lock().unwrap().id() as i32);
+
+        if let Err(e) = signal::kill(process_id, Signal::SIGINT) {
+            return Err(Error::Anyhow(anyhow::anyhow!(
+                "Failed to interrupt using SIGINT: {e}"
+            )));
+        };
 
         Ok(())
     }

@@ -17,6 +17,7 @@ use crate::msg::wire::message_id::Id;
 /// Type representing all errors that can occur inside the Amalthea implementation.
 #[derive(Debug)]
 pub enum Error {
+    UnsupportedPlatform(String),
     KernelCommandFailure(Command, std::io::Error),
     NoIncomingData(String),
     HeartbeatFailed(String),
@@ -67,6 +68,9 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Error::UnsupportedPlatform(msg) => {
+                write!(f, "{msg} (not supported on this platform)")
+            }
             Error::KernelCommandFailure(cmd, error) => {
                 write!(f, "Could not start kernel process '{:?}': {}", cmd, error)
             }
