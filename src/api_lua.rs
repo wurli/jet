@@ -84,6 +84,18 @@ pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult
     Ok(())
 }
 
+pub fn interrupt(lua: &Lua, kernel_id: String) -> LuaResult<LuaTable> {
+    let res = api::interrupt(kernel_id.into()).into_lua_err()?;
+    match res {
+        Some(Message::InterruptReply(msg)) => msg.content.to_lua(lua),
+        Some(other) => Err(LuaError::external(format!(
+            "Received unexpected reply to interrupt request {}",
+            other.describe()
+        ))),
+        None => lua.create_table(),
+    }
+}
+
 pub fn execute_code(
     lua: &Lua,
     (kernel_id, code, user_expressions): (String, String, HashMap<String, String>),
@@ -123,6 +135,7 @@ impl ToLua for CallbackOutput {
             CallbackOutput::Busy(Some(Message::ExecuteInput(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::ExecuteResult(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::InputRequest(msg))) => msg.content.to_lua(lua),
+            CallbackOutput::Busy(Some(Message::InterruptReply(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::IsCompleteReply(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(Message::Stream(msg))) => msg.content.to_lua(lua),
             CallbackOutput::Busy(Some(other)) => Err(LuaError::external(format!(

@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::{
     callback_output::CallbackOutput,
+    error::Error,
     kernel::kernel_spec::KernelSpec,
     msg::wire::{
         complete_request::CompleteRequest,
@@ -144,6 +145,10 @@ pub fn comm_send(
 
         CallbackOutput::Busy(None)
     })
+}
+
+pub fn interrupt(kernel_id: Id) -> Result<Option<Message>, Error> {
+    KernelManager::get(&kernel_id)?.interrupt()
 }
 
 pub fn execute_code(

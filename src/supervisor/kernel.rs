@@ -214,7 +214,16 @@ impl Kernel {
     pub fn interrupt(&self) -> Result<Option<Message>, Error> {
         let interrupt_mode = match self.info.spec.interrupt_mode {
             Some(ref mode) => mode.clone(),
-            None => InterruptMode::Signal,
+            None => match &self.info.info.protocol_version {
+                // This is technically off-label; the Jupyter protocol says that if kernels don't
+                // indicate in the spec that they support message interrupts then clients should
+                // use a signal. However, right now neither Ipykernel nor Ark indicate they support
+                // message interrupts, but they do. So unless I'm misinterpreting the protocol,
+                // this is the informal standard that kernels tend to use.
+                // https://jupyter-client.readthedocs.io/en/latest/messaging.html#kernel-interrupt
+                Some(version) if version >= &String::from("5.3") => InterruptMode::Message,
+                _ => InterruptMode::Signal,
+            },
         };
 
         match interrupt_mode {
@@ -224,19 +233,15 @@ impl Kernel {
                     Ok(()) => return Ok(None),
                     Err(e) => return Err(e),
                 };
-
                 #[cfg(not(unix))]
                 return Err(Error::UnsupportedPlatform(
                     "Can't send interrupt using OS signal",
                 ));
             }
-            InterruptMode::Message => {
-                // return interrupt_message(kernel);
-                match self.comm.request_interrupt() {
-                    Ok(msg) => return Ok(Some(msg)),
-                    Err(e) => return Err(Error::Anyhow(e))
-                }
-            }
+            InterruptMode::Message => match self.comm.request_interrupt() {
+                Ok(msg) => return Ok(Some(msg)),
+                Err(e) => return Err(Error::Anyhow(e)),
+            },
         }
     }
 

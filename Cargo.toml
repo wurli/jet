@@ -28,4 +28,5 @@ tempfile = "3.23.0"
 uuid = { version = "1.18.1", features = ["v4"] }
 zmq = "0.10.0"
 
-
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30.1", features = ["signal"] }
