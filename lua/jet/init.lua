@@ -59,16 +59,16 @@ function Jet.open(opts)
 end
 
 function Jet.send()
-    local pos = vim.fn.getpos(".")
+	local pos = vim.fn.getpos(".")
 	manager:get_kernel(function(_, id)
 		if id then
-            -- Restore the cursor position after getting the kernel (e.g.
-            -- in case the user had to enter a dialog to choose a kernel)
-            -- so  the kernel can resolve the code to send.
-            vim.fn.setpos(".", pos)
+			-- Restore the cursor position after getting the kernel (e.g.
+			-- in case the user had to enter a dialog to choose a kernel)
+			-- so  the kernel can resolve the code to send.
+			vim.fn.setpos(".", pos)
 			manager.running[id]:send_from_buf()
 		end
-	end, { buf = 0 })
+	end, { buf = 0, status = "active" })
 end
 
 -- ----------------------------------------------------------------------------

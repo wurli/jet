@@ -1,7 +1,7 @@
 local engine = require("jet.core.rust")
 local manager = require("jet.core.manager")
 local utils = require("jet.core.utils")
-local spin = require("jet.core.spinners")
+local spinners = require("jet.core.spinners")
 
 ---@class Jet.Kernel
 ---
@@ -134,11 +134,11 @@ function kernel:execute(code, callback)
 
 	local callback1 = engine.execute_code(self.id, table.concat(code, "\n"), {})
 	self:_history_append(code)
-	local stop_spinner = spin.run(function(frame)
+	local stop_spinner = spinners.run(function(frame)
 		self:_subtitle_set(frame)
 	end, function()
 		self:_subtitle_set()
-	end, "concentric", 500)
+	end, 100)
 
 	utils.listen(callback1, {
 		action = function(res)
@@ -460,8 +460,6 @@ function kernel:send_from_buf()
 		or {}
 	)
 
-    vim.print(code)
-
 	self:execute(code)
 end
 
@@ -528,8 +526,13 @@ function kernel:_handle_result(msg)
 	elseif msg.type == "stream" then
 		self:_display_repl_text(msg.data.text)
 	elseif msg.type == "error" then
-		self:_display_repl_text(utils.add_linebreak(msg.data.evalue))
-		self:_display_repl_text(utils.add_linebreak(table.concat(msg.data.traceback, "\n")))
+        local err = msg.data.evalue
+        local trace = msg.data.traceback
+		self:_display_repl_text(utils.add_linebreak(err))
+        -- I hate that I have to check this
+        if #trace > 0 and not (#trace == 1 and trace[1] == err) then
+            self:_display_repl_text(utils.add_linebreak(table.concat(trace, "\n")))
+        end
 	elseif msg.type == "input_request" then
 		self:_display_repl_text(msg.data.prompt)
 	elseif msg.type == "display_data" then
@@ -630,10 +633,12 @@ end
 
 ---@param info string?
 function kernel:_subtitle_set(info)
-	vim.api.nvim_win_set_config(self.repl_input_winnr, {
-		title = info or "",
-		title_pos = "right",
-	})
+	self:_with_input_win(function(win)
+		vim.api.nvim_win_set_config(win, {
+			title = info or "",
+			title_pos = "right",
+		})
+	end)
 end
 
 function kernel:_filetype_set(filetype)

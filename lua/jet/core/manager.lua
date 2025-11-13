@@ -34,13 +34,11 @@ vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
 	group = jet_global_augroup,
 	callback = function()
 		local id = (vim.b.jet and vim.b.jet.id)
+		local ft = vim.bo.filetype
 
-		if not id then
-			-- This shouldn't ever happen
-			return
+		if id and ft ~= "" then
+			manager.map_kernel_filetype[ft:lower()] = id
 		end
-
-		manager.map_kernel_filetype[vim.bo.filetype:lower()] = id
 	end,
 })
 
@@ -180,8 +178,14 @@ function manager:_filter(kernels, opts)
 		if not opts.id then
 			-- Try to get kernel from filetype mapping
 			local ft = vim.bo[opts.buf].filetype
-            opts.id = self.map_kernel_filetype[ft:lower()]
+			opts.id = self.map_kernel_filetype[ft:lower()]
 		end
+
+        -- If we still haven't found a kernel then there isn't an active one
+        -- for the buffer
+        if not opts.id then
+            return {}
+        end
 	end
 
 	if opts.id then
