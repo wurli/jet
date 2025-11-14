@@ -6,7 +6,6 @@
  */
 
 pub mod api;
-pub mod api_lua;
 pub mod callback_output;
 pub mod connection;
 pub mod error;
@@ -18,7 +17,7 @@ pub mod supervisor;
 use mlua::prelude::*;
 
 use crate::{
-    api_lua::{
+    api::{
         comm_open, comm_send, execute_code, get_completions, interrupt, is_complete,
         list_available_kernels, list_running_kernels, provide_stdin, request_restart,
         request_shutdown, start_kernel,

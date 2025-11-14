@@ -63,10 +63,10 @@ impl Kernel {
             kernel_id
         );
 
-        let iopub_broker = Arc::new(Broker::new(format!("IOPub{}", kernel_id)));
-        let shell_broker = Arc::new(Broker::new(format!("Shell{}", kernel_id)));
-        let stdin_broker = Arc::new(Broker::new(format!("Stdin{}", kernel_id)));
-        let control_broker = Arc::new(Broker::new(format!("Control{}", kernel_id)));
+        let iopub_broker = Arc::new(Broker::new(format!("IOPub{kernel_id}")));
+        let shell_broker = Arc::new(Broker::new(format!("Shell{kernel_id}")));
+        let stdin_broker = Arc::new(Broker::new(format!("Stdin{kernel_id}")));
+        let control_broker = Arc::new(Broker::new(format!("Control{kernel_id}")));
 
         let (stopper, monitor) = Self::loop_heartbeat(jupyter_channels.heartbeat);
         let iopub_tx = Self::listen_iopub(jupyter_channels.iopub, Arc::clone(&iopub_broker));

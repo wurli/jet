@@ -6,11 +6,13 @@
  */
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::Result;
 
 use crate::error::Error;
+use crate::kernel::kernel_spec::KernelSpec;
 use crate::msg::wire::message_id::Id;
 use crate::supervisor::kernel::Kernel;
 use crate::supervisor::kernel_info::KernelInfo;
@@ -30,6 +32,14 @@ impl KernelManager {
         Self {
             kernels: RwLock::new(HashMap::new()),
         }
+    }
+
+    pub fn start(spec_path: PathBuf) -> anyhow::Result<(Id, KernelInfo)> {
+        let spec = KernelSpec::from_file(&spec_path)?;
+        let kernel = Kernel::start(spec_path, spec)?;
+        let out = (kernel.id.clone(), kernel.info.clone());
+        Self::add(kernel)?;
+        Ok(out)
     }
 
     pub fn add(kernel: Kernel) -> Result<(), Error> {

@@ -10,7 +10,6 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use assert_matches::assert_matches;
-use jet::api;
 use jet::callback_output::KernelResponse;
 use jet::kernel::kernel_spec::KernelSpec;
 use jet::msg::wire::is_complete_reply::IsComplete;
@@ -42,7 +41,7 @@ fn start_ark() -> Id {
         .next()
         .expect("Ark kernel could not be located");
 
-    jet::api::start_kernel(ark_path.to_owned())
+    KernelManager::start(ark_path.to_owned())
         .expect("Failed to start Ark")
         .0
 }
@@ -110,7 +109,12 @@ fn test_ark_handles_stdin() {
         assert_eq!(msg.content.prompt, "Enter something:")
     });
 
-    api::provide_stdin(&ark_id(), String::from("Hello tests!")).expect("Could not provide stdin");
+    KernelManager::get(&ark_id())
+        .unwrap()
+        .comm
+        .provide_stdin(String::from("Hello tests!"))
+        .expect("Could not provide stdin");
+
     assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {
         assert_matches!(msg.content.data["text/plain"], Value::String(ref string) => {
             assert_eq!(string, "[1] \"Hello tests!\"")

@@ -10,7 +10,6 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use assert_matches::assert_matches;
-use jet::api;
 use jet::callback_output::KernelResponse;
 use jet::kernel::kernel_spec::KernelSpec;
 use jet::msg::wire::is_complete_reply::IsComplete;
@@ -42,7 +41,7 @@ fn start_ipykernel() -> Id {
         .next()
         .expect("Ipykernel could not be located");
 
-    jet::api::start_kernel(ipykernel_path.to_owned())
+    KernelManager::start(ipykernel_path.to_owned())
         .expect("Failed to start ipykernel")
         .0
 }
@@ -122,7 +121,10 @@ fn test_ipykernel_handles_stdin() {
         assert_eq!(msg.content.prompt, "Enter something:")
     });
 
-    api::provide_stdin(&ipykernel_id(), String::from("Hello tests!"))
+    KernelManager::get(&ipykernel_id())
+        .unwrap()
+        .comm
+        .provide_stdin(String::from("Hello tests!"))
         .expect("Could not provide stdin");
 
     assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {

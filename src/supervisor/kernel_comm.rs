@@ -15,6 +15,7 @@ use crate::msg::wire::comm_msg::CommWireMsg;
 use crate::msg::wire::comm_open::CommOpen;
 use crate::msg::wire::complete_request::CompleteRequest;
 use crate::msg::wire::execute_request::ExecuteRequest;
+use crate::msg::wire::input_reply::InputReply;
 use crate::msg::wire::interrupt_request::InterruptRequest;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
@@ -355,6 +356,11 @@ impl KernelComm {
                 }
             }
         }
+    }
+
+    pub fn provide_stdin(&self, value: String) -> anyhow::Result<()> {
+        self.send_stdin(InputReply { value })?;
+        Ok(())
     }
 
     pub(crate) fn request_interrupt(&self) -> anyhow::Result<Message> {
