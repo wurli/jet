@@ -26,6 +26,7 @@ use crate::msg::wire::status::ExecutionState;
 use crate::supervisor::broker::Broker;
 use crate::supervisor::kernel::{HeartbeatFailed, StopHeartbeat, StopIopub};
 use crate::supervisor::reply_receivers::ReplyReceivers;
+use anyhow::anyhow;
 use assert_matches::assert_matches;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -81,42 +82,6 @@ impl KernelComm {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::CannotStopThread(String::from("iopub"))),
         }
-    }
-
-    pub fn comm_open(
-        &self,
-        target_name: String,
-        data: serde_json::Value,
-    ) -> (Id, Receiver<Message>) {
-        let comm_id = Id::new();
-
-        let receiver = self
-            .iopub_broker
-            .register_comm(&comm_id, target_name.clone());
-
-        let msg = self.make_jupyter_message(CommOpen {
-            comm_id: comm_id.clone(),
-            target_name,
-            data,
-        });
-
-        self.shell_channel.lock().unwrap().send(msg);
-
-        (comm_id, receiver)
-    }
-
-    pub fn comm_send(&self, comm_id: Id, data: Value) -> anyhow::Result<(Id, Receiver<Message>)> {
-        if !self.iopub_broker.is_comm_open(&comm_id) {
-            log::error!("Failed to send on closed comm {comm_id}");
-            anyhow::bail!("Comm {comm_id} is not open");
-        }
-
-        let msg = self.make_jupyter_message(CommWireMsg { comm_id, data });
-        let id = msg.header.msg_id.clone();
-        let receiver = self.iopub_broker.register_request(&msg.header.msg_id);
-        self.shell_channel.lock().unwrap().send(msg);
-
-        Ok((id, receiver))
     }
 
     pub fn send_shell<T: ProtocolMessage>(&self, msg: T) -> Result<ReplyReceivers, Error> {
@@ -568,5 +533,110 @@ impl KernelComm {
         }
 
         KernelResponse::Busy(None)
+    }
+
+    pub fn send_comm_open_request(
+        &self,
+        target_name: String,
+        data: serde_json::Value,
+    ) -> (Id, Receiver<Message>) {
+        let comm_id = Id::new();
+        log::trace!("Opening new comm `{target_name}` with id {comm_id}");
+
+        let comm_receiver = self
+            .iopub_broker
+            .register_comm(&comm_id, target_name.clone());
+
+        self.shell_channel
+            .lock()
+            .unwrap()
+            .send(self.make_jupyter_message(CommOpen {
+                comm_id: comm_id.clone(),
+                target_name,
+                data,
+            }));
+
+        (comm_id, comm_receiver)
+    }
+
+    pub fn recv_comm_general(&self, comm_id: &Id, receiver: &Receiver<Message>) -> KernelResponse {
+        if !self.iopub_broker.is_comm_open(&comm_id) {
+            log::trace!("Comm {comm_id} is no longer active, returning None");
+            return KernelResponse::Idle;
+        }
+
+        while let Ok(reply) = receiver.try_recv() {
+            log::trace!("Receiving message from iopub: {}", reply.describe());
+            match reply {
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    return if self.iopub_broker.is_comm_open(&comm_id) {
+                        KernelResponse::Busy(None)
+                    } else {
+                        KernelResponse::Idle
+                    };
+                }
+                Message::CommMsg(msg) => {
+                    return KernelResponse::Busy(Some(Message::CommMsg(msg)));
+                }
+                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+            }
+        }
+
+        KernelResponse::Busy(None)
+    }
+
+    /// Send a message on an open comm.
+    ///
+    /// Returns receivers for any replies. Note that reply messages
+    /// aren't replies in the normal sense since comm messages don't have reply-to semantics; rather,
+    /// these are just any messages from the kernel that are associated with the sent comm message
+    /// through their parent ID.
+    pub fn send_comm(&self, comm_id: Id, data: Value) -> Result<ReplyReceivers, Error> {
+        if !self.iopub_broker.is_comm_open(&comm_id) {
+            log::error!("Failed to send on closed comm {comm_id}");
+            return Err(Error::Anyhow(anyhow!("Comm {comm_id} is not open")));
+        }
+        self.send_shell(CommWireMsg { comm_id, data })
+    }
+
+    pub fn recv_comm_response(
+        &self,
+        comm_id: Id,
+        receiver: &ReplyReceivers,
+    ) -> Result<KernelResponse, Error> {
+        if !self.iopub_broker.is_comm_open(&comm_id) {
+            log::error!("Failed to send on closed comm {comm_id}");
+            return Err(Error::Anyhow(anyhow!("Comm {comm_id} is not open")));
+        }
+        if !self.is_request_active(&receiver.id) {
+            log::trace!(
+                "Request {} is no longer active, returning None",
+                receiver.id
+            );
+            return Ok(KernelResponse::Idle);
+        }
+
+        while let Ok(reply) = receiver.iopub.try_recv() {
+            log::trace!("Receiving message from iopub: {}", reply.describe());
+            match reply {
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    self.iopub_broker
+                        .unregister_request(&receiver.id, "idle status received");
+                    return if self.is_request_active(&receiver.id) {
+                        Ok(KernelResponse::Busy(None))
+                    } else {
+                        Ok(KernelResponse::Idle)
+                    };
+                }
+                Message::CommMsg(msg) => {
+                    return Ok(KernelResponse::Busy(Some(Message::CommMsg(msg))));
+                }
+                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+            }
+        }
+
+        Ok(KernelResponse::Busy(None))
     }
 }

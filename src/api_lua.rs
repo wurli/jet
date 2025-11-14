@@ -14,13 +14,14 @@ use mlua::prelude::*;
 
 use crate::api;
 use crate::callback_output::KernelResponse;
+use crate::kernel::kernel_spec::KernelSpec;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::jupyter_message::ProtocolMessage;
 use crate::msg::wire::message_id::Id;
 use crate::supervisor::kernel_manager::KernelManager;
 
 pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
-    let kernels = api::list_running_kernels();
+    let kernels = KernelManager::list();
     let table = lua.create_table()?;
 
     for (k, v) in kernels.iter() {
@@ -32,7 +33,7 @@ pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 
 pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<mlua::Table> {
     Ok(lua.create_table_from(
-        api::list_available_kernels()
+        KernelSpec::find_valid()
             .iter()
             .map(|(path, spec)| (path.to_string_lossy(), lua.to_value(&spec).unwrap())),
     )?)
@@ -64,20 +65,42 @@ pub fn request_restart(lua: &Lua, kernel_id: String) -> LuaResult<LuaValue> {
 pub fn comm_open(
     lua: &Lua,
     (kernel_id, target_name, data): (String, String, LuaValue),
-) -> LuaResult<(String, LuaFunction)> {
+) -> LuaResult<(std::string::String, LuaFunction)> {
     let data_json = lua.from_value::<serde_json::Value>(data).into_lua_err()?;
-    let (id, callback) = api::comm_open(kernel_id.into(), target_name, data_json).into_lua_err()?;
-    let lua_callback = lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))?;
-    Ok((String::from(id), lua_callback))
+    let kernel = KernelManager::get(&kernel_id.into()).into_lua_err()?;
+    let (comm_id, receiver) = kernel.comm.send_comm_open_request(target_name, data_json);
+    let comm_id_out = comm_id.clone();
+    let callback = lua
+        .create_function_mut(move |lua, (): ()| {
+            kernel
+                .comm
+                .recv_comm_general(&comm_id, &receiver)
+                .to_lua(lua)
+        })
+        .into_lua_err()?;
+
+    Ok((String::from(comm_id_out), callback))
 }
 
 pub fn comm_send(
     lua: &Lua,
     (kernel_id, comm_id, data): (String, String, LuaValue),
 ) -> LuaResult<LuaFunction> {
+    let id = Id::from(comm_id);
     let data_json = lua.from_value::<serde_json::Value>(data).into_lua_err()?;
-    let callback = api::comm_send(kernel_id.into(), comm_id.into(), data_json).into_lua_err()?;
-    lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
+    let kernel = KernelManager::get(&kernel_id.into()).into_lua_err()?;
+    let receiver = kernel
+        .comm
+        .send_comm(id.clone(), data_json)
+        .into_lua_err()?;
+    lua.create_function_mut(move |lua, (): ()| {
+        kernel
+            .comm
+            .recv_comm_response(id.clone(), &receiver)
+            // This has a possible error in case the comm is closed
+            .into_lua_err()?
+            .to_lua(lua)
+    })
 }
 
 pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult<()> {

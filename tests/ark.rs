@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use assert_matches::assert_matches;
 use jet::api;
 use jet::callback_output::KernelResponse;
+use jet::kernel::kernel_spec::KernelSpec;
 use jet::msg::wire::is_complete_reply::IsComplete;
 use jet::msg::wire::jupyter_message::Message;
 use jet::msg::wire::message_id::Id;
@@ -27,7 +28,7 @@ fn ark_id() -> Id {
 }
 
 fn start_ark() -> Id {
-    let kernels = api::list_available_kernels();
+    let kernels = KernelSpec::find_valid();
 
     let ark_path = kernels
         .iter()
