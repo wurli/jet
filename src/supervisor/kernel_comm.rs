@@ -5,6 +5,7 @@
  *
  */
 
+use crate::callback_output::CallbackOutput;
 use crate::connection::control::Control;
 use crate::connection::shell::Shell;
 use crate::connection::stdin::Stdin;
@@ -13,6 +14,7 @@ use crate::msg::session::Session;
 use crate::msg::wire::comm_msg::CommWireMsg;
 use crate::msg::wire::comm_open::CommOpen;
 use crate::msg::wire::interrupt_request::InterruptRequest;
+use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
 use crate::msg::wire::kernel_info_reply::KernelInfoReply;
 use crate::msg::wire::kernel_info_request::KernelInfoRequest;
@@ -429,5 +431,27 @@ impl KernelComm {
                 }
             }
         }
+    }
+
+    pub fn send_is_complete(&self, code: String) -> Result<ReplyReceivers, Error> {
+        log::trace!("Sending is complete request `{code}`");
+        self.send_shell(IsCompleteRequest { code: code.clone() })
+    }
+
+    pub fn recv_is_complete(&self, receivers: &ReplyReceivers) -> CallbackOutput {
+        self.route_all_incoming_shell();
+
+        while let Ok(reply) = receivers.shell.try_recv() {
+            match reply {
+                Message::IsCompleteReply(_) => {
+                    log::trace!("Received is_complete_reply on the shell");
+                    self.unregister_request(&receivers.id, "reply received");
+                }
+                _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
+            }
+            return CallbackOutput::Busy(Some(reply));
+        }
+
+        CallbackOutput::Busy(None)
     }
 }

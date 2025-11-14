@@ -17,6 +17,7 @@ use crate::callback_output::CallbackOutput;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::jupyter_message::ProtocolMessage;
 use crate::msg::wire::message_id::Id;
+use crate::supervisor::kernel_manager::KernelManager;
 
 pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let kernels = api::list_running_kernels();
@@ -105,8 +106,9 @@ pub fn execute_code(
 }
 
 pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaFunction> {
-    let callback = api::is_complete(kernel_id.into(), code).into_lua_err()?;
-    lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
+    let kernel = KernelManager::get(&kernel_id.into()).into_lua_err()?;
+    let receivers = kernel.comm.send_is_complete(code).into_lua_err()?;
+    lua.create_function_mut(move |lua, (): ()| kernel.comm.recv_is_complete(&receivers).to_lua(lua))
 }
 
 pub fn get_completions(

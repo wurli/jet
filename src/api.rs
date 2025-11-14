@@ -241,48 +241,6 @@ pub fn execute_code(
     })
 }
 
-pub fn get_completions(
-    kernel_id: Id,
-    code: String,
-    cursor_pos: u32,
-) -> anyhow::Result<impl Fn() -> CallbackOutput> {
-    log::trace!("Sending completion request `{code}` to kernel {kernel_id}");
-
-    let kernel = KernelManager::get(&kernel_id)?;
-
-    let receivers = kernel
-        .comm
-        .send_shell(CompleteRequest { code, cursor_pos })?;
-
-    Ok(move || {
-        // We need to loop here because it's possible that the shell channel may receive any number
-        // of replies to previous messages before we get the reply we're looking for.
-        let comm = &kernel.comm;
-        comm.route_all_incoming_shell();
-
-        if !comm.is_request_active(&receivers.id) {
-            log::trace!(
-                "Request {} is no longer active, returning None",
-                receivers.id
-            );
-            return CallbackOutput::Idle;
-        }
-
-        while let Ok(reply) = receivers.shell.try_recv() {
-            match reply {
-                Message::CompleteReply(_) => {
-                    log::trace!("Received completion_reply on the shell");
-                    comm.unregister_request(&receivers.id, "reply received");
-                }
-                _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
-            }
-            return CallbackOutput::Busy(Some(reply));
-        }
-
-        return CallbackOutput::Busy(None);
-    })
-}
-
 pub fn is_complete(kernel_id: Id, code: String) -> anyhow::Result<impl Fn() -> CallbackOutput> {
     log::trace!("Sending is complete request `{code}` to kernel {kernel_id}");
 
