@@ -12,11 +12,7 @@ use crate::{
     error::Error,
     kernel::kernel_spec::KernelSpec,
     msg::wire::{
-        execute_request::ExecuteRequest,
-        input_reply::InputReply,
-        jupyter_message::{Describe, Message},
-        message_id::Id,
-        status::ExecutionState,
+        input_reply::InputReply, jupyter_message::Message, message_id::Id, status::ExecutionState,
     },
     supervisor::{kernel::Kernel, kernel_info::KernelInfo, kernel_manager::KernelManager},
 };
@@ -148,94 +144,3 @@ pub fn comm_send(
 pub fn interrupt(kernel_id: Id) -> Result<Option<Message>, Error> {
     KernelManager::get(&kernel_id)?.interrupt()
 }
-
-pub fn execute_code(
-    kernel_id: Id,
-    code: String,
-    user_expressions: HashMap<String, String>,
-) -> anyhow::Result<impl Fn() -> KernelResponse> {
-    log::trace!("Sending execute request `{code}` to kernel {kernel_id}");
-
-    let kernel = KernelManager::get(&kernel_id)?;
-
-    let receivers = kernel.comm.send_shell(ExecuteRequest {
-        code: code.clone(),
-        silent: false,
-        store_history: true,
-        allow_stdin: true,
-        stop_on_error: true,
-        user_expressions: serde_json::to_value(user_expressions).unwrap(),
-    })?;
-
-    Ok(move || {
-        // Just to make things a bit more readable
-        let comm = &kernel.comm;
-
-        if !comm.is_request_active(&receivers.id) {
-            log::trace!(
-                "Request {} is no longer active, returning None",
-                receivers.id
-            );
-            return KernelResponse::Idle;
-        }
-
-        while let Ok(reply) = receivers.iopub.try_recv() {
-            log::trace!("Receiving message from iopub: {}", reply.describe());
-            match reply {
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
-                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                    comm.iopub_broker
-                        .unregister_request(&receivers.id, "idle status received");
-                    return if comm.is_request_active(&receivers.id) {
-                        KernelResponse::Busy(None)
-                    } else {
-                        KernelResponse::Idle
-                    };
-                }
-                Message::ExecuteResult(_)
-                | Message::ExecuteError(_)
-                | Message::Stream(_)
-                | Message::DisplayData(_) => {
-                    return KernelResponse::Busy(Some(reply));
-                }
-                Message::ExecuteInput(ref msg) => {
-                    if msg.content.code != code {
-                        log::warn!(
-                            "Received {} with unexpected code: {}",
-                            msg.content.kind(),
-                            msg.content.code
-                        );
-                    };
-                    return KernelResponse::Busy(Some(reply));
-                }
-                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
-            }
-        }
-
-        comm.route_all_incoming_stdin();
-        while let Ok(msg) = receivers.stdin.try_recv() {
-            log::trace!("Received message from stdin: {}", msg.describe());
-            if let Message::InputRequest(_) = msg {
-                return KernelResponse::Busy(Some(msg));
-            }
-            log::warn!("Dropping unexpected stdin message {}", msg.describe());
-        }
-
-        comm.route_all_incoming_shell();
-        while let Ok(msg) = receivers.shell.try_recv() {
-            match msg {
-                Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
-                _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
-            }
-            comm.unregister_request(&receivers.id, "reply received");
-            return if comm.is_request_active(&receivers.id) {
-                KernelResponse::Busy(None)
-            } else {
-                KernelResponse::Idle
-            };
-        }
-
-        KernelResponse::Busy(None)
-    })
-}
-

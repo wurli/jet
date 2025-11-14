@@ -101,8 +101,14 @@ pub fn execute_code(
     lua: &Lua,
     (kernel_id, code, user_expressions): (String, String, HashMap<String, String>),
 ) -> LuaResult<LuaFunction> {
-    let callback = api::execute_code(kernel_id.into(), code, user_expressions).into_lua_err()?;
-    lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
+    let kernel = KernelManager::get(&kernel_id.into()).into_lua_err()?;
+    let receivers = kernel
+        .comm
+        .send_execute_request(code, user_expressions)
+        .into_lua_err()?;
+    lua.create_function_mut(move |lua, (): ()| {
+        kernel.comm.recv_execute_reply(&receivers).to_lua(lua)
+    })
 }
 
 pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaFunction> {

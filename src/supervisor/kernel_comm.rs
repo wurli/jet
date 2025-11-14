@@ -14,6 +14,7 @@ use crate::msg::session::Session;
 use crate::msg::wire::comm_msg::CommWireMsg;
 use crate::msg::wire::comm_open::CommOpen;
 use crate::msg::wire::complete_request::CompleteRequest;
+use crate::msg::wire::execute_request::ExecuteRequest;
 use crate::msg::wire::interrupt_request::InterruptRequest;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
@@ -27,6 +28,7 @@ use crate::supervisor::kernel::{HeartbeatFailed, StopHeartbeat, StopIopub};
 use crate::supervisor::reply_receivers::ReplyReceivers;
 use assert_matches::assert_matches;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 
@@ -490,5 +492,81 @@ impl KernelComm {
         }
 
         return KernelResponse::Busy(None);
+    }
+
+    pub fn send_execute_request(
+        &self,
+        code: String,
+        user_expressions: HashMap<String, String>,
+    ) -> Result<ReplyReceivers, Error> {
+        log::trace!("Sending execute request `{code}`");
+
+        self.send_shell(ExecuteRequest {
+            code: code.clone(),
+            silent: false,
+            store_history: true,
+            allow_stdin: true,
+            stop_on_error: true,
+            user_expressions: serde_json::to_value(user_expressions).unwrap(),
+        })
+    }
+
+    pub fn recv_execute_reply(&self, receivers: &ReplyReceivers) -> KernelResponse {
+        if !self.is_request_active(&receivers.id) {
+            log::trace!(
+                "Request {} is no longer active, returning None",
+                receivers.id
+            );
+            return KernelResponse::Idle;
+        }
+
+        while let Ok(reply) = receivers.iopub.try_recv() {
+            log::trace!("Receiving message from iopub: {}", reply.describe());
+            match reply {
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    self.iopub_broker
+                        .unregister_request(&receivers.id, "idle status received");
+                    return if self.is_request_active(&receivers.id) {
+                        KernelResponse::Busy(None)
+                    } else {
+                        KernelResponse::Idle
+                    };
+                }
+                Message::ExecuteResult(_)
+                | Message::ExecuteError(_)
+                | Message::Stream(_)
+                | Message::DisplayData(_)
+                | Message::ExecuteInput(_) => {
+                    return KernelResponse::Busy(Some(reply));
+                }
+                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+            }
+        }
+
+        self.route_all_incoming_stdin();
+        while let Ok(msg) = receivers.stdin.try_recv() {
+            log::trace!("Received message from stdin: {}", msg.describe());
+            if let Message::InputRequest(_) = msg {
+                return KernelResponse::Busy(Some(msg));
+            }
+            log::warn!("Dropping unexpected stdin message {}", msg.describe());
+        }
+
+        self.route_all_incoming_shell();
+        while let Ok(msg) = receivers.shell.try_recv() {
+            match msg {
+                Message::ExecuteReply(_) | Message::ExecuteReplyException(_) => {}
+                _ => log::warn!("Unexpected reply received on shell: {}", msg.describe()),
+            }
+            self.unregister_request(&receivers.id, "reply received");
+            return if self.is_request_active(&receivers.id) {
+                KernelResponse::Busy(None)
+            } else {
+                KernelResponse::Idle
+            };
+        }
+
+        KernelResponse::Busy(None)
     }
 }

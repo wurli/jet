@@ -51,13 +51,19 @@ fn execute(code: &str) -> impl Fn() -> KernelResponse {
 }
 
 fn execute_in(id: Id, code: &str) -> impl Fn() -> KernelResponse {
-    let callback =
-        api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code");
-    // We should always get an ExecuteInput message first
-    assert_matches!(await_result(&callback), Some(Message::ExecuteInput(msg)) => {
-        assert_eq!(msg.content.code, code)
-    });
-    callback
+    let kernel = KernelManager::get(&id).expect("Could not get kernel");
+    let receivers = kernel
+        .comm
+        .send_execute_request(code.into(), HashMap::new())
+        .expect("Could not send execute request");
+
+    return move || loop {
+        match kernel.comm.recv_execute_reply(&receivers) {
+            KernelResponse::Busy(Some(msg)) => return KernelResponse::Busy(Some(msg)),
+            KernelResponse::Idle => return KernelResponse::Idle,
+            _ => {}
+        }
+    };
 }
 
 fn await_result(callback: &impl Fn() -> KernelResponse) -> Option<Message> {
