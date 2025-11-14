@@ -15,6 +15,8 @@ use jet::callback_output::CallbackOutput;
 use jet::msg::wire::is_complete_reply::IsComplete;
 use jet::msg::wire::jupyter_message::Message;
 use jet::msg::wire::message_id::Id;
+use jet::supervisor::kernel_manager::KernelManager;
+use jet::supervisor::reply_receivers::ReplyReceivers;
 use serde_json::Value;
 
 static IPYKERNEL_ID: OnceLock<Id> = OnceLock::new();
@@ -185,22 +187,29 @@ fn test_ipykernel_streams_results() {
     assert_matches!(await_result(&callback), None);
 }
 
-fn is_complete(code: &str) -> impl Fn() -> CallbackOutput {
-    api::is_complete(ipykernel_id(), String::from(code))
-        .expect("Could not send is_complete request")
+fn is_complete(code: &str) -> Option<Message> {
+    let kernel = KernelManager::get(&ipykernel_id()).unwrap();
+    let receivers = kernel.comm.send_is_complete(code.into()).unwrap();
+    loop {
+        match kernel.comm.recv_is_complete(&receivers) {
+            CallbackOutput::Busy(Some(msg)) => return Some(msg),
+            CallbackOutput::Idle => return None,
+            _ => {}
+        }
+    }
 }
 
 #[test]
 fn test_ipykernel_provides_code_completeness() {
-    assert_matches!(await_result(&is_complete("1")), Some(Message::IsCompleteReply(msg)) => {
+    assert_matches!(is_complete("1"), Some(Message::IsCompleteReply(msg)) => {
         assert_matches!(msg.content.status, IsComplete::Complete)
     });
 
-    assert_matches!(await_result(&is_complete("for i in range(3):")), Some(Message::IsCompleteReply(msg)) => {
+    assert_matches!(is_complete("for i in range(3):"), Some(Message::IsCompleteReply(msg)) => {
         assert_matches!(msg.content.status, IsComplete::Incomplete)
     });
 
-    assert_matches!(await_result(&is_complete("$")), Some(Message::IsCompleteReply(msg)) => {
+    assert_matches!(is_complete("$"), Some(Message::IsCompleteReply(msg)) => {
         assert_matches!(msg.content.status, IsComplete::Invalid)
     });
 }

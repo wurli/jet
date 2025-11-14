@@ -15,6 +15,7 @@ use jet::callback_output::CallbackOutput;
 use jet::msg::wire::is_complete_reply::IsComplete;
 use jet::msg::wire::jupyter_message::Message;
 use jet::msg::wire::message_id::Id;
+use jet::supervisor::kernel_manager::KernelManager;
 use serde_json::Value;
 
 static ARK_ID: OnceLock<Id> = OnceLock::new();
@@ -154,24 +155,30 @@ fn test_ark_streams_results() {
     // The following callback should give None
     assert_matches!(await_result(&callback), None);
 }
-fn is_complete(code: &str) -> impl Fn() -> CallbackOutput {
-    api::is_complete(ark_id(), String::from(code)).expect("Could not send is_complete request")
+
+fn is_complete(code: &str) -> Option<Message> {
+    let kernel = KernelManager::get(&ark_id()).unwrap();
+    let receivers = kernel.comm.send_is_complete(code.into()).unwrap();
+    loop {
+        match kernel.comm.recv_is_complete(&receivers) {
+            CallbackOutput::Busy(Some(msg)) => return Some(msg),
+            CallbackOutput::Idle => return None,
+            _ => {}
+        }
+    }
 }
 
 #[test]
 fn test_ark_provides_code_completeness() {
-    let callback = is_complete("1 + 1");
-    assert_matches!(await_result(&callback), Some(Message::IsCompleteReply(msg)) => {
+    assert_matches!(is_complete("1 + 1"), Some(Message::IsCompleteReply(msg)) => {
         assert_matches!(msg.content.status, IsComplete::Complete)
     });
 
-    let callback = is_complete("1 +");
-    assert_matches!(await_result(&callback), Some(Message::IsCompleteReply(msg)) => {
+    assert_matches!(is_complete("1 +"), Some(Message::IsCompleteReply(msg)) => {
         assert_matches!(msg.content.status, IsComplete::Incomplete)
     });
 
-    let callback = is_complete("_");
-    assert_matches!(await_result(&callback), Some(Message::IsCompleteReply(msg)) => {
+    assert_matches!(is_complete("_"), Some(Message::IsCompleteReply(msg)) => {
         assert_matches!(msg.content.status, IsComplete::Invalid)
     });
 }
