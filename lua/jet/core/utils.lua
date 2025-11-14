@@ -135,4 +135,27 @@ M.log_warn = function(msg, ...)
 	vim.notify(msg:format(...), vim.log.levels.WARN, {})
 end
 
+-- local get_win_move_keymaps = function()
+-- 	local patterns = {}
+-- 	for _, key in ipairs({ "h", "j", "k", "l" }) do
+-- 		table.insert(patterns, "<c%-w><c%-" .. key .. ">")
+-- 		table.insert(patterns, "<c%-w>" .. key)
+-- 	end
+-- 	local move_maps = vim.tbl_filter(function(x)
+-- 		if not x.rhs then
+-- 			return false
+-- 		end
+-- 		for _, p in ipairs(patterns) do
+-- 			if x.rhs:lower():match(p) then
+-- 				return true
+-- 			end
+-- 		end
+-- 		return false
+-- 	end, vim.api.nvim_get_keymap("n"))
+-- 	return vim.tbl_map(function(x)
+-- 		return x.lhs
+-- 	end, move_maps)
+-- end
+-- vim.print(get_win_move_keymaps())
+
 return M

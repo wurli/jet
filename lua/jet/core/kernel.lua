@@ -526,13 +526,13 @@ function kernel:_handle_result(msg)
 	elseif msg.type == "stream" then
 		self:_display_repl_text(msg.data.text)
 	elseif msg.type == "error" then
-        local err = msg.data.evalue
-        local trace = msg.data.traceback
+		local err = msg.data.evalue
+		local trace = msg.data.traceback
 		self:_display_repl_text(utils.add_linebreak(err))
-        -- I hate that I have to check this
-        if #trace > 0 and not (#trace == 1 and trace[1] == err) then
-            self:_display_repl_text(utils.add_linebreak(table.concat(trace, "\n")))
-        end
+		-- I hate that I have to check this
+		if #trace > 0 and not (#trace == 1 and trace[1] == err) then
+			self:_display_repl_text(utils.add_linebreak(table.concat(trace, "\n")))
+		end
 	elseif msg.type == "input_request" then
 		self:_display_repl_text(msg.data.prompt)
 	elseif msg.type == "display_data" then

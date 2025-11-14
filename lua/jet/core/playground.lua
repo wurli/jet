@@ -1,6 +1,9 @@
 Manager = require("jet.core.manager")
 Manager:open_kernel()
-vim.keymap.set({ "n", "v" }, "<cr>", function() require("jet").send() end)
+vim.keymap.set({ "n", "v" }, "<cr>", function()
+	require("jet").send()
+end)
+
 
 vim.print(Manager.map_kernel_filetype)
 -- Kernel = require("jet.core.kernel")
@@ -29,30 +32,29 @@ vim.print(Manager.map_kernel_filetype)
 -- Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
 -- Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
 
-
-local _comm_id, callback = Jet.comm_open(Ark.id, "lsp", { ip_address = "127.0.0.1" })
+local _comm_id, callback = Jet.comm_open(Ark.id, "lsp", { ip_address = "126.0.0.1" })
 local function check_callback()
-    -- Continuously check for results until we fail to receive a result
-    while true do
-        local result = callback()
-        -- If idle then the execution is complete
-        if result.status == "idle" then
-            return
-        end
-        -- If no data yet, wait a bit (so we don't block the main thread)
-        -- and check again later
-        if not result.data then
-            return vim.defer_fn(check_callback, 100)
-        end
-        local port = result.data.data.params.port
-        print(("'Connecting to LSP on port %s'"):format(port))
-        vim.lsp.config.ark = {
-            cmd = vim.lsp.rpc.connect("127.0.0.1", port),
-            root_markers = { ".git", ".Rprofile", ".Rproj", "DESCRIPTION" },
-            filetypes = { "r", "R" },
-        }
-        vim.lsp.enable("ark")
-    end
+	-- Continuously check for results until we fail to receive a result
+	while true do
+		local result = callback()
+		-- If idle then the execution is complete
+		if result.status == "idle" then
+			return
+		end
+		-- If no data yet, wait a bit (so we don't block the main thread)
+		-- and check again later
+		if not result.data then
+			return vim.defer_fn(check_callback, 100)
+		end
+		local port = result.data.data.params.port
+		print(("'Connecting to LSP on port %s'"):format(port))
+		vim.lsp.config.ark = {
+			cmd = vim.lsp.rpc.connect("127.0.0.1", port),
+			root_markers = { ".git", ".Rprofile", ".Rproj", "DESCRIPTION" },
+			filetypes = { "r", "R" },
+		}
+		vim.lsp.enable("ark")
+	end
 end
 check_callback()
 
@@ -63,29 +65,28 @@ VariablesId, VariablesCb = Jet.comm_open(Ark.id, "positron.variables", {})
 os.execute("sleep 0.5")
 
 VariablesReqCb = Jet.comm_send(Ark.id, VariablesId, {
-    method = "show_help_topic",
-    params = {
-        topic = "mean"
-    }
+	method = "show_help_topic",
+	params = {
+		topic = "mean",
+	},
 })
 
 os.execute("sleep 0.5")
 
 for _ = 1, 5 do
-    local result = VariablesReqCb()
-    print(vim.inspect(result))
-    if result.status == "idle" then
-        break
-    end
-    os.execute("sleep 0.5")
+	local result = VariablesReqCb()
+	print(vim.inspect(result))
+	if result.status == "idle" then
+		break
+	end
+	os.execute("sleep 0.5")
 end
 
-
 for _ = 1, 5 do
-    local result = VariablesCb()
-    print(vim.inspect(result))
-    if result.status == "idle" then
-        break
-    end
-    os.execute("sleep 0.5")
+	local result = VariablesCb()
+	print(vim.inspect(result))
+	if result.status == "idle" then
+		break
+	end
+	os.execute("sleep 0.5")
 end
