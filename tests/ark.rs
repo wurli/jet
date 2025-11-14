@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use assert_matches::assert_matches;
 use jet::api;
-use jet::callback_output::CallbackOutput;
+use jet::callback_output::KernelResponse;
 use jet::msg::wire::is_complete_reply::IsComplete;
 use jet::msg::wire::jupyter_message::Message;
 use jet::msg::wire::message_id::Id;
@@ -46,11 +46,11 @@ fn start_ark() -> Id {
         .0
 }
 
-fn execute(code: &str) -> impl Fn() -> CallbackOutput {
+fn execute(code: &str) -> impl Fn() -> KernelResponse {
     execute_in(ark_id(), code)
 }
 
-fn execute_in(id: Id, code: &str) -> impl Fn() -> CallbackOutput {
+fn execute_in(id: Id, code: &str) -> impl Fn() -> KernelResponse {
     let callback =
         api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code");
     // We should always get an ExecuteInput message first
@@ -60,12 +60,12 @@ fn execute_in(id: Id, code: &str) -> impl Fn() -> CallbackOutput {
     callback
 }
 
-fn await_result(callback: &impl Fn() -> CallbackOutput) -> Option<Message> {
+fn await_result(callback: &impl Fn() -> KernelResponse) -> Option<Message> {
     loop {
         match callback() {
-            CallbackOutput::Idle => return None,
-            CallbackOutput::Busy(Some(msg)) => return Some(msg),
-            CallbackOutput::Busy(None) => {}
+            KernelResponse::Idle => return None,
+            KernelResponse::Busy(Some(msg)) => return Some(msg),
+            KernelResponse::Busy(None) => {}
         }
     }
 }
@@ -158,11 +158,11 @@ fn test_ark_streams_results() {
 
 fn is_complete(code: &str) -> Option<Message> {
     let kernel = KernelManager::get(&ark_id()).unwrap();
-    let receivers = kernel.comm.send_is_complete(code.into()).unwrap();
+    let receivers = kernel.comm.send_is_complete_request(code.into()).unwrap();
     loop {
-        match kernel.comm.recv_is_complete(&receivers) {
-            CallbackOutput::Busy(Some(msg)) => return Some(msg),
-            CallbackOutput::Idle => return None,
+        match kernel.comm.recv_is_complete_reply(&receivers) {
+            KernelResponse::Busy(Some(msg)) => return Some(msg),
+            KernelResponse::Idle => return None,
             _ => {}
         }
     }

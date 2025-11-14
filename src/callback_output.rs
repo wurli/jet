@@ -1,7 +1,7 @@
 use crate::msg::wire::jupyter_message::Message;
 
 #[derive(Debug)]
-pub enum CallbackOutput {
+pub enum KernelResponse {
     Busy(Option<Message>),
     Idle,
 }

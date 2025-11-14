@@ -13,7 +13,7 @@ use mlua::LuaSerdeExt;
 use mlua::prelude::*;
 
 use crate::api;
-use crate::callback_output::CallbackOutput;
+use crate::callback_output::KernelResponse;
 use crate::msg::wire::jupyter_message::Message;
 use crate::msg::wire::jupyter_message::ProtocolMessage;
 use crate::msg::wire::message_id::Id;
@@ -107,40 +107,48 @@ pub fn execute_code(
 
 pub fn is_complete(lua: &Lua, (kernel_id, code): (String, String)) -> LuaResult<LuaFunction> {
     let kernel = KernelManager::get(&kernel_id.into()).into_lua_err()?;
-    let receivers = kernel.comm.send_is_complete(code).into_lua_err()?;
-    lua.create_function_mut(move |lua, (): ()| kernel.comm.recv_is_complete(&receivers).to_lua(lua))
+    let receivers = kernel.comm.send_is_complete_request(code).into_lua_err()?;
+    lua.create_function_mut(move |lua, (): ()| {
+        kernel.comm.recv_is_complete_reply(&receivers).to_lua(lua)
+    })
 }
 
 pub fn get_completions(
     lua: &Lua,
     (kernel_id, code, cursor_pos): (String, String, u32),
 ) -> LuaResult<LuaFunction> {
-    let callback = api::get_completions(kernel_id.into(), code, cursor_pos).into_lua_err()?;
-    lua.create_function_mut(move |lua, (): ()| callback().to_lua(lua))
+    let kernel = KernelManager::get(&kernel_id.into()).into_lua_err()?;
+    let receivers = kernel
+        .comm
+        .send_completion_request(code, cursor_pos)
+        .into_lua_err()?;
+    lua.create_function_mut(move |lua, (): ()| {
+        kernel.comm.recv_completion_reply(&receivers).to_lua(lua)
+    })
 }
 
 trait ToLua {
     fn to_lua(&self, lua: &Lua) -> LuaResult<LuaTable>;
 }
 
-impl ToLua for CallbackOutput {
+impl ToLua for KernelResponse {
     fn to_lua(&self, lua: &Lua) -> LuaResult<LuaTable> {
         match self {
-            CallbackOutput::Idle => lua_idle_sentinel(lua),
-            CallbackOutput::Busy(None) => lua_busy_sentinel(lua),
-            CallbackOutput::Busy(Some(Message::CommClose(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::CommMsg(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::CommOpen(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::CompleteReply(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::DisplayData(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::ExecuteError(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::ExecuteInput(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::ExecuteResult(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::InputRequest(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::InterruptReply(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::IsCompleteReply(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(Message::Stream(msg))) => msg.content.to_lua(lua),
-            CallbackOutput::Busy(Some(other)) => Err(LuaError::external(format!(
+            KernelResponse::Idle => lua_idle_sentinel(lua),
+            KernelResponse::Busy(None) => lua_busy_sentinel(lua),
+            KernelResponse::Busy(Some(Message::CommClose(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::CommMsg(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::CommOpen(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::CompleteReply(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::DisplayData(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::ExecuteError(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::ExecuteInput(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::ExecuteResult(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::InputRequest(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::InterruptReply(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::IsCompleteReply(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(Message::Stream(msg))) => msg.content.to_lua(lua),
+            KernelResponse::Busy(Some(other)) => Err(LuaError::external(format!(
                 "Received unexpected {} message {:#?}",
                 other.kind(),
                 other

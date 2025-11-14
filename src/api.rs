@@ -8,11 +8,10 @@
 use serde_json::Value;
 
 use crate::{
-    callback_output::CallbackOutput,
+    callback_output::KernelResponse,
     error::Error,
     kernel::kernel_spec::KernelSpec,
     msg::wire::{
-        complete_request::CompleteRequest,
         execute_request::ExecuteRequest,
         input_reply::InputReply,
         jupyter_message::{Describe, Message},
@@ -63,7 +62,7 @@ pub fn comm_open(
     kernel_id: Id,
     target_name: String,
     data: Value,
-) -> anyhow::Result<(Id, impl Fn() -> CallbackOutput)> {
+) -> anyhow::Result<(Id, impl Fn() -> KernelResponse)> {
     log::trace!("Opening new comm `{target_name}` for kernel {kernel_id}");
 
     let kernel = KernelManager::get(&kernel_id)?;
@@ -76,7 +75,7 @@ pub fn comm_open(
 
         if !comm.iopub_broker.is_comm_open(&comm_id) {
             log::trace!("Comm {comm_id} is no longer active, returning None");
-            return CallbackOutput::Idle;
+            return KernelResponse::Idle;
         }
 
         while let Ok(reply) = receiver.try_recv() {
@@ -85,19 +84,19 @@ pub fn comm_open(
                 Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
                 Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
                     return if comm.iopub_broker.is_comm_open(&comm_id) {
-                        CallbackOutput::Busy(None)
+                        KernelResponse::Busy(None)
                     } else {
-                        CallbackOutput::Idle
+                        KernelResponse::Idle
                     };
                 }
                 Message::CommMsg(msg) => {
-                    return CallbackOutput::Busy(Some(Message::CommMsg(msg)));
+                    return KernelResponse::Busy(Some(Message::CommMsg(msg)));
                 }
                 _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
         }
 
-        CallbackOutput::Busy(None)
+        KernelResponse::Busy(None)
     };
 
     Ok((comm_id_out, callback))
@@ -107,7 +106,7 @@ pub fn comm_send(
     kernel_id: Id,
     comm_id: Id,
     data: Value,
-) -> anyhow::Result<impl Fn() -> CallbackOutput> {
+) -> anyhow::Result<impl Fn() -> KernelResponse> {
     log::trace!("Sending comm message to comm {comm_id} on kernel {kernel_id}");
 
     let kernel = KernelManager::get(&kernel_id)?;
@@ -119,7 +118,7 @@ pub fn comm_send(
 
         if !comm.is_request_active(&id) {
             log::trace!("Request {id} is no longer active, returning None");
-            return CallbackOutput::Idle;
+            return KernelResponse::Idle;
         }
 
         while let Ok(reply) = receiver.try_recv() {
@@ -130,19 +129,19 @@ pub fn comm_send(
                     comm.iopub_broker
                         .unregister_request(&id, "idle status received");
                     return if comm.is_request_active(&id) {
-                        CallbackOutput::Busy(None)
+                        KernelResponse::Busy(None)
                     } else {
-                        CallbackOutput::Idle
+                        KernelResponse::Idle
                     };
                 }
                 Message::CommMsg(msg) => {
-                    return CallbackOutput::Busy(Some(Message::CommMsg(msg)));
+                    return KernelResponse::Busy(Some(Message::CommMsg(msg)));
                 }
                 _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
         }
 
-        CallbackOutput::Busy(None)
+        KernelResponse::Busy(None)
     })
 }
 
@@ -154,7 +153,7 @@ pub fn execute_code(
     kernel_id: Id,
     code: String,
     user_expressions: HashMap<String, String>,
-) -> anyhow::Result<impl Fn() -> CallbackOutput> {
+) -> anyhow::Result<impl Fn() -> KernelResponse> {
     log::trace!("Sending execute request `{code}` to kernel {kernel_id}");
 
     let kernel = KernelManager::get(&kernel_id)?;
@@ -177,7 +176,7 @@ pub fn execute_code(
                 "Request {} is no longer active, returning None",
                 receivers.id
             );
-            return CallbackOutput::Idle;
+            return KernelResponse::Idle;
         }
 
         while let Ok(reply) = receivers.iopub.try_recv() {
@@ -188,16 +187,16 @@ pub fn execute_code(
                     comm.iopub_broker
                         .unregister_request(&receivers.id, "idle status received");
                     return if comm.is_request_active(&receivers.id) {
-                        CallbackOutput::Busy(None)
+                        KernelResponse::Busy(None)
                     } else {
-                        CallbackOutput::Idle
+                        KernelResponse::Idle
                     };
                 }
                 Message::ExecuteResult(_)
                 | Message::ExecuteError(_)
                 | Message::Stream(_)
                 | Message::DisplayData(_) => {
-                    return CallbackOutput::Busy(Some(reply));
+                    return KernelResponse::Busy(Some(reply));
                 }
                 Message::ExecuteInput(ref msg) => {
                     if msg.content.code != code {
@@ -207,7 +206,7 @@ pub fn execute_code(
                             msg.content.code
                         );
                     };
-                    return CallbackOutput::Busy(Some(reply));
+                    return KernelResponse::Busy(Some(reply));
                 }
                 _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
@@ -217,7 +216,7 @@ pub fn execute_code(
         while let Ok(msg) = receivers.stdin.try_recv() {
             log::trace!("Received message from stdin: {}", msg.describe());
             if let Message::InputRequest(_) = msg {
-                return CallbackOutput::Busy(Some(msg));
+                return KernelResponse::Busy(Some(msg));
             }
             log::warn!("Dropping unexpected stdin message {}", msg.describe());
         }
@@ -230,55 +229,13 @@ pub fn execute_code(
             }
             comm.unregister_request(&receivers.id, "reply received");
             return if comm.is_request_active(&receivers.id) {
-                CallbackOutput::Busy(None)
+                KernelResponse::Busy(None)
             } else {
-                CallbackOutput::Idle
+                KernelResponse::Idle
             };
         }
 
-        CallbackOutput::Busy(None)
-    })
-}
-
-pub fn get_completions(
-    kernel_id: Id,
-    code: String,
-    cursor_pos: u32,
-) -> anyhow::Result<impl Fn() -> CallbackOutput> {
-    log::trace!("Sending completion request `{code}` to kernel {kernel_id}");
-
-    let kernel = KernelManager::get(&kernel_id)?;
-
-    let receivers = kernel
-        .comm
-        .send_shell(CompleteRequest { code, cursor_pos })?;
-
-    Ok(move || {
-        // We need to loop here because it's possible that the shell channel may receive any number
-        // of replies to previous messages before we get the reply we're looking for.
-        let comm = &kernel.comm;
-        comm.route_all_incoming_shell();
-
-        if !comm.is_request_active(&receivers.id) {
-            log::trace!(
-                "Request {} is no longer active, returning None",
-                receivers.id
-            );
-            return CallbackOutput::Idle;
-        }
-
-        while let Ok(reply) = receivers.shell.try_recv() {
-            match reply {
-                Message::CompleteReply(_) => {
-                    log::trace!("Received completion_reply on the shell");
-                    comm.unregister_request(&receivers.id, "reply received");
-                }
-                _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
-            }
-            return CallbackOutput::Busy(Some(reply));
-        }
-
-        return CallbackOutput::Busy(None);
+        KernelResponse::Busy(None)
     })
 }
 

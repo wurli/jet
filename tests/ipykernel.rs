@@ -11,12 +11,11 @@ use std::time::{Duration, Instant};
 
 use assert_matches::assert_matches;
 use jet::api;
-use jet::callback_output::CallbackOutput;
+use jet::callback_output::KernelResponse;
 use jet::msg::wire::is_complete_reply::IsComplete;
 use jet::msg::wire::jupyter_message::Message;
 use jet::msg::wire::message_id::Id;
 use jet::supervisor::kernel_manager::KernelManager;
-use jet::supervisor::reply_receivers::ReplyReceivers;
 use serde_json::Value;
 
 static IPYKERNEL_ID: OnceLock<Id> = OnceLock::new();
@@ -47,11 +46,11 @@ fn start_ipykernel() -> Id {
         .0
 }
 
-fn execute(code: &str) -> impl Fn() -> CallbackOutput {
+fn execute(code: &str) -> impl Fn() -> KernelResponse {
     execute_in(ipykernel_id(), code)
 }
 
-fn execute_in(id: Id, code: &str) -> impl Fn() -> CallbackOutput {
+fn execute_in(id: Id, code: &str) -> impl Fn() -> KernelResponse {
     let callback =
         api::execute_code(id, String::from(code), HashMap::new()).expect("Could not execute code");
     // We should always get an ExecuteInput message first
@@ -61,12 +60,12 @@ fn execute_in(id: Id, code: &str) -> impl Fn() -> CallbackOutput {
     callback
 }
 
-fn await_result(callback: &impl Fn() -> CallbackOutput) -> Option<Message> {
+fn await_result(callback: &impl Fn() -> KernelResponse) -> Option<Message> {
     loop {
         match callback() {
-            CallbackOutput::Idle => return None,
-            CallbackOutput::Busy(Some(msg)) => return Some(msg),
-            CallbackOutput::Busy(None) => {}
+            KernelResponse::Idle => return None,
+            KernelResponse::Busy(Some(msg)) => return Some(msg),
+            KernelResponse::Busy(None) => {}
         }
     }
 }
@@ -189,11 +188,11 @@ fn test_ipykernel_streams_results() {
 
 fn is_complete(code: &str) -> Option<Message> {
     let kernel = KernelManager::get(&ipykernel_id()).unwrap();
-    let receivers = kernel.comm.send_is_complete(code.into()).unwrap();
+    let receivers = kernel.comm.send_is_complete_request(code.into()).unwrap();
     loop {
-        match kernel.comm.recv_is_complete(&receivers) {
-            CallbackOutput::Busy(Some(msg)) => return Some(msg),
-            CallbackOutput::Idle => return None,
+        match kernel.comm.recv_is_complete_reply(&receivers) {
+            KernelResponse::Busy(Some(msg)) => return Some(msg),
+            KernelResponse::Idle => return None,
             _ => {}
         }
     }
@@ -214,16 +213,26 @@ fn test_ipykernel_provides_code_completeness() {
     });
 }
 
-fn get_completions(code: &str, pos: u32) -> impl Fn() -> CallbackOutput {
-    api::get_completions(ipykernel_id(), String::from(code), pos)
-        .expect("Could not execute is_complete request")
+fn get_completions(code: &str, cursor_pos: u32) -> Option<Message> {
+    let kernel = KernelManager::get(&ipykernel_id()).unwrap();
+    let receivers = kernel
+        .comm
+        .send_completion_request(code.into(), cursor_pos)
+        .unwrap();
+    loop {
+        match kernel.comm.recv_completion_reply(&receivers) {
+            KernelResponse::Busy(Some(msg)) => return Some(msg),
+            KernelResponse::Idle => return None,
+            _ => {}
+        }
+    }
 }
 
 #[test]
 fn test_ipykernel_provides_completions() {
     let code = "my_long_named_variable = 1\nmy_long_";
-    let callback = get_completions(code, code.chars().count() as u32);
-    assert_matches!(await_result(&callback), Some(Message::CompleteReply(msg)) => {
+    let pos = code.chars().count() as u32;
+    assert_matches!(get_completions(code, pos), Some(Message::CompleteReply(msg)) => {
         assert_eq!(
             msg.content.matches.into_iter().next().expect("No completions returned"),
             String::from("my_long_named_variable")

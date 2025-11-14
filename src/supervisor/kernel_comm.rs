@@ -5,7 +5,7 @@
  *
  */
 
-use crate::callback_output::CallbackOutput;
+use crate::callback_output::KernelResponse;
 use crate::connection::control::Control;
 use crate::connection::shell::Shell;
 use crate::connection::stdin::Stdin;
@@ -13,6 +13,7 @@ use crate::error::Error;
 use crate::msg::session::Session;
 use crate::msg::wire::comm_msg::CommWireMsg;
 use crate::msg::wire::comm_open::CommOpen;
+use crate::msg::wire::complete_request::CompleteRequest;
 use crate::msg::wire::interrupt_request::InterruptRequest;
 use crate::msg::wire::is_complete_request::IsCompleteRequest;
 use crate::msg::wire::jupyter_message::{JupyterMessage, Message, ProtocolMessage};
@@ -433,12 +434,12 @@ impl KernelComm {
         }
     }
 
-    pub fn send_is_complete(&self, code: String) -> Result<ReplyReceivers, Error> {
+    pub fn send_is_complete_request(&self, code: String) -> Result<ReplyReceivers, Error> {
         log::trace!("Sending is complete request `{code}`");
         self.send_shell(IsCompleteRequest { code: code.clone() })
     }
 
-    pub fn recv_is_complete(&self, receivers: &ReplyReceivers) -> CallbackOutput {
+    pub fn recv_is_complete_reply(&self, receivers: &ReplyReceivers) -> KernelResponse {
         self.route_all_incoming_shell();
 
         while let Ok(reply) = receivers.shell.try_recv() {
@@ -449,9 +450,45 @@ impl KernelComm {
                 }
                 _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
             }
-            return CallbackOutput::Busy(Some(reply));
+            return KernelResponse::Busy(Some(reply));
         }
 
-        CallbackOutput::Busy(None)
+        KernelResponse::Busy(None)
+    }
+
+    pub fn send_completion_request(
+        &self,
+        code: String,
+        cursor_pos: u32,
+    ) -> Result<ReplyReceivers, Error> {
+        log::trace!("Sending completion request `{code}`");
+        self.send_shell(CompleteRequest { code, cursor_pos })
+    }
+
+    pub fn recv_completion_reply(&self, receivers: &ReplyReceivers) -> KernelResponse {
+        // We need to loop here because it's possible that the shell channel may receive any number
+        // of replies to previous messages before we get the reply we're looking for.
+        self.route_all_incoming_shell();
+
+        if !self.is_request_active(&receivers.id) {
+            log::trace!(
+                "Request {} is no longer active, returning None",
+                receivers.id
+            );
+            return KernelResponse::Idle;
+        }
+
+        while let Ok(reply) = receivers.shell.try_recv() {
+            match reply {
+                Message::CompleteReply(_) => {
+                    log::trace!("Received completion_reply on the shell");
+                    self.unregister_request(&receivers.id, "reply received");
+                }
+                _ => log::warn!("Unexpected reply received on shell: {}", reply.describe()),
+            }
+            return KernelResponse::Busy(Some(reply));
+        }
+
+        return KernelResponse::Busy(None);
     }
 }
