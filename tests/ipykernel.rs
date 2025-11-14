@@ -46,49 +46,44 @@ fn start_ipykernel() -> Id {
         .0
 }
 
-fn execute(code: &str) -> impl Fn() -> KernelResponse {
+fn execute(code: &str) -> impl Fn() -> Option<Message> {
     execute_in(ipykernel_id(), code)
 }
 
-fn execute_in(id: Id, code: &str) -> impl Fn() -> KernelResponse {
+fn execute_in(id: Id, code: &str) -> impl Fn() -> Option<Message> {
     let kernel = KernelManager::get(&id).expect("Could not get kernel");
     let receivers = kernel
         .comm
         .send_execute_request(code.into(), HashMap::new())
         .expect("Could not send execute request");
 
-    return move || loop {
+    let callback = move || loop {
         match kernel.comm.recv_execute_reply(&receivers) {
-            KernelResponse::Busy(Some(msg)) => return KernelResponse::Busy(Some(msg)),
-            KernelResponse::Idle => return KernelResponse::Idle,
+            KernelResponse::Busy(Some(msg)) => return Some(msg),
+            KernelResponse::Idle => return None,
             _ => {}
         }
     };
-}
 
-fn await_result(callback: &impl Fn() -> KernelResponse) -> Option<Message> {
-    loop {
-        match callback() {
-            KernelResponse::Idle => return None,
-            KernelResponse::Busy(Some(msg)) => return Some(msg),
-            KernelResponse::Busy(None) => {}
-        }
-    }
+    // Let's just consume this here so we can make tests a bit more concise
+    assert_matches!(callback(), Some(Message::ExecuteInput(msg)) => {
+        assert_eq!(msg.content.code, code)
+    });
+
+    callback
 }
 
 #[test]
 fn test_ipykernel_can_run_simple_code() {
     let callback = execute("1 + 1");
 
-    let res = await_result(&callback).expect("Callback returned `None`");
-
     // Initial callback should give the execute result
-    assert_matches!(res, Message::ExecuteResult(msg) => {
+    assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {
         assert_eq!(msg.content.data["text/plain"], "2")
     });
 
     // The following callback should give None
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 #[test]
@@ -96,14 +91,12 @@ fn test_ipykernel_persists_environment() {
     let callback = execute("x = 1");
 
     // The callback shouldn't have an output
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 
     let callback = execute("x");
 
-    let res = await_result(&callback).expect("Callback returned `None`");
-
     // Initial callback should give the execute result
-    assert_matches!(res, Message::ExecuteResult(msg) => {
+    assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {
         assert_eq!(msg.content.data["text/plain"], "1")
     });
 }
@@ -112,39 +105,33 @@ fn test_ipykernel_persists_environment() {
 fn test_ipykernel_returns_stdout() {
     let callback = execute("print('Hi!', end='')");
 
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    assert_matches!(res, Message::Stream(msg) => {
+    assert_matches!(callback(), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "Hi!")
     });
 
     // The following callback should give None
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 #[test]
 fn test_ipykernel_handles_stdin() {
     let callback = execute("input('Enter something:')");
 
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    assert_matches!(res, Message::InputRequest(msg) => {
+    assert_matches!(callback(), Some(Message::InputRequest(msg)) => {
         assert_eq!(msg.content.prompt, "Enter something:")
     });
 
     api::provide_stdin(&ipykernel_id(), String::from("Hello tests!"))
         .expect("Could not provide stdin");
 
-    let res = await_result(&callback).expect("Callback returned `None`");
-
-    assert_matches!(res, Message::ExecuteResult(msg) => {
+    assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {
         assert_matches!(msg.content.data["text/plain"], Value::String(ref string) => {
             assert_eq!(string, "'Hello tests!'")
         })
     });
 
     // The following callback should give None
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 #[test]
@@ -156,26 +143,20 @@ fn test_ipykernel_streams_results() {
         "import time\nimport sys\nprint('a', end='', flush=True)\ntime.sleep(0.5)\nprint('b', end='', flush=True)",
     );
 
-    // Receive the first result
-    let res = await_result(&callback).expect("Callback returned `None`");
-
+    assert_matches!(callback(), Some(Message::Stream(msg)) => {
+        assert_eq!(msg.content.text, "a")
+    });
     // We only set the timer after we receive the first result. This is because tests may be
     // run in parallel, meaning the kernel may be busy executing other stuff when we first send the
     // execute request. Once we get the first 'a' through, we should expect the 'b' to come through
     // within 0.5s.
     let execute_time = Instant::now();
 
-    assert_matches!(res, Message::Stream(msg) => {
-        assert_eq!(msg.content.text, "a")
-    });
-
-    // Receive the second result
-    let res = await_result(&callback).expect("Callback returned `None`");
-    let elapsed = execute_time.elapsed();
-
-    assert_matches!(res, Message::Stream(msg) => {
+    assert_matches!(callback(), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "b")
     });
+    // Receive the second result
+    let elapsed = execute_time.elapsed();
 
     assert!(
         Duration::from_millis(400) < elapsed,
@@ -189,7 +170,7 @@ fn test_ipykernel_streams_results() {
     );
 
     // The following callback should give None
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 fn is_complete(code: &str) -> Option<Message> {

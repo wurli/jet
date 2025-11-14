@@ -46,52 +46,49 @@ fn start_ark() -> Id {
         .0
 }
 
-fn execute(code: &str) -> impl Fn() -> KernelResponse {
+fn execute(code: &str) -> impl Fn() -> Option<Message> {
     execute_in(ark_id(), code)
 }
 
-fn execute_in(id: Id, code: &str) -> impl Fn() -> KernelResponse {
+fn execute_in(id: Id, code: &str) -> impl Fn() -> Option<Message> {
     let kernel = KernelManager::get(&id).expect("Could not get kernel");
     let receivers = kernel
         .comm
         .send_execute_request(code.into(), HashMap::new())
         .expect("Could not send execute request");
 
-    return move || loop {
+    let callback = move || loop {
         match kernel.comm.recv_execute_reply(&receivers) {
-            KernelResponse::Busy(Some(msg)) => return KernelResponse::Busy(Some(msg)),
-            KernelResponse::Idle => return KernelResponse::Idle,
+            KernelResponse::Busy(Some(msg)) => return Some(msg),
+            KernelResponse::Idle => return None,
             _ => {}
         }
     };
-}
 
-fn await_result(callback: &impl Fn() -> KernelResponse) -> Option<Message> {
-    loop {
-        match callback() {
-            KernelResponse::Idle => return None,
-            KernelResponse::Busy(Some(msg)) => return Some(msg),
-            KernelResponse::Busy(None) => {}
-        }
-    }
+    // Let's just consume this here so we can make tests a bit more concise
+    assert_matches!(callback(), Some(Message::ExecuteInput(msg)) => {
+        assert_eq!(msg.content.code, code)
+    });
+
+    callback
 }
 
 #[test]
 fn test_ark_can_run_simple_code() {
     let callback = execute("1 + 1");
-    assert_matches!(await_result(&callback), Some(Message::ExecuteResult(msg)) => {
+    assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {
         assert_eq!(msg.content.data["text/plain"], "[1] 2")
     });
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 #[test]
 fn test_ark_persists_environment() {
     let callback = execute("x <- 1");
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 
     let callback = execute("x");
-    assert_matches!(await_result(&callback), Some(Message::ExecuteResult(msg)) => {
+    assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {
         assert_eq!(msg.content.data["text/plain"], "[1] 1")
     });
 }
@@ -99,28 +96,28 @@ fn test_ark_persists_environment() {
 #[test]
 fn test_ark_returns_stdout() {
     let callback = execute("cat('Hi!')");
-    assert_matches!(await_result(&callback), Some(Message::Stream(msg)) => {
+    assert_matches!(callback(), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "Hi!")
     });
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 #[test]
 fn test_ark_handles_stdin() {
     let callback = execute("readline('Enter something:')");
-    assert_matches!(await_result(&callback), Some(Message::InputRequest(msg)) => {
+    assert_matches!(callback(), Some(Message::InputRequest(msg)) => {
         assert_eq!(msg.content.prompt, "Enter something:")
     });
 
     api::provide_stdin(&ark_id(), String::from("Hello tests!")).expect("Could not provide stdin");
-    assert_matches!(await_result(&callback), Some(Message::ExecuteResult(msg)) => {
+    assert_matches!(callback(), Some(Message::ExecuteResult(msg)) => {
         assert_matches!(msg.content.data["text/plain"], Value::String(ref string) => {
             assert_eq!(string, "[1] \"Hello tests!\"")
         })
     });
 
     // The following callback should give None
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 #[test]
@@ -136,13 +133,13 @@ fn test_ark_streams_results() {
     // run in parallel, meaning the kernel may be busy executing other stuff when we first send the
     // execute request. Once we get the first 'a' through, we should expect the 'b' to come through
     // within 0.5s.
-    assert_matches!(await_result(&callback), Some(Message::Stream(msg)) => {
+    assert_matches!(callback(), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "a")
     });
     let execute_time = Instant::now();
 
     // Receive the second result
-    assert_matches!(await_result(&callback), Some(Message::Stream(msg)) => {
+    assert_matches!(callback(), Some(Message::Stream(msg)) => {
         assert_eq!(msg.content.text, "b")
     });
     let elapsed = execute_time.elapsed();
@@ -159,7 +156,7 @@ fn test_ark_streams_results() {
     );
 
     // The following callback should give None
-    assert_matches!(await_result(&callback), None);
+    assert_matches!(callback(), None);
 }
 
 fn is_complete(code: &str) -> Option<Message> {
