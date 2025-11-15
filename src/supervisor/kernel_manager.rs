@@ -48,7 +48,7 @@ impl KernelManager {
             log::warn!("Failed to add existing kernel {}", kernel);
             return Err(Error::KernelAlreadyRunning(kernel.id));
         }
-        log::trace!("Failed to add existing kernel {}", kernel);
+        log::trace!("Added new kernel {} to the manager", kernel);
         kernels.insert(String::from(kernel.id.clone()), Arc::new(kernel));
         Ok(())
     }

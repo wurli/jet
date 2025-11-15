@@ -582,8 +582,8 @@ impl KernelComm {
                         KernelResponse::Idle
                     };
                 }
-                Message::CommMsg(msg) => {
-                    return KernelResponse::Busy(Some(Message::CommMsg(msg)));
+                Message::CommMsg(_) | Message::CommOpen(_) | Message::CommClose(_) => {
+                    return KernelResponse::Busy(Some(reply));
                 }
                 _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
@@ -636,8 +636,8 @@ impl KernelComm {
                         Ok(KernelResponse::Idle)
                     };
                 }
-                Message::CommMsg(msg) => {
-                    return Ok(KernelResponse::Busy(Some(Message::CommMsg(msg))));
+                Message::CommMsg(_) | Message::CommOpen(_) | Message::CommClose(_) => {
+                    return Ok(KernelResponse::Busy(Some(reply)));
                 }
                 _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
