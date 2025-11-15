@@ -1,5 +1,5 @@
 local utils = require("./lua_tests/utils")
-local jet = utils.jet_loader()
+local jet = utils.load_jet()
 
 local kernel_id, instance = jet.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 

@@ -3,7 +3,7 @@ local M = {}
 --------------------------------------------------
 -- Get the jet library
 --------------------------------------------------
-M.jet_loader = function()
+M.load_jet = function()
     return require("lua/jet/core/rust")
 end
 
