@@ -1,7 +1,7 @@
 local utils = require("./lua_tests/utils")
 local jet = utils.load_jet()
 
-local kernel_id, instance = jet.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
+local kernel_id, instance = jet.start_kernel("./kernels/ark/kernel.json")
 
 -- Print the startup message
 utils.cat_header("startup message", "=")

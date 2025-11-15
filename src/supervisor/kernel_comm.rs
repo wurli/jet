@@ -541,6 +541,7 @@ impl KernelComm {
         KernelResponse::Busy(None)
     }
 
+    /// TODO: return busy until we've received idle status
     pub fn send_comm_open_request(
         &self,
         target_name: String,
@@ -601,7 +602,10 @@ impl KernelComm {
     pub fn send_comm(&self, comm_id: Id, data: Value) -> Result<ReplyReceivers, Error> {
         if !self.iopub_broker.is_comm_open(&comm_id) {
             log::error!("Failed to send on closed comm {comm_id}");
-            return Err(Error::Anyhow(anyhow!("Comm {comm_id} is not open")));
+            return Err(Error::Anyhow(anyhow!(
+                "Comm '{}' is not open",
+                String::from(comm_id)
+            )));
         }
         self.send_shell(CommWireMsg { comm_id, data })
     }
@@ -613,7 +617,10 @@ impl KernelComm {
     ) -> Result<KernelResponse, Error> {
         if !self.iopub_broker.is_comm_open(&comm_id) {
             log::error!("Failed to send on closed comm {comm_id}");
-            return Err(Error::Anyhow(anyhow!("Comm {comm_id} is not open")));
+            return Err(Error::Anyhow(anyhow!(
+                "Comm '{}' is not open",
+                String::from(comm_id)
+            )));
         }
         if !self.is_request_active(&receiver.id) {
             log::trace!(
