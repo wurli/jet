@@ -20,45 +20,8 @@ local spinners = require("jet.core.spinners")
 ---Information about the kernel
 ---@field instance Jet.Kernel.Instance
 ---
----The REPL input buffer number
----@field repl_input_bufnr number
----
----The REPL input window number
----@field repl_input_winnr number
----
----The REPL input window number
----@field repl_output_bufnr number
----
----The REPL input window number
----@field repl_output_winnr number
----
----The REPL background buffer number
----@field repl_background_bufnr number
----
----The REPL background window number
----@field repl_background_winnr number
----
----The REPL output channel
----@field repl_channel number
----
----The augroup for autocommands
----@field _augroup number
----
----@field prompt { input: string, continue: string }
----@field prompt_template { input: string, continue: string }
----
----@field last_win number
----@field last_normal_win number
----@field last_jet_win number
----
----@field test number
----
----The namespace for virtual text indent text
----@field _ns number
 local kernel = {}
 kernel.__index = kernel
-
-kernel.test = 1
 
 setmetatable(kernel, {
 	---@return Jet.Kernel
@@ -71,32 +34,9 @@ setmetatable(kernel, {
 function kernel.start(spec_path)
 	local self = setmetatable({}, kernel)
 	self.history = {}
-	self.prompt = vim.tbl_deep_extend("keep", self.prompt or {}, {
-		input = ">",
-		continue = "+",
-	})
-	self.prompt_template = vim.tbl_deep_extend("keep", self.prompt_template or {}, {
-		input = "%s ",
-		continue = "%s ",
-	})
 	self.id, self.instance = engine.start_kernel(spec_path)
-	self._ns = vim.api.nvim_create_namespace("jet_repl_" .. self.id)
-	self._augroup = vim.api.nvim_create_augroup("jet_repl_" .. self.id, {})
-	self:_init_repl()
-	self:_filetype_set()
-	self:ui_show()
-	self:_display_repl_text(self.instance.info and utils.add_linebreak(self.instance.info.banner))
-
-	vim.api.nvim_create_autocmd("WinLeave", {
-		group = self._augroup,
-		callback = function()
-			self.last_win = vim.api.nvim_get_current_win()
-			self[vim.b.jet and vim.b.jet.id == self.id and "last_jet_win" or "last_normal_win"] = self.last_win
-		end,
-	})
-
+	-- self:ui_show()
 	manager.running[self.id] = self
-
 	return self
 end
 

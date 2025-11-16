@@ -73,6 +73,14 @@ function Jet.send()
 	end, { buf = 0, status = "active", language = filetype })
 end
 
+-- How to design multiple UI options - e.g. repls and notebooks?
+--
+-- Execute is done abstractly. Some keymap, either in a repl or a notebook,
+-- just sends an execute request to a kernel.
+--
+-- The kernel then has an active UI, which can either be a notebook or a repl,
+-- to which it sends results.
+
 -- ----------------------------------------------------------------------------
 -- CONCEPTS:
 --
