@@ -1,4 +1,5 @@
 local manager = require("jet.core.manager")
+local utils = require("jet.core.utils")
 
 local Jet = {}
 
@@ -60,6 +61,7 @@ end
 
 function Jet.send()
 	local pos = vim.fn.getpos(".")
+    local filetype = utils.get_filetype(0, { pos[2], pos[3] })
 	manager:get_kernel(function(_, id)
 		if id then
 			-- Restore the cursor position after getting the kernel (e.g.
@@ -67,8 +69,8 @@ function Jet.send()
 			-- so  the kernel can resolve the code to send.
 			vim.fn.setpos(".", pos)
 			manager.running[id]:send_from_buf()
-		end
-	end, { buf = 0, status = "active" })
+        end
+	end, { buf = 0, status = "active", language = filetype })
 end
 
 -- ----------------------------------------------------------------------------

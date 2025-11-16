@@ -55,6 +55,38 @@ M.ext_to_filetype = function(ext)
 	return ft
 end
 
+---Gets the filetype, first at the position, then for the buffer if that fails.
+---
+---@param bufnr number
+---@param pos? number[]
+---@return string|nil
+M.get_filetype = function(bufnr, pos)
+	local buf_ft = vim.bo[bufnr].filetype
+	local ft = buf_ft == "" and nil or buf_ft
+
+	if not pos then
+		return ft
+	end
+
+	local parser = vim.treesitter.get_parser(bufnr, nil, { error = false })
+	if not parser then
+		return ft
+	end
+
+	return parser
+		:language_for_range({
+			pos[1] - 1,
+			pos[2] - 1,
+			pos[1] - 1,
+			pos[2],
+		})
+		:lang()
+end
+
+-- vim.keymap.set("n", "<cr>", function()
+-- 	vim.print(M.get_filetype(0, { vim.fn.line("."), vim.fn.col(".") }))
+-- end, {})
+
 ---Get the time since some time as a nicely formatted string
 ---@param t number
 ---@return string

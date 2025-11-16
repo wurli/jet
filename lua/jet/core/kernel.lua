@@ -452,36 +452,49 @@ end
 
 function kernel:send_from_buf()
 	local mode = vim.fn.mode()
+    vim.print("sending")
 
 	local code = (
-		mode == "n" and self.get_buf_text_normal()
-		or mode == "i" and self.get_buf_text_insert()
-		or mode:lower() == "v" and self.get_buf_text_visual()
+		mode == "n" and self.get_buf_text_normal().code
+		or mode == "i" and self.get_buf_text_insert().code
+		or mode:lower() == "v" and self.get_buf_text_visual().code
 		or {}
 	)
 
 	self:execute(code)
 end
 
----@return string[]
+---@return Jet.GetExpr.Result
 function kernel.get_buf_text_normal()
+	local ft = vim.bo.filetype
+	local ok, ft_module = pcall(require, "jet.filetype." .. ft)
+	if ok and ft_module.get_expr then
+		return ft_module.get_expr()
+	end
+
 	local line = vim.fn.line(".")
-	return vim.api.nvim_buf_get_lines(0, line - 1, line, false)
+	local code = vim.api.nvim_buf_get_lines(0, line - 1, line, false)
+	return {
+		code = code,
+	}
 end
 
----@return string[]
+---@return Jet.GetExpr.Result
 function kernel.get_buf_text_insert()
-	local line = vim.fn.line(".")
-	return vim.api.nvim_buf_get_lines(0, line - 1, line, false)
+	return kernel.get_buf_text_normal()
 end
 
----@return string[]
+---@return Jet.GetExpr.Result
 function kernel.get_buf_text_visual()
 	local start, stop = vim.fn.getpos("v"), vim.fn.getpos(".")
 	-- local escape_keycode = "\27"
 	-- vim.fn.feedkeys(escape_keycode, "L")
 	-- vim.fn.cursor(math.min(vim.fn.nextnonblank(stop[2] + 1), stop[2]), 0)
-	return vim.fn.getregion(start, stop, { type = vim.fn.mode() })
+	local code = vim.fn.getregion(start, stop, { type = vim.fn.mode() })
+	return {
+		-- TODO: add additional fields
+		code = code,
+	}
 end
 
 ---@param fn fun(bufnr: number?)

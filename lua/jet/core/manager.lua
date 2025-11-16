@@ -177,7 +177,7 @@ function manager:_filter(kernels, opts)
 		-- current filetype
 		if not opts.id then
 			-- Try to get kernel from filetype mapping
-			local ft = vim.bo[opts.buf].filetype
+			local ft = opts.language or vim.bo[opts.buf].filetype
 			opts.id = self.map_kernel_filetype[ft:lower()]
 		end
 
