@@ -4,7 +4,9 @@ local M = {}
 -- Get the jet library
 --------------------------------------------------
 M.load_jet = function()
-    return require("lua/jet/core/rust")
+    -- Defined as var to silence LSP warnings
+    local lib = "lua/jet/core/rust"
+    return require(lib)
 end
 
 --------------------------------------------------
@@ -63,7 +65,7 @@ local function big_header(action, name, context)
     M.cat_header(nil, "=")
 end
 
-function M.comm_open(jet, kernel_id, target_name, data,  name)
+function M.comm_open(jet, kernel_id, target_name, data, name)
     big_header("Opening comm", name, {
         target_name = target_name,
         ["data"] = data
