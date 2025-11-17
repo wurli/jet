@@ -26,7 +26,7 @@ economics
 stop("oh no")
 
 for (i in 1:10) {
-  Sys.sleep(0.5)
+  Sys.sleep(1)
   print(i)
 }
 

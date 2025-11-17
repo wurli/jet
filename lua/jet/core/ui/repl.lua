@@ -5,12 +5,16 @@ local spinners = require("jet.core.ui.spinners")
 ---@field bufnr number
 ---@field winnr? number
 
+---@class _Spinner:_Display
+---@field _stop? fun()
+
 ---@class Jet.Ui.Repl
 ---The REPL input buffer number
 ---@field prompt _Display
 ---@field output _Display
 ---@field background _Display
----@field spinner _Display
+---@field spinner _Spinner
+---@field zindex number
 ---
 ---@field spinner_bufnr number
 ---@field spinner_winnr number
@@ -35,8 +39,8 @@ local spinners = require("jet.core.ui.spinners")
 ---history from the kernel.
 ---@field kernel Jet.Kernel
 ---
----The namespace for virtual text indent text
----@field _ns number
+---Namespaces for extmarks and highlights.
+---@field ns { indent: number, spinner: number }
 local repl = {}
 repl.__index = repl
 
@@ -63,7 +67,7 @@ function repl.init(kernel, opts)
 		continue = "%s ",
 	})
 	self.kernel = kernel
-	self._ns = vim.api.nvim_create_namespace("jet_repl_" .. self.kernel.id)
+	self:_make_namespaces()
 	self._augroup = vim.api.nvim_create_augroup("jet_repl_" .. self.kernel.id, {})
 	self:_init_ui()
 	self:_display_output(utils.add_linebreak(self.kernel.instance.info.banner))
@@ -71,6 +75,16 @@ function repl.init(kernel, opts)
 		self:show()
 	end
 	return self
+end
+
+function repl:_make_namespaces()
+	local make_ns = function(name)
+		return vim.api.nvim_create_namespace("jet_repl_" .. name .. "_" .. self.kernel.id)
+	end
+	self.ns = {
+		indent = make_ns("indent"),
+		spinner = make_ns("spinner"),
+	}
 end
 
 function repl:delete()
@@ -91,6 +105,7 @@ function repl:delete()
 end
 
 function repl:show()
+	self.zindex = 0
 	-- ╭───────────╮
 	-- │ box chars │
 	-- ╰───────────╯
@@ -108,7 +123,7 @@ function repl:show()
 		height = vim.api.nvim_win_get_height(self.background.winnr) - 4,
 		width = vim.api.nvim_win_get_width(self.background.winnr) - 4,
 		border = { "╭", "─", "╮", "│", "│", " ", "│", "│" },
-		zindex = 10,
+		zindex = self.zindex + 1,
 		style = "minimal",
 		title = self.kernel.instance.spec.display_name,
 		title_pos = "center",
@@ -122,11 +137,13 @@ function repl:show()
 		row = vim.api.nvim_win_get_height(self.background.winnr),
 		width = vim.api.nvim_win_get_width(self.background.winnr) - 4,
 		border = { "│", "─", "│", "│", "╯", "─", "╰", "│" },
-		zindex = 20,
+		zindex = self.zindex + 2,
 		style = "minimal",
 	})
 
 	vim.wo[self.output.winnr].listchars = ""
+
+	self:_spinner_maybe_show()
 
 	self:_set_layout()
 end
@@ -328,6 +345,10 @@ function repl:_set_layout()
 		height = math.max(bg_height - prompt_height - 2, 1),
 	})
 
+	-- TODO
+	-- if self:_has_spinner() then
+	-- end
+
 	self:_indent_reset()
 end
 
@@ -336,11 +357,7 @@ end
 ---Shows a fancy spinner. Swish!
 ---@param code string[]
 function repl:execute(code)
-	local stop_spinner = spinners.run(function(frame)
-		self:_subtitle_set(frame)
-	end, function()
-		self:_subtitle_set()
-	end, 100)
+	self:_spinner_start()
 
 	self.kernel:execute(code, function(msg)
 		if msg.type == "execute_input" then
@@ -353,7 +370,7 @@ function repl:execute(code)
 	end, function()
 		self:_display_output("\n")
 		self:_scroll_to_end()
-		stop_spinner()
+		self:_spinner_hide({ delete = true })
 	end)
 end
 
@@ -422,7 +439,7 @@ end
 ---@param line_end number
 function repl:_indent_clear(line_start, line_end)
 	self:_with_prompt_buf(function(prompt_buf)
-		vim.api.nvim_buf_clear_namespace(prompt_buf, self._ns, line_start, line_end)
+		vim.api.nvim_buf_clear_namespace(prompt_buf, self.ns.indent, line_start, line_end)
 	end)
 end
 
@@ -430,11 +447,12 @@ end
 ---@param text? string Defaults to the repl indent for `lnum`
 function repl:_indent_set(lnum, text)
 	text = text or (lnum == 0 and self:_indent_get_main() or self:_indent_get_continue())
+	local hl_group = lnum == 0 and "JetReplIndentMain" or "JetReplIndentContinue"
 
 	self:_with_prompt_buf(function(prompt_buf)
-		vim.api.nvim_buf_set_extmark(prompt_buf, self._ns, lnum, 0, {
+		vim.api.nvim_buf_set_extmark(prompt_buf, self.ns.indent, lnum, 0, {
 			-- TODO: add Jet highlight groups
-			virt_text = { { text, "FloatTitle" } },
+			virt_text = { { text, hl_group } },
 			virt_text_pos = "inline",
 			right_gravity = false,
 		})
@@ -496,7 +514,75 @@ function repl:_subtitle_set(info)
 	end)
 end
 
-function repl:_start_spinner() end
+function repl:_spinner_start()
+	-- Clean up any existing spinner
+	self:_spinner_hide({ delete = true })
+	self.spinner = { bufnr = vim.api.nvim_create_buf(false, true) }
+
+	self:_spinner_maybe_show()
+
+	self.spinner._stop = spinners.run(function(frame)
+		vim.api.nvim_buf_set_extmark(self.spinner.bufnr, self.ns.spinner, 0, 0, {
+            id = 1,
+			virt_text_pos = "right_align",
+			virt_text = { { frame, "JetReplSpinner" } },
+		})
+	end, function()
+		self:_spinner_hide({ delete = true })
+	end, 100)
+end
+
+-- Will only show if there is an active spinner and the REPL itself is visible
+function repl:_spinner_maybe_show()
+	if not (self:_is_visible() and self:_has_spinner()) then
+		return
+	end
+
+	self.spinner.winnr = vim.api.nvim_open_win(self.spinner.bufnr, false, {
+		relative = "win",
+		win = self.background.winnr,
+		col = vim.api.nvim_win_get_width(self.output.winnr) - 3,
+		row = vim.api.nvim_win_get_height(self.output.winnr) - 1,
+		height = 1,
+		width = 2,
+		border = "none",
+		zindex = self.zindex + 3,
+		style = "minimal",
+	})
+
+	-- vim.wo[self.spinner.winnr].winhighlight = "Normal:JetReplSpinner"
+end
+
+---@param opts? { delete: boolean }
+function repl:_spinner_hide(opts)
+	opts = opts or {}
+
+	if not self:_has_spinner() then
+		return
+	end
+
+	if vim.api.nvim_win_is_valid(self.spinner.winnr) then
+		vim.api.nvim_win_hide(self.spinner.winnr)
+	end
+
+	if opts.delete then
+		vim.api.nvim_buf_delete(self.spinner.bufnr, {})
+		if self.spinner._stop then
+			self.spinner._stop()
+		end
+	end
+
+	self.spinner = nil
+end
+
+---@return boolean
+function repl:_has_spinner()
+	return vim.api.nvim_buf_is_valid(self.spinner and self.spinner.bufnr or -99)
+end
+
+function repl:_is_visible()
+	return vim.api.nvim_win_is_valid(self.background.winnr)
+end
 
 function repl:_filetype_set(filetype)
 	vim.bo[self.prompt.bufnr].filetype = filetype

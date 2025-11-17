@@ -158,6 +158,8 @@ end
 --   style just involves unhiding the REPL and not showing code cells.
 --
 
-Jet.setup = function(_) end
+Jet.setup = function(_)
+    require("jet.core.ui.highlights").set()
+end
 
 return Jet
