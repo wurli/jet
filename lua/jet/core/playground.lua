@@ -6,6 +6,13 @@ vim.keymap.set({ "n", "v" }, "<cr>", function()
 end)
 
 vim.print(Manager.map_kernel_filetype)
+
+vim.print(Manager:list_kernels({ status = "active" }))
+
+vim.print({ vim.filetype.match({ filename = "bla.md" }) })
+
+
+
 -- Kernel = require("jet.core.kernel")
 -- Ark = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 -- Ipy = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
