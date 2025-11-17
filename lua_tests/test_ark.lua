@@ -1,11 +1,11 @@
 local utils = require("./lua_tests/utils")
-local jet = utils.jet_loader()
+local jet = utils.load_jet()
 
-local kernel_id, info = jet.start_kernel("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
+local kernel_id, instance = jet.start_kernel("./kernels/ark/kernel.json")
 
 -- Print the startup message
 utils.cat_header("startup message", "=")
-print(info.banner)
+print(instance.info.banner)
 
 -- Also can test image display, but the output is big
 -- utils.execute(jet, kernel_id, "hist(islands)")

@@ -10,8 +10,9 @@ use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use std::{error::Error, path::PathBuf};
+use std::path::PathBuf;
 
+use crate::error::Error;
 use crate::msg::port::RandomUserPort;
 
 /// The contents of the Connection File as listed in the Jupyter specfication;
@@ -72,7 +73,9 @@ impl ConnectionFile {
     }
 
     /// Create a `ConnectionFile` by parsing the contents of a connection file.
-    pub fn from_file<P: AsRef<Path>>(connection_file: P) -> Result<ConnectionFile, Box<dyn Error>> {
+    pub fn from_file<P: AsRef<Path>>(
+        connection_file: P,
+    ) -> Result<ConnectionFile, Box<dyn std::error::Error>> {
         let file = File::open(connection_file)?;
         let reader = BufReader::new(file);
         let control = serde_json::from_reader(reader)?;
@@ -81,10 +84,16 @@ impl ConnectionFile {
     }
 
     /// Write to an actual file
-    pub fn to_file(&self, file: PathBuf) -> Result<(), Box<dyn Error>> {
-        let json = serde_json::to_string_pretty(&self)?;
+    pub fn to_file(&self, file: PathBuf) -> Result<(), Error> {
+        let json = match serde_json::to_string_pretty(&self) {
+            Ok(j) => j,
+            Err(e) => return Err(Error::CannotSerialize(e)),
+        };
         log::info!("Connection file contents: {json}");
-        fs::write(&file, &json)?;
+        match fs::write(&file, &json) {
+            Ok(_) => log::info!("Wrote connection file to {:?}", file),
+            Err(e) => return Err(Error::CannotOpenFile(file, e)),
+        };
         Ok(())
     }
 

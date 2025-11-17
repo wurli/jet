@@ -6,6 +6,8 @@
  */
 
 use std::fmt;
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::mpsc::SendError;
 
 use crate::msg::wire::exception::Exception;
@@ -15,9 +17,11 @@ use crate::msg::wire::message_id::Id;
 /// Type representing all errors that can occur inside the Amalthea implementation.
 #[derive(Debug)]
 pub enum Error {
+    UnsupportedPlatform(String),
+    KernelCommandFailure(Command, std::io::Error),
     NoIncomingData(String),
     HeartbeatFailed(String),
-    CannotOpenFile(std::io::Error),
+    CannotOpenFile(PathBuf, std::io::Error),
     MissingDelimiter,
     InsufficientParts(usize, usize),
     InvalidHmac(Vec<u8>, hex::FromHexError),
@@ -64,15 +68,22 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Error::UnsupportedPlatform(msg) => {
+                write!(f, "{msg} (not supported on this platform)")
+            }
+            Error::KernelCommandFailure(cmd, error) => {
+                write!(f, "Could not start kernel process '{:?}': {}", cmd, error)
+            }
             Error::NoIncomingData(name) => {
                 write!(f, "No incoming data on {} socket", name)
             }
             Error::HeartbeatFailed(desc) => {
-                write!(f, "Heartbeat thread failed: {desc}" )
+                write!(f, "Heartbeat thread failed: {desc}")
             }
-            Error::CannotOpenFile(e) => {
-                write!(f, "Cannot open file {e}")
-            },
+            Error::CannotOpenFile(path, e) => {
+                let p = path.display();
+                write!(f, "Cannot open {p}: {e}")
+            }
             Error::CannotStopThread(name) => {
                 write!(f, "Failed to send stop signal to the {name} thread")
             }

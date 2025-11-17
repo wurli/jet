@@ -11,3 +11,12 @@ using `luajit`.
 When you run you should probably ensure that all log messages are printed by
 setting the environmental variable`RUST_LOG=trace`. Log messages are written to
 `jet.log`.
+
+If you need to do anything with Python, you should first create a virtual
+environment to work in. You can do this with `uv`:
+
+``` sh
+uv venv
+uv sync
+source .venv/bin/activate
+```

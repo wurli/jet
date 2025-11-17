@@ -106,10 +106,15 @@ impl Broker {
 
         // If the message hasn't yet been routed, we can check if it's part of an open comm and
         // route it there if so.
-        let open_comms = self.open_comms.read().unwrap();
-        if let Message::CommMsg(ref inner) = msg {
-            if let Some(context) = open_comms.get(&inner.content.comm_id) {
-                let comm_id = inner.content.comm_id.clone();
+        let comm_id = match &msg {
+            Message::CommMsg(inner) => Some(inner.content.comm_id.clone()),
+            Message::CommClose(inner) => Some(inner.content.comm_id.clone()),
+            Message::CommOpen(inner) => Some(inner.content.comm_id.clone()),
+            _ => None,
+        };
+
+        if let Some(comm_id) = comm_id {
+            if let Some(context) = self.open_comms.read().unwrap().get(&comm_id) {
                 let description = msg.describe();
                 if context.channel.send(msg).is_err() {
                     log::warn!(
@@ -119,14 +124,14 @@ impl Broker {
                         comm_id
                     );
                 }
+                return;
             }
-            return;
         }
 
         // We action any comm close requests last of all since we don't want to drop the comm
         // before we've shown the close message to the user
         if let Some(comm_id) = comm_to_unregister {
-            self.unregister_comm(comm_id, "recieved comm close request from the kernel");
+            self.unregister_comm(comm_id, "received comm close request from the kernel");
         }
 
         // Finally, drop any unrouted messages with a warning.
@@ -203,10 +208,7 @@ impl Broker {
     }
 
     pub fn is_comm_open(&self, comm_id: &Id) -> bool {
-        self.open_comms
-            .read()
-            .unwrap()
-            .contains_key(comm_id)
+        self.open_comms.read().unwrap().contains_key(comm_id)
     }
 
     pub fn is_request_active(&self, request_id: &Id) -> bool {

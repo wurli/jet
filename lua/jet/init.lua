@@ -1,9 +1,11 @@
+local manager = require("jet.core.manager")
+local utils = require("jet.core.utils")
+
 local Jet = {}
 
-
--- ============================================================================
--- ============== API =========================================================
--- ============================================================================
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+--                API
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 --
 -- Main commands:
 --
@@ -27,6 +29,58 @@ local Jet = {}
 --
 -- All the above should use vim.ui.select if no kernel is provided. Can also
 -- pass parameters as in Lua api, e.g. like trouble.nvim.
+
+---@class Jet.Manager.Filter
+---
+---A buffer number; 0 for the current buffer. Note: this filters for (a) the
+---linked kernel for the buffer if it exists, and if not, (b) the primary
+---kernel for the buffer's filetype.
+---@field buf? number
+---
+---Case-insensitive Lua pattern; matched against the kernel spec path
+---@field spec_path? string
+---
+---Case-insensitive language name (not a pattern); matched against the language
+---as given in the kernel spec
+---@field language? string
+---
+---Case-insensitive pattern; matched against the kernel display name
+---@field name? string
+---
+---The ID of an existing kernel instance to get
+---@field id? string
+---
+---Active status
+---@field status? "active" | "inactive"
+
+---By default opens the kernel for the current buffer.
+---@param opts Jet.Manager.Filter
+function Jet.open(opts)
+	manager:open_kernel(opts or { buf = 0 })
+end
+
+function Jet.send()
+	local pos = vim.fn.getpos(".")
+    local filetype = utils.get_filetype(0, { pos[2], pos[3] })
+	manager:get_kernel(function(_, id)
+		if id then
+			-- Restore the cursor position after getting the kernel (e.g.
+			-- in case the user had to enter a dialog to choose a kernel)
+			-- so  the kernel can resolve the code to send.
+			vim.fn.setpos(".", pos)
+			manager.running[id]:send_from_buf()
+        end
+	end, { buf = 0, status = "active", language = filetype })
+end
+
+-- How to design multiple UI options - e.g. repls and notebooks?
+--
+-- Execute is done abstractly. Some keymap, either in a repl or a notebook,
+-- just sends an execute request to a kernel.
+--
+-- The kernel then has an active UI, which can either be a notebook or a repl,
+-- to which it sends results.
+
 -- ----------------------------------------------------------------------------
 -- CONCEPTS:
 --
@@ -49,7 +103,8 @@ local Jet = {}
 -- - linked_buffers: number[]
 --
 -- Buffers should have the following data in `vim.b`:
--- - jet.mode: "notebook" | "repl" (if not present fall back to ft default or "repl")
+-- - jet.mode: "notebook" | "repl" (if not present fall back to ft default or
+--   "repl")
 --
 -- ----------------------------------------------------------------------------
 -- PRIMARY REQUIREMENT:
@@ -103,9 +158,6 @@ local Jet = {}
 --   style just involves unhiding the REPL and not showing code cells.
 --
 
-
-Jet.setup = function(_)
-end
-
+Jet.setup = function(_) end
 
 return Jet

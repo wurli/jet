@@ -1,8 +1,8 @@
-use jet::api;
+use jet::kernel::kernel_spec::KernelSpec;
 
 #[test]
 fn jet_can_discover_kernel_specs() {
-    let kernels = api::list_available_kernels();
+    let kernels = KernelSpec::find_valid();
 
     let expected_short_names = vec![String::from("ark"), String::from("python3")];
 

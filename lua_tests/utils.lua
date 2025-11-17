@@ -3,8 +3,10 @@ local M = {}
 --------------------------------------------------
 -- Get the jet library
 --------------------------------------------------
-M.jet_loader = function()
-    return require("jet.core.rust")
+M.load_jet = function()
+    -- Defined as var to silence LSP warnings
+    local lib = "lua/jet/core/rust"
+    return require(lib)
 end
 
 --------------------------------------------------
@@ -16,6 +18,10 @@ M.tbl_len = function(t)
     local count = 0
     for _ in pairs(t) do count = count + 1 end
     return count
+end
+
+function M.print(x)
+    print(M.dump(x))
 end
 
 --- Dump a Lua object as a string
@@ -59,7 +65,7 @@ local function big_header(action, name, context)
     M.cat_header(nil, "=")
 end
 
-function M.comm_open(jet, kernel_id, target_name, data,  name)
+function M.comm_open(jet, kernel_id, target_name, data, name)
     big_header("Opening comm", name, {
         target_name = target_name,
         ["data"] = data

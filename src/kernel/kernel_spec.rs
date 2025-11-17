@@ -124,7 +124,7 @@ impl KernelSpec {
     pub fn from_file(path: &PathBuf) -> Result<Self, Error> {
         let file = match File::open(path) {
             Ok(file) => Ok(file),
-            Err(e) => Err(Error::CannotOpenFile(e)),
+            Err(e) => Err(Error::CannotOpenFile(path.to_owned(), e)),
         }?;
 
         match serde_json::from_reader(BufReader::new(file)) {
@@ -188,6 +188,17 @@ impl KernelSpec {
             dirs.push(PathBuf::from(&var).join("Library/Jupyter/kernels"));
         }
 
+        // Python kernels, as per https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs
+        // NB, I tried also using ".venv/bin/python" but it caused an issue where the kernel would
+        // be correctly discovered, but would not start up using the expected version of Python -
+        // which makes sense. Better to only discover venv kernels if the venv is already
+        // activated, which is exactly what happens here.
+        for py_cmd in ["python3", "python"] {
+            if let Some(sys_prefix) = Self::get_sys_prefix(py_cmd.into()) {
+                dirs.push(sys_prefix.join("share/jupyter/kernels"));
+            }
+        }
+
         // System kernels
         dirs.push("/usr/share/jupyter/kernels".into());
         dirs.push("/usr/local/share/jupyter/kernels".into());
@@ -197,11 +208,31 @@ impl KernelSpec {
             dirs.push(PathBuf::from(var).join("share/jupyter/kernels"));
         }
 
+        // Remove duplicates (sort is needed for dedup to work) so we don't get multiple reads of
+        // the same directory.
+        dirs.sort();
+        dirs.dedup();
+
         dirs.into_iter()
             .filter_map(|dir| read_dir(dir).ok())
             .flat_map(|entries| entries.flatten())
             .map(|entry| entry.path().join("kernel.json"))
             .filter(|path| path.exists())
             .collect()
+    }
+
+    fn get_sys_prefix(py_cmd: String) -> Option<PathBuf> {
+        let output = Command::new(py_cmd)
+            .arg("-c")
+            .arg("import sys; print(sys.prefix)")
+            .output()
+            .ok()?;
+
+        if output.status.success() {
+            let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Some(prefix.into())
+        } else {
+            None
+        }
     }
 }

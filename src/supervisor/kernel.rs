@@ -17,7 +17,8 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::connection::connection::JupyterChannels;
 use crate::connection::heartbeat::Heartbeat;
 use crate::connection::iopub::Iopub;
-use crate::kernel::kernel_spec::KernelSpec;
+use crate::error::Error;
+use crate::kernel::kernel_spec::{InterruptMode, KernelSpec};
 use crate::kernel::startup_method::StartupMethod;
 use crate::msg::wire::jupyter_message::{Message, Status};
 use crate::msg::wire::message_id::Id;
@@ -34,7 +35,7 @@ pub struct Kernel {
 
 impl Display for Kernel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{}'{}", self.info.display_name, self.id)
+        write!(f, "'{}'{}", self.info.spec.display_name, self.id)
     }
 }
 
@@ -44,7 +45,7 @@ impl Kernel {
 
         let kernel_id = Id::new();
         let mut cf_path = std::env::temp_dir();
-        cf_path.push(format!("jet_connection_file_{}.json", kernel_id));
+        cf_path.push(format!("jet_connection_file_{}.json", kernel_id.as_str()));
         let kernel_cmd = spec.build_command(&cf_path);
 
         let (jupyter_channels, process) = match spec.get_connection_method() {
@@ -56,10 +57,16 @@ impl Kernel {
             }
         };
 
-        let iopub_broker = Arc::new(Broker::new(format!("IOPub{}", kernel_id)));
-        let shell_broker = Arc::new(Broker::new(format!("Shell{}", kernel_id)));
-        let stdin_broker = Arc::new(Broker::new(format!("Stdin{}", kernel_id)));
-        let control_broker = Arc::new(Broker::new(format!("Control{}", kernel_id)));
+        log::info!(
+            "Kernel '{}' started with id {}",
+            spec.display_name,
+            kernel_id
+        );
+
+        let iopub_broker = Arc::new(Broker::new(format!("IOPub{kernel_id}")));
+        let shell_broker = Arc::new(Broker::new(format!("Shell{kernel_id}")));
+        let stdin_broker = Arc::new(Broker::new(format!("Stdin{kernel_id}")));
+        let control_broker = Arc::new(Broker::new(format!("Control{kernel_id}")));
 
         let (stopper, monitor) = Self::loop_heartbeat(jupyter_channels.heartbeat);
         let iopub_tx = Self::listen_iopub(jupyter_channels.iopub, Arc::clone(&iopub_broker));
@@ -86,9 +93,8 @@ impl Kernel {
             process: Mutex::new(process),
             info: KernelInfo {
                 spec_path,
-                display_name: spec.display_name,
-                banner: kernel_info_reply.banner,
-                language: kernel_info_reply.language_info,
+                spec: spec,
+                info: kernel_info_reply,
                 start_time: SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)?
                     .as_secs() as u64,
@@ -201,6 +207,56 @@ impl Kernel {
                 process.kill()?;
             }
         }
+
+        Ok(())
+    }
+
+    pub fn interrupt(&self) -> Result<Option<Message>, Error> {
+        let interrupt_mode = match self.info.spec.interrupt_mode {
+            Some(ref mode) => mode.clone(),
+            None => match &self.info.info.protocol_version {
+                // This is technically off-label; the Jupyter protocol says that if kernels don't
+                // indicate in the spec that they support message interrupts then clients should
+                // use a signal. However, right now neither Ipykernel nor Ark indicate they support
+                // message interrupts, but they do. So unless I'm misinterpreting the protocol,
+                // this is the informal standard that kernels tend to use.
+                // https://jupyter-client.readthedocs.io/en/latest/messaging.html#kernel-interrupt
+                Some(version) if version >= &String::from("5.3") => InterruptMode::Message,
+                _ => InterruptMode::Signal,
+            },
+        };
+
+        match interrupt_mode {
+            InterruptMode::Signal => {
+                #[cfg(unix)]
+                match self.interrupt_signal() {
+                    Ok(()) => return Ok(None),
+                    Err(e) => return Err(e),
+                };
+                #[cfg(not(unix))]
+                return Err(Error::UnsupportedPlatform(
+                    "Can't send interrupt using OS signal",
+                ));
+            }
+            InterruptMode::Message => match self.comm.request_interrupt() {
+                Ok(msg) => return Ok(Some(msg)),
+                Err(e) => return Err(Error::Anyhow(e)),
+            },
+        }
+    }
+
+    /// Pairs with `KernelComm.interrupt_message()`
+    fn interrupt_signal(&self) -> Result<(), Error> {
+        use nix::sys::signal::{self, Signal};
+        use nix::unistd::Pid;
+
+        let process_id = Pid::from_raw(self.process.lock().unwrap().id() as i32);
+
+        if let Err(e) = signal::kill(process_id, Signal::SIGINT) {
+            return Err(Error::Anyhow(anyhow::anyhow!(
+                "Failed to interrupt using SIGINT: {e}"
+            )));
+        };
 
         Ok(())
     }

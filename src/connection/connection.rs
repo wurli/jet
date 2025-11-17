@@ -14,6 +14,7 @@ use rand::Rng;
 use crate::connection::{
     control::Control, heartbeat::Heartbeat, iopub::Iopub, shell::Shell, stdin::Stdin,
 };
+use crate::error::Error;
 use crate::msg::connection_file::ConnectionFile;
 use crate::msg::registration_file::RegistrationFile;
 use crate::msg::session::Session;
@@ -88,7 +89,7 @@ impl RegistrationSockets {
         }
     }
 
-    pub fn to_file(&self, opts: &ConnectionOptions, path: PathBuf) {
+    pub fn to_file(&self, opts: &ConnectionOptions, path: PathBuf) -> Result<(), Error> {
         let registration_file = RegistrationFile {
             transport: opts.transport.clone(),
             signature_scheme: opts.signature_scheme.clone(),
@@ -97,7 +98,7 @@ impl RegistrationSockets {
             registration_port: self.registration.get_port().unwrap(),
         };
 
-        registration_file.to_file(path).unwrap();
+        registration_file.to_file(path)
     }
 }
 
@@ -114,16 +115,19 @@ impl JupyterChannels {
     pub fn init_with_connection_file(
         mut kernel_cmd: process::Command,
         path: PathBuf,
-    ) -> anyhow::Result<(Self, process::Child)> {
+    ) -> Result<(Self, process::Child), Error> {
         log::info!("Starting kernel using connection file");
 
         let opts = ConnectionOptions::init();
 
         let mut connection_file = ConnectionFile::new();
         connection_file.key = opts.key.clone();
-        connection_file.to_file(path).unwrap();
+        connection_file.to_file(path)?;
 
-        let child = kernel_cmd.spawn()?;
+        let child = match kernel_cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => return Err(Error::KernelCommandFailure(kernel_cmd, e)),
+        };
 
         // We need to give the kernel a chance to start up and read the connection file
         std::thread::sleep(std::time::Duration::from_millis(2000));
@@ -149,15 +153,18 @@ impl JupyterChannels {
     pub fn init_with_registration_file(
         mut kernel_cmd: process::Command,
         path: PathBuf,
-    ) -> anyhow::Result<(Self, process::Child)> {
+    ) -> Result<(Self, process::Child), Error> {
         log::info!("Starting kernel using registration file");
 
         let opts = ConnectionOptions::init();
 
         let sockets = RegistrationSockets::from(&opts);
-        sockets.to_file(&opts, path);
+        sockets.to_file(&opts, path)?;
 
-        let child = kernel_cmd.spawn()?;
+        let child = match kernel_cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => return Err(Error::KernelCommandFailure(kernel_cmd, e)),
+        };
 
         // Wait to receive the handshake request so we know what ports to connect on.
         // Note that `recv()` times out.
@@ -169,7 +176,6 @@ impl JupyterChannels {
         let reply = HandshakeReply { status: Status::Ok };
         let reply_msg = JupyterMessage::create(reply, None, &opts.session);
         reply_msg.send(&sockets.registration).unwrap();
-
         let channels = Self {
             control: Control::init(&opts, opts.endpoint(handshake.control_port)),
             shell: Shell::init(&opts, opts.endpoint(handshake.shell_port)),
