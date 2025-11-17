@@ -1,6 +1,19 @@
 -- vim.api.nvim_set_hl(ns_id, name, val)
 local M = {}
 
+local hl_modify = function(group, opts)
+	local hl = vim.api.nvim_get_hl(0, { name = group, create = false })
+	if vim.tbl_count(hl) == 0 then
+		return
+	end
+
+	for k, v in pairs(opts) do
+		hl[k] = v ~= "none" and v or nil
+	end
+
+	return hl
+end
+
 -- stylua: ignore
 local hlgroups = {
     -- Background for the REPL floating window itself
@@ -13,15 +26,14 @@ local hlgroups = {
 	JetReplIndentMain     = { link = "JetReplIndent" },
 	JetReplIndentContinue = { link = "JetReplIndent" },
 
-    -- Spinner shown when waiting for REPL response
-	JetReplSpinner        = { link = "LineNr", blend = 0 },
+    JetReplSpinner        = hl_modify("LineNr", { bg = "none" })
 }
 
 M.set = function()
 	for name, val in pairs(hlgroups) do
-		if vim.fn.hlexists(name) == 0 then
-			vim.api.nvim_set_hl(0, name, val)
-		end
+		val.default = true
+		---@diagnostic disable-next-line: param-type-mismatch
+		vim.api.nvim_set_hl(0, name, val)
 	end
 end
 

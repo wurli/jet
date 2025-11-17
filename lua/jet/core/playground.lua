@@ -5,12 +5,13 @@ vim.keymap.set({ "n", "v" }, "<cr>", function()
 	require("jet").send()
 end)
 
+vim.print(vim.api.nvim_get_hl(0, { name = "JetReplIndent" }))
+
 vim.print(Manager.map_kernel_filetype)
 
 vim.print(Manager:list_kernels({ status = "active" }))
 
 vim.print({ vim.filetype.match({ filename = "bla.md" }) })
-
 
 
 -- Kernel = require("jet.core.kernel")

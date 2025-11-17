@@ -187,7 +187,7 @@ function repl:_init_ui()
 	end
 
 	self:_indent_reset()
-	self:_filetype_set()
+	self:_filetype_set(self.kernel.filetype)
 
 	--- Set keymaps
 	vim.keymap.set({ "n", "i" }, "<CR>", function()
@@ -398,37 +398,37 @@ end
 
 ---@param fn fun(bufnr: number?)
 function repl:_with_prompt_buf(fn)
-	if vim.api.nvim_buf_is_valid(self.prompt.bufnr) then
+	if vim.api.nvim_buf_is_valid(self.prompt.bufnr or -99) then
 		fn(self.prompt.bufnr)
 	end
 end
 
 ---@param fn fun(bufnr: number?)
 function repl:_with_output_buf(fn)
-	if vim.api.nvim_buf_is_valid(self.output.bufnr) then
+	if vim.api.nvim_buf_is_valid(self.output.bufnr or -99) then
 		fn(self.output.bufnr)
 	end
 end
 
 ---@param fn fun(winnr: number?)
 function repl:_with_prompt_win(fn)
-	if vim.api.nvim_win_is_valid(self.prompt.winnr) then
+	if vim.api.nvim_win_is_valid(self.prompt.winnr or -99) then
 		fn(self.prompt.winnr)
 	end
 end
 
 ---@param fn fun(winnr: number?)
 function repl:_with_output_win(fn)
-	if vim.api.nvim_win_is_valid(self.output.winnr) then
+	if vim.api.nvim_win_is_valid(self.output.winnr or -99) then
 		fn(self.output.winnr)
 	end
 end
 
 function repl:_indent_reset()
-	if self.prompt.winnr then
+	self:_with_prompt_win(function(prompt_win)
 		local n_lines = #vim.api.nvim_buf_get_lines(self.prompt.bufnr, 0, -1, false)
-		vim.api.nvim_win_set_config(self.prompt.winnr, { height = n_lines })
-	end
+		vim.api.nvim_win_set_config(prompt_win, { height = n_lines })
+	end)
 	self:_indent_clear(0, -1)
 	for i = 1, vim.fn.line("$", self.prompt.winnr) do
 		self:_indent_set(i - 1)
@@ -451,7 +451,7 @@ function repl:_indent_set(lnum, text)
 
 	self:_with_prompt_buf(function(prompt_buf)
 		vim.api.nvim_buf_set_extmark(prompt_buf, self.ns.indent, lnum, 0, {
-			-- TODO: add Jet highlight groups
+			-- virt_text = { { text, hl_group } },
 			virt_text = { { text, hl_group } },
 			virt_text_pos = "inline",
 			right_gravity = false,
@@ -489,31 +489,6 @@ function repl:_scroll_to_end()
 	end)
 end
 
--- ---@param title string?
--- function repl:_title_set(title)
--- 	-- local inst = self.instance
--- 	-- local spec = inst and inst.spec
--- 	-- local info = inst and inst.info
--- 	-- title = title or (spec and spec.display_name) or (info and info.language_info.name)
---
--- 	if title then
--- 		vim.api.nvim_win_set_config(self.output.winnr, {
--- 			title = title,
--- 			title_pos = "center",
--- 		})
--- 	end
--- end
-
----@param info string?
-function repl:_subtitle_set(info)
-	self:_with_prompt_win(function(win)
-		vim.api.nvim_win_set_config(win, {
-			title = info or "",
-			title_pos = "right",
-		})
-	end)
-end
-
 function repl:_spinner_start()
 	-- Clean up any existing spinner
 	self:_spinner_hide({ delete = true })
@@ -522,11 +497,14 @@ function repl:_spinner_start()
 	self:_spinner_maybe_show()
 
 	self.spinner._stop = spinners.run(function(frame)
-		vim.api.nvim_buf_set_extmark(self.spinner.bufnr, self.ns.spinner, 0, 0, {
-            id = 1,
-			virt_text_pos = "right_align",
-			virt_text = { { frame, "JetReplSpinner" } },
-		})
+		if self:_has_spinner() then
+			vim.api.nvim_buf_set_extmark(self.spinner.bufnr, self.ns.spinner, 0, 0, {
+				id = 1,
+				virt_text_pos = "right_align",
+				virt_text = { { frame, "JetReplSpinner" } },
+				hl_mode = "combine",
+			})
+		end
 	end, function()
 		self:_spinner_hide({ delete = true })
 	end, 100)
@@ -540,17 +518,19 @@ function repl:_spinner_maybe_show()
 
 	self.spinner.winnr = vim.api.nvim_open_win(self.spinner.bufnr, false, {
 		relative = "win",
+		anchor = "SE",
 		win = self.background.winnr,
-		col = vim.api.nvim_win_get_width(self.output.winnr) - 3,
-		row = vim.api.nvim_win_get_height(self.output.winnr) - 1,
+		col = vim.api.nvim_win_get_width(self.output.winnr),
+		row = vim.api.nvim_win_get_height(self.output.winnr) + 1,
 		height = 1,
-		width = 2,
+		width = 4,
 		border = "none",
 		zindex = self.zindex + 3,
 		style = "minimal",
 	})
 
-	-- vim.wo[self.spinner.winnr].winhighlight = "Normal:JetReplSpinner"
+	-- vim.wo[self.spinner.winnr].winhighlight = "NormalFloat:JetRepl"
+	--    vim.wo[self.spinner.winnr].winblend = 100
 end
 
 ---@param opts? { delete: boolean }
