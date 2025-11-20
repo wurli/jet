@@ -8,7 +8,7 @@ local spinners = require("jet.core.ui.spinners")
 ---@class _Spinner:_Display
 ---@field _stop? fun()
 
----@class Jet.Ui.Repl
+---@class Jet.Ui.ReplFloat
 ---The REPL input buffer number
 ---@field prompt _Display
 ---@field output _Display
@@ -41,23 +41,26 @@ local spinners = require("jet.core.ui.spinners")
 ---
 ---Namespaces for extmarks and highlights.
 ---@field ns { indent: number, spinner: number }
-local repl = {}
-repl.__index = repl
+local ReplFloat = {}
+ReplFloat.__index = ReplFloat
 
-setmetatable(repl, {
-	---@return Jet.Ui.Repl
+setmetatable(ReplFloat, {
+	---@return Jet.Ui.ReplFloat
 	__call = function(self, ...)
-		return self.start(...)
+		return self.new(...)
 	end,
 })
 
+function ReplFloat.new()
+	return setmetatable({}, ReplFloat)
+end
+
 ---@param kernel Jet.Kernel
 ---@param opts? { show: boolean }
-function repl.init(kernel, opts)
+function ReplFloat:init(kernel, opts)
 	opts = vim.tbl_extend("force", opts or {}, {
 		show = true,
 	})
-	local self = setmetatable({}, repl)
 	self.indent_chars = vim.tbl_deep_extend("keep", self.indent_chars or {}, {
 		main = ">",
 		continue = "+",
@@ -77,7 +80,7 @@ function repl.init(kernel, opts)
 	return self
 end
 
-function repl:_make_namespaces()
+function ReplFloat:_make_namespaces()
 	local make_ns = function(name)
 		return vim.api.nvim_create_namespace("jet_repl_" .. name .. "_" .. self.kernel.id)
 	end
@@ -87,7 +90,7 @@ function repl:_make_namespaces()
 	}
 end
 
-function repl:delete()
+function ReplFloat:delete()
 	--- Hide the UI
 	self:hide()
 	--- Delete REPL buffers
@@ -104,7 +107,7 @@ function repl:delete()
 	vim.api.nvim_delete_augroup_by_id(self._augroup)
 end
 
-function repl:show()
+function ReplFloat:show()
 	self.zindex = 0
 	-- ╭───────────╮
 	-- │ box chars │
@@ -148,7 +151,7 @@ function repl:show()
 	self:_set_layout()
 end
 
-function repl:hide()
+function ReplFloat:hide()
 	for _, winnr in ipairs({
 		self.background.winnr,
 		self.prompt.winnr,
@@ -160,7 +163,7 @@ function repl:hide()
 	end
 end
 
-function repl:_init_ui()
+function ReplFloat:_init_ui()
 	for _, ui in ipairs({ "background", "prompt", "output" }) do
 		if self[ui] and vim.api.nvim_buf_is_valid(self[ui].bufnr) then
 			utils.log_warn("REPL %s buffer already exists with bufnr %s", ui, self[ui].bufnr)
@@ -307,7 +310,9 @@ function repl:_init_ui()
 	})
 end
 
-function repl:_set_layout()
+function ReplFloat:_set_layout()
+	-- TODO: reset vertical layout when we resize other windows. This seems to
+	-- get unborkably borked if we resize vim.
 	if not (vim.api.nvim_win_is_valid(self.prompt.winnr) and vim.api.nvim_win_is_valid(self.output.winnr)) then
 		return
 	end
@@ -356,7 +361,7 @@ end
 ---Leaves the REPL input window unchanged.
 ---Shows a fancy spinner. Swish!
 ---@param code string[]
-function repl:execute(code)
+function ReplFloat:execute(code)
 	self:_spinner_start()
 
 	self.kernel:execute(code, function(msg)
@@ -375,7 +380,7 @@ function repl:execute(code)
 end
 
 ---Execute and clear the prompt
-function repl:execute_prompt()
+function ReplFloat:execute_prompt()
 	local code = self:_prompt_get()
 	self:_prompt_set({})
 	self:execute(code)
@@ -383,7 +388,7 @@ function repl:execute_prompt()
 end
 
 --Check for incompleteness before possibly executing.
-function repl:maybe_execute_prompt()
+function ReplFloat:maybe_execute_prompt()
 	self.kernel:if_complete(self:_prompt_get(), {
 		complete = function()
 			self:execute_prompt()
@@ -397,36 +402,36 @@ function repl:maybe_execute_prompt()
 end
 
 ---@param fn fun(bufnr: number?)
-function repl:_with_prompt_buf(fn)
+function ReplFloat:_with_prompt_buf(fn)
 	if vim.api.nvim_buf_is_valid(self.prompt.bufnr or -99) then
 		fn(self.prompt.bufnr)
 	end
 end
 
 ---@param fn fun(bufnr: number?)
-function repl:_with_output_buf(fn)
+function ReplFloat:_with_output_buf(fn)
 	if vim.api.nvim_buf_is_valid(self.output.bufnr or -99) then
 		fn(self.output.bufnr)
 	end
 end
 
 ---@param fn fun(winnr: number?)
-function repl:_with_prompt_win(fn)
+function ReplFloat:_with_prompt_win(fn)
 	if vim.api.nvim_win_is_valid(self.prompt.winnr or -99) then
 		fn(self.prompt.winnr)
 	end
 end
 
 ---@param fn fun(winnr: number?)
-function repl:_with_output_win(fn)
+function ReplFloat:_with_output_win(fn)
 	if vim.api.nvim_win_is_valid(self.output.winnr or -99) then
 		fn(self.output.winnr)
 	end
 end
 
-function repl:_indent_reset()
+function ReplFloat:_indent_reset()
 	self:_with_prompt_win(function(prompt_win)
-		local n_lines = #vim.api.nvim_buf_get_lines(self.prompt.bufnr, 0, -1, false)
+		local n_lines = vim.api.nvim_buf_line_count(self.prompt.bufnr)
 		vim.api.nvim_win_set_config(prompt_win, { height = n_lines })
 	end)
 	self:_indent_clear(0, -1)
@@ -437,7 +442,7 @@ end
 
 ---@param line_start number
 ---@param line_end number
-function repl:_indent_clear(line_start, line_end)
+function ReplFloat:_indent_clear(line_start, line_end)
 	self:_with_prompt_buf(function(prompt_buf)
 		vim.api.nvim_buf_clear_namespace(prompt_buf, self.ns.indent, line_start, line_end)
 	end)
@@ -445,7 +450,7 @@ end
 
 ---@param lnum number 0-indexed
 ---@param text? string Defaults to the repl indent for `lnum`
-function repl:_indent_set(lnum, text)
+function ReplFloat:_indent_set(lnum, text)
 	text = text or (lnum == 0 and self:_indent_get_main() or self:_indent_get_continue())
 	local hl_group = lnum == 0 and "JetReplIndentMain" or "JetReplIndentContinue"
 
@@ -459,16 +464,16 @@ function repl:_indent_set(lnum, text)
 	end)
 end
 
-function repl:_indent_get_main()
+function ReplFloat:_indent_get_main()
 	return self.indent_templates.main:format(self.indent_chars.main)
 end
 
-function repl:_indent_get_continue()
+function ReplFloat:_indent_get_continue()
 	return self.indent_templates.continue:format(self.indent_chars.continue)
 end
 
 ---@param text string[]
-function repl:_prompt_set(text)
+function ReplFloat:_prompt_set(text)
 	if not text then
 		return
 	end
@@ -477,11 +482,11 @@ function repl:_prompt_set(text)
 end
 
 ---@return string[]
-function repl:_prompt_get()
+function ReplFloat:_prompt_get()
 	return vim.api.nvim_buf_get_lines(self.prompt.bufnr, 0, -1, false)
 end
 
-function repl:_scroll_to_end()
+function ReplFloat:_scroll_to_end()
 	self:_with_output_buf(function(output_buf)
 		vim.api.nvim_buf_call(output_buf, function()
 			vim.fn.cursor(vim.fn.line("$"), 0)
@@ -489,7 +494,7 @@ function repl:_scroll_to_end()
 	end)
 end
 
-function repl:_spinner_start()
+function ReplFloat:_spinner_start()
 	-- Clean up any existing spinner
 	self:_spinner_hide({ delete = true })
 	self.spinner = { bufnr = vim.api.nvim_create_buf(false, true) }
@@ -511,7 +516,7 @@ function repl:_spinner_start()
 end
 
 -- Will only show if there is an active spinner and the REPL itself is visible
-function repl:_spinner_maybe_show()
+function ReplFloat:_spinner_maybe_show()
 	if not (self:_is_visible() and self:_has_spinner()) then
 		return
 	end
@@ -520,8 +525,8 @@ function repl:_spinner_maybe_show()
 		relative = "win",
 		anchor = "SE",
 		win = self.background.winnr,
-		col = vim.api.nvim_win_get_width(self.output.winnr),
-		row = vim.api.nvim_win_get_height(self.output.winnr) + 1,
+		col = vim.api.nvim_win_get_width(self.output.winnr) - 1,
+		row = vim.api.nvim_win_get_height(self.output.winnr),
 		height = 1,
 		width = 4,
 		border = "none",
@@ -534,7 +539,7 @@ function repl:_spinner_maybe_show()
 end
 
 ---@param opts? { delete: boolean }
-function repl:_spinner_hide(opts)
+function ReplFloat:_spinner_hide(opts)
 	opts = opts or {}
 
 	if not self:_has_spinner() then
@@ -556,20 +561,21 @@ function repl:_spinner_hide(opts)
 end
 
 ---@return boolean
-function repl:_has_spinner()
+function ReplFloat:_has_spinner()
 	return vim.api.nvim_buf_is_valid(self.spinner and self.spinner.bufnr or -99)
 end
 
-function repl:_is_visible()
-	return vim.api.nvim_win_is_valid(self.background.winnr)
+function ReplFloat:_is_visible()
+	return vim.api.nvim_win_is_valid(self.output.winnr)
 end
 
-function repl:_filetype_set(filetype)
+function ReplFloat:_filetype_set(filetype)
+    vim.bo[self.output.bufnr].filetype = "jet"
 	vim.bo[self.prompt.bufnr].filetype = filetype
 end
 
 ---@param text? string
-function repl:_display_output(text)
+function ReplFloat:_display_output(text)
 	if not text then
 		return
 	end
@@ -577,4 +583,4 @@ function repl:_display_output(text)
 	vim.api.nvim_chan_send(self.repl_channel, text)
 end
 
-return repl
+return ReplFloat
