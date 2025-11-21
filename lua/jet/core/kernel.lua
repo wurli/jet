@@ -20,7 +20,7 @@ local utils = require("jet.core.utils")
 ---Information about the kernel
 ---@field instance Jet.Kernel.Instance
 ---
----@field ui Jet.Ui.ReplFloat
+---@field ui Jet.Ui.ReplSplit
 local kernel = {}
 kernel.__index = kernel
 
@@ -46,7 +46,7 @@ function kernel:init_repl()
 	if self.ui then
 		error("UI already exists")
 	end
-	self.ui = require("jet.core.ui.repl_split").new():init(self)
+	self.ui = require("jet.core.ui.repl_float").new():init(self)
 end
 
 function kernel:stop()

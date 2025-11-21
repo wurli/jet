@@ -1,5 +1,4 @@
-local utils = require("./lua_tests/utils")
-local jet = utils.load_jet()
+local jet = require("jet.core.rust")
 
 local kernel_id, _ = jet.start_kernel("./kernels/ark/kernel.json")
 
@@ -28,10 +27,10 @@ os.execute("sleep 2")
 -- 	},
 -- })
 
-local execute_cb = jet.execute_code(kernel_id, "help(lm)", {})
+local execute_cb = jet.execute_code(kernel_id, "?dplyr::mutate", {})
 
 -- Continuously check for results until we fail to receive a result
-while true do
+for _ = 1, 20 do
 	local result = callback()
 	-- If idle then the execution is complete
 	-- if result.status == "idle" then
@@ -40,22 +39,37 @@ while true do
 
 	-- If no data yet, wait a bit (so we don't block the main thread)
 	-- and check again later
+	vim.print(result)
 	if result.data then
-		utils.print(result)
 		-- break
-	end
+		local dt = result.data.data
+		if dt.params and dt.params.content then
+			vim.system(
+				{
+					"pandoc",
+					"-f",
+					"html",
+					"-t",
+					"markdown+pipe_tables+backtick_code_blocks",
+					dt.params.content,
+				},
+				{},
+				vim.schedule_wrap(function(res)
+					if not res.stdout then
+						return
+					end
+					local buf = vim.api.nvim_create_buf(false, true)
+					local win = vim.api.nvim_open_win(buf, true, {
+						style = "minimal",
+						split = "right",
+					})
 
-	result = execute_cb()
-	-- If idle then the execution is complete
-	-- if result.status == "idle" then
-	-- 	return
-	-- end
-
-	-- If no data yet, wait a bit (so we don't block the main thread)
-	-- and check again later
-	if result.data then
-		utils.print(result)
-		-- break
+					vim.wo[win].conceallevel = 3
+					vim.bo[buf].filetype = "markdown"
+					vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(res.stdout, "\n"))
+				end)
+			)
+		end
 	end
 end
 

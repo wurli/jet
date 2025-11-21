@@ -20,7 +20,7 @@ local hlgroups = {
     JetRepl               = { link = "Float" },
     JetReplInput          = { link = "JetRepl" },
     JetReplOutput         = { link = "JetRepl" },
-	JetReplIndent         = { link = "WarningMsg" },
+	JetReplIndent         = { link = "Conceal" },
 
     -- 'Indent' character for the REPL input
 	JetReplIndentMain     = { link = "JetReplIndent" },
