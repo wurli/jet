@@ -5,41 +5,15 @@ local spinners = require("jet.core.ui.spinners")
 ---@field bufnr number
 ---@field winnr? number
 
----@class _Spinner:_Display
----@field _stop? fun()
-
 ---@class Jet.Ui.ReplSplit
----The REPL input buffer number
----@field prompt _Display
----@field output _Display
----@field background _Display
----@field spinner _Spinner
+---@field ui { prompt: _Display, output: _Display }
 ---@field zindex number
----
----@field spinner_bufnr number
----@field spinner_winnr number
----
----The REPL output channel
----@field repl_channel number
----
----The augroup for autocommands
+---@field output_channel number
 ---@field _augroup number
----
 ---@field indent_chars { main: string, continue: string }
 ---@field indent_templates { main: string, continue: string }
----
----TODO: do we need these?
----@field last_win number
----@field last_normal_win number
----@field last_jet_win number
----
----A reference to the kernel this UI belongs to. NB, it might seem odd to
----include the kernel as a field of the UI while the UI is itself a field of
----the kernel, but it makes lots of things very convenient, e.g. getting
----history from the kernel.
+---@field spinner? { stop: fun() }
 ---@field kernel Jet.Kernel
----
----Namespaces for extmarks and highlights.
 ---@field ns { indent: number, spinner: number }
 local ReplSplit = {}
 ReplSplit.__index = ReplSplit
@@ -95,13 +69,9 @@ function ReplSplit:delete()
 	--- Hide the UI
 	self:hide()
 	--- Delete REPL buffers
-	for _, buf in ipairs({
-		self.background.bufnr,
-		self.prompt.bufnr,
-		self.output.bufnr,
-	}) do
-		if vim.api.nvim_buf_is_valid(buf) then
-			vim.api.nvim_buf_delete(buf, { force = true })
+	for _, ui in pairs(self.ui) do
+		if vim.api.nvim_buf_is_valid(ui.bufnr) then
+			vim.api.nvim_buf_delete(ui.bufnr, { force = true })
 		end
 	end
 	--- Delete autocommands
@@ -116,90 +86,92 @@ function ReplSplit:show()
 end
 
 function ReplSplit:_show()
-	self.output.winnr = vim.api.nvim_open_win(self.output.bufnr, false, {
+	self.ui.output.winnr = vim.api.nvim_open_win(self.ui.output.bufnr, false, {
 		split = "right",
 		style = "minimal",
 	})
 
 	-- Create the prompt split window as as if from the output window
-	vim.api.nvim_win_call(self.output.winnr, function()
-		self.prompt.winnr = vim.api.nvim_open_win(self.prompt.bufnr, false, {
+	vim.api.nvim_win_call(self.ui.output.winnr, function()
+		self.ui.prompt.winnr = vim.api.nvim_open_win(self.ui.prompt.bufnr, false, {
 			split = "below",
 			height = 1,
 			style = "minimal",
 		})
 	end)
 
-	vim.wo[self.output.winnr].listchars = ""
-	vim.wo[self.output.winnr].winbar = table.concat({
-		"%#FloatTitle#",
-		"%=",
-		self.kernel.instance.spec.display_name,
-		"%=",
-		-- "%#Normal#",
-	}, "")
-	self:_set_statusline()
 
-	self:_spinner_maybe_show()
+	vim.wo[self.ui.output.winnr].listchars = ""
+    vim.wo[self.ui.prompt.winnr].signcolumn = "no"
+	self:_statusline_set()
 
 	self:_set_layout()
 end
 
-
 function ReplSplit:hide()
-	for _, winnr in ipairs({
-		self.background.winnr,
-		self.prompt.winnr,
-		self.output.winnr,
-	}) do
-		if vim.api.nvim_win_is_valid(winnr) then
-			vim.api.nvim_win_close(winnr, true)
+	for _, ui in pairs(self.ui) do
+		if vim.api.nvim_win_is_valid(ui.winnr) then
+			vim.api.nvim_win_close(ui.winnr, true)
 		end
 	end
 end
----
+
 ---@param opts? { left: string?, center: string?, right: string? }
-function ReplSplit:_set_statusline(opts)
-	if not vim.api.nvim_win_is_valid(self.output.winnr) then
+function ReplSplit:_statusline_set(opts)
+	if not vim.api.nvim_win_is_valid(self.ui.output.winnr) then
 		return
 	end
 
 	opts = opts or {}
 
-	vim.wo[self.output.winnr].statusline = table.concat({
-		"%#FloatTitle#",
+	vim.wo[self.ui.output.winnr].statusline = table.concat({
+		"%#Normal#",
 		opts.left or "",
 		"%=",
 		opts.center or "",
 		"%=",
+		"%#JetReplSpinner#",
 		opts.right or "",
 	}, "")
 end
 
-function ReplSplit:_init_ui()
-	for _, ui in ipairs({ "prompt", "output" }) do
-		if self[ui] and vim.api.nvim_buf_is_valid(self[ui].bufnr) then
-			utils.log_warn("REPL %s buffer already exists with bufnr %s", ui, self[ui].bufnr)
+---@param names string[]
+function ReplSplit:_init_bufs(names)
+	self.ui = self.ui or {}
+	for _, ui_name in ipairs(names) do
+		self.ui[ui_name] = self.ui[ui_name] or {}
+		local ui = self.ui[ui_name]
+		if vim.api.nvim_buf_is_valid(ui and ui.bufnr or -99) then
+			utils.log_warn("REPL %s buffer already exists with bufnr %s", ui_name, ui.bufnr)
 		else
-			local bufnr = vim.api.nvim_create_buf(false, true)
-			self[ui] = { bufnr = bufnr }
-			vim.bo[bufnr].buftype = "nofile"
+			ui.bufnr = vim.api.nvim_create_buf(false, true)
+			vim.bo[ui.bufnr].buftype = "nofile"
 			-- We set some buffer variables for use with autocommands. NB, many
 			-- plugins use a custom filetype, but we often want to use filetype
 			-- for other stuff in Jet.
-			vim.b[bufnr].jet = {
-				type = "repl_" .. ui,
+			vim.b[ui.bufnr].jet = {
+				type = "repl_" .. ui_name,
 				kernel_id = self.kernel.id,
 			}
 		end
 	end
+end
+
+function ReplSplit:_init_ui()
+	self:_init_bufs({ "prompt", "output" })
+
+	self:_with_prompt_buf(function(buf)
+		vim.api.nvim_buf_call(buf, function()
+			vim.cmd.file(self.kernel:name())
+		end)
+	end)
 
 	-- Jet sends output from the kernel to a terminal channel in order to
 	-- format ansi formatting.
-	if self.repl_channel then
-		utils.log_warn("REPL output channel `%s` already exists!", self.repl_channel)
+	if self.output_channel then
+		utils.log_warn("REPL output channel `%s` already exists!", self.output_channel)
 	else
-		self.repl_channel = vim.api.nvim_open_term(self.output.bufnr, {})
+		self.output_channel = vim.api.nvim_open_term(self.ui.output.bufnr, {})
 	end
 
 	self:_indent_reset()
@@ -209,7 +181,7 @@ function ReplSplit:_init_ui()
 	vim.keymap.set({ "n", "i" }, "<CR>", function()
 		self:maybe_execute_prompt()
 	end, {
-		buffer = self.prompt.bufnr,
+		buffer = self.ui.prompt.bufnr,
 		desc = "Jet REPL: execute code",
 	})
 
@@ -220,30 +192,30 @@ function ReplSplit:_init_ui()
 				vim.api.nvim_set_current_win(winnr)
 				vim.fn.feedkeys(key, "n")
 			end)
-		end, { buffer = self.output.bufnr })
+		end, { buffer = self.ui.output.bufnr })
 	end
 
 	vim.keymap.set({ "n", "i" }, "<c-p>", function()
 		self:_prompt_set(self.kernel:history_get(-1))
-	end, { buffer = self.prompt.bufnr })
+	end, { buffer = self.ui.prompt.bufnr })
 
 	vim.keymap.set({ "n", "i" }, "<c-n>", function()
 		self:_prompt_set(self.kernel:history_get(1))
-	end, { buffer = self.prompt.bufnr })
+	end, { buffer = self.ui.prompt.bufnr })
 
 	--- Set autocommands
 	--- Attach LSP to the REPL input buffer
 	--- (TODO: give the user the ability to disable this)
 	vim.api.nvim_create_autocmd("BufEnter", {
 		group = self._augroup,
-		buffer = self.prompt.bufnr,
+		buffer = self.ui.prompt.bufnr,
 		callback = function()
 			for _, cfg in pairs(vim.lsp._enabled_configs) do
 				if cfg.resolved_config then
 					local ft = cfg.resolved_config.filetypes
 					if ft and vim.tbl_contains(ft, self.kernel.filetype) or not ft then
 						vim.lsp.start(cfg.resolved_config, {
-							bufnr = self.prompt.bufnr,
+							bufnr = self.ui.prompt.bufnr,
 						})
 					end
 				end
@@ -254,7 +226,7 @@ function ReplSplit:_init_ui()
 	vim.api.nvim_create_autocmd("BufUnload", {
 		group = self._augroup,
 		callback = function(e)
-			if vim.tbl_contains({ self.prompt.bufnr, self.output.bufnr }, e.buf) then
+			if vim.tbl_contains({ self.ui.prompt.bufnr, self.ui.output.bufnr }, e.buf) then
 				self:delete()
 			end
 		end,
@@ -262,7 +234,7 @@ function ReplSplit:_init_ui()
 
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		group = self._augroup,
-		buffer = self.prompt.bufnr,
+		buffer = self.ui.prompt.bufnr,
 		callback = function()
 			self:_indent_reset()
 		end,
@@ -271,8 +243,8 @@ function ReplSplit:_init_ui()
 	vim.api.nvim_create_autocmd("WinClosed", {
 		group = self._augroup,
 		callback = function(e)
-			local repl_wins = { self.prompt.winnr, self.output.winnr }
-			local repl_bufs = { self.prompt.bufnr, self.output.bufnr }
+			local repl_wins = { self.ui.prompt.winnr, self.ui.output.winnr }
+			local repl_bufs = { self.ui.prompt.bufnr, self.ui.output.bufnr }
 			if not vim.tbl_contains(repl_bufs, e.buf) then
 				return
 			end
@@ -286,14 +258,14 @@ function ReplSplit:_init_ui()
 end
 
 function ReplSplit:_set_layout()
-	if not (vim.api.nvim_win_is_valid(self.prompt.winnr) and vim.api.nvim_win_is_valid(self.output.winnr)) then
+	if not (vim.api.nvim_win_is_valid(self.ui.prompt.winnr) and vim.api.nvim_win_is_valid(self.ui.output.winnr)) then
 		return
 	end
 
-	vim.api.nvim_win_set_config(self.prompt.winnr, {
+	vim.api.nvim_win_set_config(self.ui.prompt.winnr, {
 		-- We need to subtract 1 to account for the borders (the output's
 		-- bottom border should overlap with the input's top border)
-		height = vim.api.nvim_buf_line_count(self.prompt.bufnr),
+		height = vim.api.nvim_buf_line_count(self.ui.prompt.bufnr),
 	})
 
 	self:_indent_reset()
@@ -317,7 +289,7 @@ function ReplSplit:execute(code)
 	end, function()
 		self:_display_output("\n")
 		self:_scroll_to_end()
-		self:_spinner_hide({ delete = true })
+		self:_spinner_stop()
 	end)
 end
 
@@ -326,7 +298,7 @@ function ReplSplit:execute_prompt()
 	local code = self:_prompt_get()
 	self:_prompt_set({})
 	self:execute(code)
-	vim.api.nvim_win_set_config(self.prompt.winnr, { height = 1 })
+	vim.api.nvim_win_set_config(self.ui.prompt.winnr, { height = 1 })
 end
 
 --Check for incompleteness before possibly executing.
@@ -336,7 +308,7 @@ function ReplSplit:maybe_execute_prompt()
 			self:execute_prompt()
 		end,
 		incomplete = function()
-			if vim.fn.bufnr() == self.prompt.bufnr then
+			if vim.fn.bufnr() == self.ui.prompt.bufnr then
 				vim.api.nvim_feedkeys("\r", "n", false)
 			end
 		end,
@@ -345,39 +317,39 @@ end
 
 ---@param fn fun(bufnr: number?)
 function ReplSplit:_with_prompt_buf(fn)
-	if vim.api.nvim_buf_is_valid(self.prompt.bufnr or -99) then
-		fn(self.prompt.bufnr)
+	if vim.api.nvim_buf_is_valid(self.ui.prompt.bufnr or -99) then
+		fn(self.ui.prompt.bufnr)
 	end
 end
 
 ---@param fn fun(bufnr: number?)
 function ReplSplit:_with_output_buf(fn)
-	if vim.api.nvim_buf_is_valid(self.output.bufnr or -99) then
-		fn(self.output.bufnr)
+	if vim.api.nvim_buf_is_valid(self.ui.output.bufnr or -99) then
+		fn(self.ui.output.bufnr)
 	end
 end
 
 ---@param fn fun(winnr: number?)
 function ReplSplit:_with_prompt_win(fn)
-	if vim.api.nvim_win_is_valid(self.prompt.winnr or -99) then
-		fn(self.prompt.winnr)
+	if vim.api.nvim_win_is_valid(self.ui.prompt.winnr or -99) then
+		fn(self.ui.prompt.winnr)
 	end
 end
 
 ---@param fn fun(winnr: number?)
 function ReplSplit:_with_output_win(fn)
-	if vim.api.nvim_win_is_valid(self.output.winnr or -99) then
-		fn(self.output.winnr)
+	if vim.api.nvim_win_is_valid(self.ui.output.winnr or -99) then
+		fn(self.ui.output.winnr)
 	end
 end
 
 function ReplSplit:_indent_reset()
 	self:_with_prompt_win(function(prompt_win)
-		local n_lines = vim.api.nvim_buf_line_count(self.prompt.bufnr)
+		local n_lines = vim.api.nvim_buf_line_count(self.ui.prompt.bufnr)
 		vim.api.nvim_win_set_config(prompt_win, { height = n_lines })
 	end)
 	self:_indent_clear(0, -1)
-	for i = 1, vim.fn.line("$", self.prompt.winnr) do
+	for i = 1, vim.fn.line("$", self.ui.prompt.winnr) do
 		self:_indent_set(i - 1)
 	end
 end
@@ -419,13 +391,13 @@ function ReplSplit:_prompt_set(text)
 	if not text then
 		return
 	end
-	vim.api.nvim_buf_set_lines(self.prompt.bufnr, 0, -1, false, text)
+	vim.api.nvim_buf_set_lines(self.ui.prompt.bufnr, 0, -1, false, text)
 	self:_indent_reset()
 end
 
 ---@return string[]
 function ReplSplit:_prompt_get()
-	return vim.api.nvim_buf_get_lines(self.prompt.bufnr, 0, -1, false)
+	return vim.api.nvim_buf_get_lines(self.ui.prompt.bufnr, 0, -1, false)
 end
 
 function ReplSplit:_scroll_to_end()
@@ -437,38 +409,35 @@ function ReplSplit:_scroll_to_end()
 end
 
 function ReplSplit:_spinner_start()
-	-- Clean up any existing spinner
-	self:_spinner_hide()
-	self:_spinner_maybe_show()
-
-	self.spinner._stop = spinners.run(function(frame)
-		if self:_has_spinner() then
-			self:_set_statusline({ right = frame })
-		end
-	end, function()
-		self:_spinner_hide()
-	end, 100)
+	-- Stop any pre-existing spinner callbacks
+	self:_spinner_stop()
+	self.spinner = {
+		stop = spinners.run(function(frame)
+			self:_statusline_set({ right = frame .. " " })
+		end, function() end, 100),
+	}
 end
 
--- Will only show if there is an active spinner and the REPL itself is visible
-function ReplSplit:_spinner_maybe_show()
-
-end
-
-function ReplSplit:_spinner_hide()
-    self:_set_statusline()
+function ReplSplit:_spinner_stop()
+	if self.spinner and self.spinner.stop then
+		self.spinner.stop()
+	end
+	self.spinner = nil
+	self:_statusline_set()
 end
 
 ---@return boolean
-function ReplSplit:_has_spinner() end
+function ReplSplit:_has_spinner()
+	return self.spinner ~= nil
+end
 
 function ReplSplit:_is_visible()
-	return vim.api.nvim_win_is_valid(self.output.winnr or -99)
+	return vim.api.nvim_win_is_valid(self.ui.output.winnr or -99)
 end
 
 function ReplSplit:_filetype_set(filetype)
-	vim.bo[self.output.bufnr].filetype = "jet"
-	vim.bo[self.prompt.bufnr].filetype = filetype
+	vim.bo[self.ui.output.bufnr].filetype = "jet"
+	vim.bo[self.ui.prompt.bufnr].filetype = filetype
 end
 
 ---@param text? string
@@ -477,7 +446,7 @@ function ReplSplit:_display_output(text)
 		return
 	end
 
-	vim.api.nvim_chan_send(self.repl_channel, text)
+	vim.api.nvim_chan_send(self.output_channel, text)
 end
 
 return ReplSplit

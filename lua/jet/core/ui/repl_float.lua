@@ -2,7 +2,17 @@ local spinners = require("jet.core.ui.spinners")
 local utils = require("jet.core.utils")
 local ReplSplit = require("jet.core.ui.repl_split")
 
+---@class _Spinner:_Display
+---@field _stop? fun()
+
 ---@class Jet.Ui.ReplFloat:Jet.Ui.ReplSplit
+---@field ui { prompt: _Display, output: _Display, background: _Display }
+---@field spinner _Spinner
+---
+---TODO: do we need these?
+---@field last_win number
+---@field last_normal_win number
+---@field last_jet_win number
 local ReplFloat = {}
 ReplFloat.__index = ReplFloat
 setmetatable(ReplFloat, {
@@ -17,29 +27,14 @@ function ReplFloat.new()
 end
 
 function ReplFloat:_init_ui()
-	for _, ui in ipairs({ "background", "prompt", "output" }) do
-		if self[ui] and vim.api.nvim_buf_is_valid(self[ui].bufnr) then
-			utils.log_warn("REPL %s buffer already exists with bufnr %s", ui, self[ui].bufnr)
-		else
-			local bufnr = vim.api.nvim_create_buf(false, true)
-			self[ui] = { bufnr = bufnr }
-			vim.bo[bufnr].buftype = "nofile"
-			-- We set some buffer variables for use with autocommands. NB, many
-			-- plugins use a custom filetype, but we often want to use filetype
-			-- for other stuff in Jet.
-			vim.b[bufnr].jet = {
-				type = "repl_" .. ui,
-				kernel_id = self.kernel.id,
-			}
-		end
-	end
+    self:_init_bufs({ "prompt", "output", "background" })
 
 	-- Jet sends output from the kernel to a terminal channel in order to
 	-- format ansi formatting.
 	if self.repl_channel then
 		utils.log_warn("REPL output channel `%s` already exists!", self.repl_channel)
 	else
-		self.repl_channel = vim.api.nvim_open_term(self.output.bufnr, {})
+		self.repl_channel = vim.api.nvim_open_term(self.ui.output.bufnr, {})
 	end
 
 	self:_indent_reset()
@@ -49,7 +44,7 @@ function ReplFloat:_init_ui()
 	vim.keymap.set({ "n", "i" }, "<CR>", function()
 		self:maybe_execute_prompt()
 	end, {
-		buffer = self.prompt.bufnr,
+		buffer = self.ui.prompt.bufnr,
 		desc = "Jet REPL: execute code",
 	})
 
@@ -60,30 +55,30 @@ function ReplFloat:_init_ui()
 				vim.api.nvim_set_current_win(winnr)
 				vim.fn.feedkeys(key, "n")
 			end)
-		end, { buffer = self.output.bufnr })
+		end, { buffer = self.ui.output.bufnr })
 	end
 
 	vim.keymap.set({ "n", "i" }, "<c-p>", function()
 		self:_prompt_set(self.kernel:history_get(-1))
-	end, { buffer = self.prompt.bufnr })
+	end, { buffer = self.ui.prompt.bufnr })
 
 	vim.keymap.set({ "n", "i" }, "<c-n>", function()
 		self:_prompt_set(self.kernel:history_get(1))
-	end, { buffer = self.prompt.bufnr })
+	end, { buffer = self.ui.prompt.bufnr })
 
 	--- Set autocommands
 	--- Attach LSP to the REPL input buffer
 	--- (TODO: give the user the ability to disable this)
 	vim.api.nvim_create_autocmd("BufEnter", {
 		group = self._augroup,
-		buffer = self.prompt.bufnr,
+		buffer = self.ui.prompt.bufnr,
 		callback = function()
 			for _, cfg in pairs(vim.lsp._enabled_configs) do
 				if cfg.resolved_config then
 					local ft = cfg.resolved_config.filetypes
 					if ft and vim.tbl_contains(ft, self.kernel.filetype) or not ft then
 						vim.lsp.start(cfg.resolved_config, {
-							bufnr = self.prompt.bufnr,
+							bufnr = self.ui.prompt.bufnr,
 						})
 					end
 				end
@@ -94,7 +89,7 @@ function ReplFloat:_init_ui()
 	vim.api.nvim_create_autocmd("BufUnload", {
 		group = self._augroup,
 		callback = function(e)
-			if vim.tbl_contains({ self.prompt.bufnr, self.output.bufnr }, e.buf) then
+			if vim.tbl_contains({ self.ui.prompt.bufnr, self.ui.output.bufnr }, e.buf) then
 				self:delete()
 			end
 		end,
@@ -102,7 +97,7 @@ function ReplFloat:_init_ui()
 
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		group = self._augroup,
-		buffer = self.prompt.bufnr,
+		buffer = self.ui.prompt.bufnr,
 		callback = function()
 			self:_indent_reset()
 		end,
@@ -110,7 +105,7 @@ function ReplFloat:_init_ui()
 
 	vim.api.nvim_create_autocmd("WinEnter", {
 		group = self._augroup,
-		buffer = self.background.bufnr,
+		buffer = self.ui.background.bufnr,
 		callback = function()
 			-- When we enter the background window we want to automatically
 			-- enter a different window. The approach is:
@@ -120,9 +115,9 @@ function ReplFloat:_init_ui()
 			-- This should hopefully make entering/leaving the REPL windows
 			-- feel natural and work well with the user's existing keymaps.
 			vim.api.nvim_set_current_win(
-				(self.last_win == self.prompt.winnr and self.output.winnr)
-					or (self.last_win == self.output.winnr and self.last_normal_win)
-					or (self.last_win == self.last_normal_win and self.prompt.winnr)
+				(self.last_win == self.ui.prompt.winnr and self.ui.output.winnr)
+					or (self.last_win == self.ui.output.winnr and self.last_normal_win)
+					or (self.last_win == self.last_normal_win and self.ui.prompt.winnr)
 					or self.last_win
 			)
 		end,
@@ -131,8 +126,8 @@ function ReplFloat:_init_ui()
 	vim.api.nvim_create_autocmd("WinClosed", {
 		group = self._augroup,
 		callback = function(e)
-			local repl_wins = { self.background.winnr, self.prompt.winnr, self.output.winnr }
-			local repl_bufs = { self.background.bufnr, self.prompt.bufnr, self.output.bufnr }
+			local repl_wins = { self.ui.background.winnr, self.ui.prompt.winnr, self.ui.output.winnr }
+			local repl_bufs = { self.ui.background.bufnr, self.ui.prompt.bufnr, self.ui.output.bufnr }
 
 			if not vim.tbl_contains(repl_bufs, e.buf) then
 				return
@@ -168,65 +163,72 @@ function ReplFloat:_show()
 	-- │ box chars │
 	-- ╰───────────╯
 
-	self.background.winnr = vim.api.nvim_open_win(self.background.bufnr, false, {
+	self.ui.background.winnr = vim.api.nvim_open_win(self.ui.background.bufnr, false, {
 		split = "right",
 		focusable = false,
 	})
 
-	self.output.winnr = vim.api.nvim_open_win(self.output.bufnr, false, {
+	self.ui.output.winnr = vim.api.nvim_open_win(self.ui.output.bufnr, false, {
 		relative = "win",
-		win = self.background.winnr,
+		win = self.ui.background.winnr,
 		col = 0,
 		row = 0,
-		height = vim.api.nvim_win_get_height(self.background.winnr) - 4,
-		width = vim.api.nvim_win_get_width(self.background.winnr) - 4,
+		height = vim.api.nvim_win_get_height(self.ui.background.winnr) - 4,
+		width = vim.api.nvim_win_get_width(self.ui.background.winnr) - 4,
 		border = { "╭", "─", "╮", "│", "│", " ", "│", "│" },
 		zindex = self.zindex + 1,
 		style = "minimal",
-		title = self.kernel.instance.spec.display_name,
+		title = self.kernel:name(),
 		title_pos = "center",
 	})
 
-	self.prompt.winnr = vim.api.nvim_open_win(self.prompt.bufnr, false, {
+	self.ui.prompt.winnr = vim.api.nvim_open_win(self.ui.prompt.bufnr, false, {
 		relative = "win",
-		win = self.background.winnr,
+		win = self.ui.background.winnr,
 		height = 1,
 		col = 0,
-		row = vim.api.nvim_win_get_height(self.background.winnr),
-		width = vim.api.nvim_win_get_width(self.background.winnr) - 4,
+		row = vim.api.nvim_win_get_height(self.ui.background.winnr),
+		width = vim.api.nvim_win_get_width(self.ui.background.winnr) - 4,
 		border = { "│", "─", "│", "│", "╯", "─", "╰", "│" },
 		zindex = self.zindex + 2,
 		style = "minimal",
 	})
 
-	vim.wo[self.output.winnr].listchars = ""
+	vim.wo[self.ui.output.winnr].listchars = ""
 
 	self:_spinner_maybe_show()
 
 	self:_set_layout()
 end
 
+function ReplFloat:delete()
+	ReplSplit.delete(self)
+	if vim.api.nvim_buf_is_valid(self.ui.background.bufnr or -99) then
+		vim.api.nvim_buf_delete(self.ui.background.bufnr, { force = true })
+	end
+end
+
 function ReplFloat:_set_layout()
 	-- TODO: reset vertical layout when we resize other windows. This seems to
 	-- get unborkably borked if we resize vim.
-	if not (vim.api.nvim_win_is_valid(self.prompt.winnr) and vim.api.nvim_win_is_valid(self.output.winnr)) then
+	if not (vim.api.nvim_win_is_valid(self.ui.prompt.winnr) and vim.api.nvim_win_is_valid(self.ui.output.winnr)) then
 		return
 	end
 
 	-- First, if we're in either the input or output window, resize the background
 	-- according to the current window width
 	local cur_win = vim.api.nvim_get_current_win()
-	if cur_win == self.output.winnr or cur_win == self.prompt.winnr then
-		vim.api.nvim_win_set_config(self.background.winnr, {
+	if cur_win == self.ui.output.winnr or cur_win == self.ui.prompt.winnr then
+		vim.api.nvim_win_set_config(self.ui.background.winnr, {
 			width = vim.api.nvim_win_get_width(cur_win) + 2,
 		})
 	end
 
 	-- Now we're sure the background is the right size, set both input and output
 	-- to match its width
-	for _, win in ipairs({ self.prompt.winnr, self.output.winnr }) do
+	for _, win in ipairs({ self.ui.prompt.winnr, self.ui.output.winnr }) do
 		vim.api.nvim_win_set_config(win, {
-			width = math.max(vim.api.nvim_win_get_width(self.background.winnr) - 2, 1),
+			width = math.max(vim.api.nvim_win_get_width(self.ui.background.winnr) - 2, 1),
 		})
 	end
 
@@ -238,9 +240,9 @@ function ReplFloat:_set_layout()
 	--     })
 	-- end
 
-	local bg_height = vim.api.nvim_win_get_height(self.background.winnr)
-	local prompt_height = vim.api.nvim_win_get_height(self.prompt.winnr)
-	vim.api.nvim_win_set_config(self.output.winnr, {
+	local bg_height = vim.api.nvim_win_get_height(self.ui.background.winnr)
+	local prompt_height = vim.api.nvim_win_get_height(self.ui.prompt.winnr)
+	vim.api.nvim_win_set_config(self.ui.output.winnr, {
 		-- We need to subtract 1 to account for the borders (the output's
 		-- bottom border should overlap with the input's top border)
 		height = math.max(bg_height - prompt_height - 2, 1),
@@ -283,9 +285,9 @@ function ReplFloat:_spinner_maybe_show()
 	self.spinner.winnr = vim.api.nvim_open_win(self.spinner.bufnr, false, {
 		relative = "win",
 		anchor = "SE",
-		win = self.background.winnr,
-		col = vim.api.nvim_win_get_width(self.output.winnr) - 1,
-		row = vim.api.nvim_win_get_height(self.output.winnr),
+		win = self.ui.background.winnr,
+		col = vim.api.nvim_win_get_width(self.ui.output.winnr) - 1,
+		row = vim.api.nvim_win_get_height(self.ui.output.winnr),
 		height = 1,
 		width = 4,
 		border = "none",

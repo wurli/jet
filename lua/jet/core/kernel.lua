@@ -42,11 +42,37 @@ function kernel.start(spec_path)
 	return self
 end
 
+---@return string
+function kernel:name()
+	return self.instance.spec.display_name
+end
+
+---@return { icon: string, hl: string }?
+function kernel:icon()
+	if not self.filetype then
+		return
+	end
+
+	local ok, mini_icons = pcall(require, "mini.icons")
+
+	if not ok then
+		return
+	end
+
+	local icon, hl, is_default = mini_icons.get("filetype", self.filetype)
+
+	if is_default then
+		return
+	end
+
+	return { icon = icon, hl = hl }
+end
+
 function kernel:init_repl()
 	if self.ui then
 		error("UI already exists")
 	end
-	self.ui = require("jet.core.ui.repl_float").new():init(self)
+	self.ui = require("jet.core.ui.repl_split").new():init(self)
 end
 
 function kernel:stop()
