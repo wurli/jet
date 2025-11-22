@@ -27,7 +27,7 @@ function ReplFloat.new()
 end
 
 function ReplFloat:_init_ui()
-    self:_init_bufs({ "prompt", "output", "background" })
+	self:_init_bufs("background")
 
 	-- Jet sends output from the kernel to a terminal channel in order to
 	-- format ansi formatting.

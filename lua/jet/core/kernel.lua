@@ -199,8 +199,12 @@ function kernel:interrupt(callback, on_exit)
 end
 
 ---@param increment number
----@return string[]
+---@return string[]?
 function kernel:history_get(increment)
+    if not self.history_index then
+        return
+    end
+
 	local new_index = self.history_index + increment
 	self.history_index = math.max(1, math.min(new_index, #self.history + 1))
 	return self.history[self.history_index] or {}

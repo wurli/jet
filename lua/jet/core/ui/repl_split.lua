@@ -138,8 +138,9 @@ function ReplSplit:_statusline_set(opts)
 	end)
 end
 
----@param names string[]
-function ReplSplit:_init_bufs(names)
+---@param ... string Any extra buffers to create
+function ReplSplit:_init_bufs(...)
+	local names = { "prompt", "output", ... }
 	self.ui = self.ui or {}
 	for _, ui_name in ipairs(names) do
 		self.ui[ui_name] = self.ui[ui_name] or {}
@@ -158,10 +159,12 @@ function ReplSplit:_init_bufs(names)
 			}
 		end
 	end
+
+	vim.bo[self.ui.output.bufnr].modifiable = false
 end
 
 function ReplSplit:_init_ui()
-	self:_init_bufs({ "prompt", "output" })
+	self:_init_bufs()
 
 	self:_with_prompt_buf(function(buf)
 		vim.api.nvim_buf_call(buf, function()
@@ -188,7 +191,7 @@ function ReplSplit:_init_ui()
 		desc = "Jet REPL: execute code",
 	})
 
-	vim.keymap.set("n", "<C-c>", function()
+	vim.keymap.set("n", "<C-x>", function()
 		self:interrupt()
 	end, {
 		buffer = self.ui.prompt.bufnr,
@@ -405,7 +408,7 @@ function ReplSplit:_indent_get_continue()
 	return self.indent_templates.continue:format(self.indent_chars.continue)
 end
 
----@param text string[]
+---@param text string[]?
 function ReplSplit:_prompt_set(text)
 	if not text then
 		return
