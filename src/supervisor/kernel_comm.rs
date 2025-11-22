@@ -363,48 +363,48 @@ impl KernelComm {
         Ok(())
     }
 
-    pub(crate) fn request_interrupt(&self) -> anyhow::Result<Message> {
+    pub fn send_interrupt_request(&self) -> Result<ReplyReceivers, Error> {
+        self.send_control(InterruptRequest {})
+    }
+
+    pub fn recv_interrupt_reply(&self, receivers: &ReplyReceivers) -> KernelResponse {
         self.route_all_incoming_shell();
-        let receivers = self.send_control(InterruptRequest {})?;
 
-        loop {
-            while let Ok(reply) = receivers.iopub.try_recv() {
-                match reply {
-                    Message::InterruptReply(_) => {
-                        log::info!("Received interrupt_reply on iopub (non-standard)");
-                        return Ok(reply);
-                    }
-                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {
-                    }
-                    Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
-                        break;
-                    }
-                    _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
+        while let Ok(reply) = receivers.iopub.try_recv() {
+            match reply {
+                Message::InterruptReply(_) => {
+                    log::info!("Received interrupt_reply on iopub (non-standard)");
+                    return KernelResponse::Busy(Some(reply));
                 }
-            }
-
-            self.route_all_incoming_control();
-            if let Ok(reply) = receivers.control.try_recv() {
-                match reply {
-                    Message::InterruptReply(_) => {
-                        log::info!("Received interrupt_reply on control");
-                        self.control_broker
-                            .unregister_request(&receivers.id, "reply received");
-                        return Ok(reply);
-                    }
-                    other => {
-                        log::warn!(
-                            "Expected interrupt_reply but received unexpected message: {:#?}",
-                            other
-                        );
-                        return Err(anyhow::anyhow!(
-                            "Expected interrupt_reply but received unexpected message: {:#?}",
-                            other
-                        ));
-                    }
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Busy => {}
+                Message::Status(msg) if msg.content.execution_state == ExecutionState::Idle => {
+                    self.iopub_broker
+                        .unregister_request(&receivers.id, "idle status received");
+                    return if self.is_request_active(&receivers.id) {
+                        KernelResponse::Busy(None)
+                    } else {
+                        KernelResponse::Idle
+                    };
                 }
+                _ => log::warn!("Dropping unexpected iopub message {}", reply.describe()),
             }
         }
+
+        self.route_all_incoming_control();
+        if let Ok(reply) = receivers.control.try_recv() {
+            match reply {
+                Message::InterruptReply(_) => {}
+                ref other => {
+                    log::warn!(
+                        "Expected interrupt_reply but received unexpected message: {other:#?}",
+                    );
+                }
+            }
+            self.unregister_request(&receivers.id, "reply received");
+            return KernelResponse::Busy(Some(reply));
+        }
+
+        KernelResponse::Busy(None)
     }
 
     pub fn send_is_complete_request(&self, code: String) -> Result<ReplyReceivers, Error> {

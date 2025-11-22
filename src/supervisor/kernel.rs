@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant, SystemTime};
 
+use crate::callback_output::KernelResponse;
 use crate::connection::connection::JupyterChannels;
 use crate::connection::heartbeat::Heartbeat;
 use crate::connection::iopub::Iopub;
@@ -25,6 +26,7 @@ use crate::msg::wire::message_id::Id;
 use crate::supervisor::broker::Broker;
 use crate::supervisor::kernel_comm::KernelComm;
 use crate::supervisor::kernel_info::KernelInfo;
+use crate::supervisor::reply_receivers::ReplyReceivers;
 
 pub struct Kernel {
     pub id: Id,
@@ -211,7 +213,10 @@ impl Kernel {
         Ok(())
     }
 
-    pub fn interrupt(&self) -> Result<Option<Message>, Error> {
+    /// Send an interrupt reply using a signal or message, depending on what the kernel supports
+    ///
+    /// Returns receivers if the interrupt was sent as a message.
+    pub fn request_interrupt(&self) -> Result<Option<ReplyReceivers>, Error> {
         let interrupt_mode = match self.info.spec.interrupt_mode {
             Some(ref mode) => mode.clone(),
             None => match &self.info.info.protocol_version {
@@ -227,21 +232,18 @@ impl Kernel {
         };
 
         match interrupt_mode {
+            InterruptMode::Message => return self.comm.send_interrupt_request().map(Some),
             InterruptMode::Signal => {
                 #[cfg(unix)]
-                match self.interrupt_signal() {
-                    Ok(()) => return Ok(None),
-                    Err(e) => return Err(e),
-                };
+                {
+                    self.interrupt_signal()?;
+                    return Ok(None);
+                }
                 #[cfg(not(unix))]
                 return Err(Error::UnsupportedPlatform(
                     "Can't send interrupt using OS signal",
                 ));
             }
-            InterruptMode::Message => match self.comm.request_interrupt() {
-                Ok(msg) => return Ok(Some(msg)),
-                Err(e) => return Err(Error::Anyhow(e)),
-            },
         }
     }
 
@@ -259,6 +261,13 @@ impl Kernel {
         };
 
         Ok(())
+    }
+
+    pub fn recv_interrupt_reply(&self, receivers: &Option<ReplyReceivers>) -> KernelResponse {
+        match receivers {
+            Some(receivers) => self.comm.recv_interrupt_reply(&receivers),
+            None => KernelResponse::Idle,
+        }
     }
 }
 

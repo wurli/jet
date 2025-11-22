@@ -109,20 +109,10 @@ pub fn provide_stdin(_: &Lua, (kernel_id, value): (String, String)) -> LuaResult
     Ok(())
 }
 
-pub fn interrupt(lua: &Lua, kernel_id: String) -> LuaResult<LuaTable> {
-    let res = KernelManager::get(&kernel_id.into())
-        .into_lua_err()?
-        .interrupt()
-        .into_lua_err()?;
-
-    match res {
-        Some(Message::InterruptReply(msg)) => msg.content.to_lua(lua),
-        Some(other) => Err(LuaError::external(format!(
-            "Received unexpected reply to interrupt request {}",
-            other.describe()
-        ))),
-        None => lua.create_table(),
-    }
+pub fn interrupt(lua: &Lua, kernel_id: String) -> LuaResult<LuaFunction> {
+    let kernel = KernelManager::get(&kernel_id.into()).into_lua_err()?;
+    let receivers = kernel.request_interrupt().into_lua_err()?;
+    lua.create_function_mut(move |lua, (): ()| kernel.recv_interrupt_reply(&receivers).to_lua(lua))
 }
 
 pub fn execute_code(
