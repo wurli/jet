@@ -263,6 +263,7 @@ impl Kernel {
         Ok(())
     }
 
+    /// TODO: handle messages about signal interrupts
     pub fn recv_interrupt_reply(&self, receivers: &Option<ReplyReceivers>) -> KernelResponse {
         match receivers {
             Some(receivers) => self.comm.recv_interrupt_reply(&receivers),
