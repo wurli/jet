@@ -100,9 +100,8 @@ function ReplSplit:_show()
 		})
 	end)
 
-
 	vim.wo[self.ui.output.winnr].listchars = ""
-    vim.wo[self.ui.prompt.winnr].signcolumn = "no"
+	vim.wo[self.ui.prompt.winnr].signcolumn = "no"
 	self:_statusline_set()
 
 	self:_set_layout()
@@ -124,15 +123,17 @@ function ReplSplit:_statusline_set(opts)
 
 	opts = opts or {}
 
-	vim.wo[self.ui.output.winnr].statusline = table.concat({
-		"%#Normal#",
-		opts.left or "",
-		"%=",
-		opts.center or "",
-		"%=",
-		"%#JetReplSpinner#",
-		opts.right or "",
-	}, "")
+	vim.schedule(function()
+		vim.wo[self.ui.output.winnr].statusline = table.concat({
+			"%#Normal#",
+			opts.left or "",
+			"%=",
+			opts.center or "",
+			"%=",
+			"%#JetReplSpinner#",
+			opts.right or "",
+		}, "")
+	end)
 end
 
 ---@param names string[]
@@ -183,6 +184,13 @@ function ReplSplit:_init_ui()
 	end, {
 		buffer = self.ui.prompt.bufnr,
 		desc = "Jet REPL: execute code",
+	})
+
+	vim.keymap.set("n", "<C-c>", function()
+		self:interrupt()
+	end, {
+		buffer = self.ui.prompt.bufnr,
+		desc = "Jet REPL: interrupt execution",
 	})
 
 	-- TODO: Improve keymaps
@@ -315,6 +323,15 @@ function ReplSplit:maybe_execute_prompt()
 	})
 end
 
+function ReplSplit:interrupt()
+	self:_spinner_start(function(frame)
+		return "Cancelling " .. frame
+	end)
+	self.kernel:interrupt(function() end, function()
+		self:_spinner_stop()
+	end)
+end
+
 ---@param fn fun(bufnr: number?)
 function ReplSplit:_with_prompt_buf(fn)
 	if vim.api.nvim_buf_is_valid(self.ui.prompt.bufnr or -99) then
@@ -408,13 +425,18 @@ function ReplSplit:_scroll_to_end()
 	end)
 end
 
-function ReplSplit:_spinner_start()
+---@param transform? fun(frame: string): string
+---@param type? Jet.Spinner
+function ReplSplit:_spinner_start(transform, type)
 	-- Stop any pre-existing spinner callbacks
 	self:_spinner_stop()
 	self.spinner = {
 		stop = spinners.run(function(frame)
+			if transform then
+				frame = transform(frame)
+			end
 			self:_statusline_set({ right = frame .. " " })
-		end, function() end, 100),
+		end, function() end, 100, type),
 	}
 end
 

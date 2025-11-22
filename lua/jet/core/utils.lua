@@ -11,6 +11,8 @@ local M = {}
 ---@field handler fun(result: any): any
 ---@field on_exit? fun(): any
 
+---Repeatedly run a callback until a particular result is returned
+---
 ---@param callback fun(): any
 ---@param opts Jet.Utils.Listen.Options
 M.listen = function(callback, opts)

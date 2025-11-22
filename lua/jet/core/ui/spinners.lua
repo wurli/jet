@@ -14,7 +14,7 @@ local spinners = {
 	spin2 = { "⢎⡰", "⢎⡡", "⢎⡑", "⢎⠱", "⠎⡱", "⢊⡱", "⢌⡱", "⢆⡱" },
 }
 
----@alias Jet.Spinner
+---@alias Jet.Spinner.Preset
 ---|"arrows"
 ---|"blocks_h"
 ---|"blocks_v"
@@ -27,16 +27,18 @@ local spinners = {
 ---|"spin"
 ---|"spin2"
 
+---@alias Jet.Spinner Jet.Spinner.Preset | fun(): string[]
+
 ---Run a spinner animation
 ---
 ---@param on_tick fun(frame: string) A callback function that is called on each frame with
 ---@param on_complete fun() A callback function for when the spinner completes
 ---@param interval? number The interval in milliseconds between frames (default 100)
----@param spinner_name? Jet.Spinner The name of the spinner to use (default `concentric`)
+---@param spinner? Jet.Spinner A spinner name or a function returning an array of frames
 ---@return fun(): nil A function to stop the spinner
-M.run = function(on_tick, on_complete, interval, spinner_name)
+M.run = function(on_tick, on_complete, interval, spinner)
 	interval = interval or 100
-	local frames = spinners[spinner_name or "spin2"]
+	local frames = type(spinner) == "function" and spinner() or spinners[spinner or "spin2"]
 	local frame_count = #frames
 	local current_frame = 0
 	local timer = vim.uv.new_timer()

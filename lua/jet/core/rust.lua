@@ -1,11 +1,11 @@
 local function get_lib_extension()
-    if jit.os:lower() == "mac" or jit.os:lower() == "osx" then
-        return ".dylib"
-    end
-    if jit.os:lower() == "windows" then
-        return ".dll"
-    end
-    return ".so"
+	if jit.os:lower() == "mac" or jit.os:lower() == "osx" then
+		return ".dylib"
+	end
+	if jit.os:lower() == "windows" then
+		return ".dll"
+	end
+	return ".so"
 end
 
 -- local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/')
@@ -19,12 +19,12 @@ local loader = package.loadlib(lib_path, "luaopen_" .. lib_name)
 
 -- If that fails, try without lib prefix (Windows-style)
 if not loader then
-    lib_path = base_path .. lib_name .. lib_extension
-    loader = package.loadlib(lib_path, "luaopen_" .. lib_name)
+	lib_path = base_path .. lib_name .. lib_extension
+	loader = package.loadlib(lib_path, "luaopen_" .. lib_name)
 end
 
 if not loader then
-    error("Failed to load native module from: " .. lib_path)
+	error("Failed to load native module from: " .. lib_path)
 end
 
 ------ Message Types ----------------------------------------------------------
@@ -75,6 +75,9 @@ end
 ---@class Jet.Msg.InputRequest
 ---@field prompt string
 ---@field password boolean
+---
+---@class Jet.Msg.Interrupt
+---@field status "ok"
 
 ---@class Jet.Msg.IsCompleteReply
 ---@field status "complete" | "incomplete" | "invalid" | "unknown"
@@ -85,8 +88,10 @@ end
 ---@field text string
 
 ------ Message Groups ---------------------------------------------------------
--- Not all functions return all message types; they are grouped here for
--- clarity.
+-- Each function which requests that the kernel does something, e.g.
+-- execute_code(), interrupt(), etc, may return several typos of message. These
+-- classes define the exact types which are expected to be returned by each
+-- function.
 -------------------------------------------------------------------------------
 
 ---@alias Jet.MsgGroup.Execute
@@ -115,12 +120,15 @@ end
 ---| "comm_msg"
 ---| "comm_open"
 
----@alias Jet.ExecutionStatus
----| "busy"
----| "idle"
-
 ---@alias Jet.MsgType.IsCompleteReply
 ---| "is_complete_reply"
+
+---@alias Jet.MsgType.Interrupt
+---| "interrupt_reply"
+
+---@alias Jet.KernelStatus
+---| "busy"
+---| "idle"
 
 ------ Kernel information -----------------------------------------------------
 -- When a kernel starts up, Jet stores the following information about it.
@@ -172,25 +180,30 @@ end
 -------------------------------------------------------------------------------
 
 ---@class Jet.Engine
----@field comm_open fun(kernel_id: string, target_name: string, data: table): (Jet.Comm.Id, Jet.Callback.Comm)
----@field comm_send fun(kernel_id: string, comm_id: Jet.Comm.Id, data: table): Jet.Callback.Comm
----@field execute_code fun(kernel_id: Jet.Kernel.Id, code: string, user_expression: table?): Jet.Callback.Execute
----@field get_completions fun(kernel_id: Jet.Kernel.Id, code: string): Jet.Msg.CompleteReply
----@field is_complete fun(kernel_id: Jet.Kernel.Id, code: string): Jet.Callback.IsComplete
+---
+---@field comm_open        fun(id: Jet.Kernel.Id, target_name: string, data: table): (Jet.Comm.Id, Jet.Callback.Comm)
+---@field comm_send        fun(id: Jet.Kernel.Id, comm_id: Jet.Comm.Id, data: table): Jet.Callback.Comm
+---@field execute_code     fun(id: Jet.Kernel.Id, code: string, user_expression: table?): Jet.Callback.Execute
+---@field get_completions  fun(id: Jet.Kernel.Id, code: string): Jet.Msg.CompleteReply
+---@field interrupt        fun(id: Jet.Kernel.Id): Jet.Callback.Interrupt
+---@field is_complete      fun(id: Jet.Kernel.Id, code: string): Jet.Callback.IsComplete
+---@field provide_stdin    fun(id: Jet.Kernel.Id, value: string)
+---@field request_restart  fun(id: Jet.Kernel.Id): table?
+---@field request_shutdown fun(id: Jet.Kernel.Id)
+---
 ---@field list_available_kernels fun(): table<Jet.Kernel.Spec.Path, Jet.Kernel.Spec>
----@field list_running_kernels fun(): table<Jet.Kernel.Id, Jet.Kernel.Instance>
----@field provide_stdin fun(kernel_id: Jet.Kernel.Id, value: string): nil
----@field request_restart fun(kernel_id: Jet.Kernel.Id): table?
----@field request_shutdown fun(kernel_id: Jet.Kernel.Id): nil
----@field start_kernel fun(spec_path: string): (Jet.Kernel.Id, Jet.Kernel.Instance)
+---@field list_running_kernels   fun(): table<Jet.Kernel.Id, Jet.Kernel.Instance>
+---@field start_kernel           fun(spec_path: string): (Jet.Kernel.Id, Jet.Kernel.Instance)
 
 ---@alias Jet.Comm.Id string
----@alias Jet.Callback.Comm fun(): Jet.Callback.Comm.Result
----@alias Jet.Callback.Comm.Result { status: Jet.ExecutionStatus, type: Jet.MsgType.Comm?, data: Jet.MsgGroup.Comm? }
----@alias Jet.Callback.Execute fun(): Jet.Callback.Execute.Result
----@alias Jet.Callback.Execute.Result { status: Jet.ExecutionStatus, type: Jet.MsgType.Execute?, data: Jet.MsgGroup.Execute? }
----@alias Jet.Callback.IsComplete fun(): Jet.Callback.IsComplete.Result
----@alias Jet.Callback.IsComplete.Result { status: Jet.ExecutionStatus, type: Jet.MsgType.IsCompleteReply?, data: Jet.Msg.IsCompleteReply? }
+---@alias Jet.Callback.Comm              fun(): Jet.Callback.Comm.Result
+---@alias Jet.Callback.Comm.Result       { status: Jet.KernelStatus, type: Jet.MsgType.Comm?, data: Jet.MsgGroup.Comm? }
+---@alias Jet.Callback.Execute           fun(): Jet.Callback.Execute.Result
+---@alias Jet.Callback.Execute.Result    { status: Jet.KernelStatus, type: Jet.MsgType.Execute?, data: Jet.MsgGroup.Execute? }
+---@alias Jet.Callback.Interrupt         fun(): Jet.Callback.Interrupt.Result
+---@alias Jet.Callback.Interrupt.Result  { status: Jet.KernelStatus, type: Jet.MsgType.Interrupt?, data: Jet.Msg.Interrupt? }
+---@alias Jet.Callback.IsComplete        fun(): Jet.Callback.IsComplete.Result
+---@alias Jet.Callback.IsComplete.Result { status: Jet.KernelStatus, type: Jet.MsgType.IsCompleteReply?, data: Jet.Msg.IsCompleteReply? }
 ---@alias Jet.Kernel.Id string
 ---@alias Jet.Kernel.Spec.Path string
 

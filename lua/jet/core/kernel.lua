@@ -111,10 +111,6 @@ end
 ---@param callback fun(msg: Jet.Callback.Execute.Result)
 ---@param on_exit? fun()
 function kernel:execute(code, callback, on_exit)
-	if not self.id then
-		error("Kernel is not active; use `start()` to activate the kernel.")
-	end
-
 	if vim.tbl_count(code) == 0 then
 		return
 	end
@@ -181,6 +177,25 @@ function kernel.get_buf_text_visual()
 		-- TODO: add additional fields
 		code = code,
 	}
+end
+
+---@param callback fun(msg: Jet.Callback.Interrupt.Result)
+---@param on_exit? fun()
+function kernel:interrupt(callback, on_exit)
+	utils.listen(engine.interrupt(self.id), {
+		action = function(res)
+			if res.status == "idle" then
+				return "exit"
+			elseif res.data then
+				return "handle"
+			else
+				return "retry"
+			end
+		end,
+		handler = callback,
+		on_exit = on_exit,
+		interval = 50,
+	})
 end
 
 ---@param increment number
