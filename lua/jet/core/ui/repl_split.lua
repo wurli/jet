@@ -124,15 +124,17 @@ function ReplSplit:_statusline_set(opts)
 	opts = opts or {}
 
 	vim.schedule(function()
-		vim.wo[self.ui.output.winnr].statusline = table.concat({
-			"%#Normal#",
-			opts.left or "",
-			"%=",
-			opts.center or "",
-			"%=",
-			"%#JetReplSpinner#",
-			opts.right or "",
-		}, "")
+		self:_with_output_win(function(win)
+			vim.wo[win].statusline = table.concat({
+				"%#Normal#",
+				opts.left or "",
+				"%=",
+				opts.center or "",
+				"%=",
+				"%#JetReplSpinner#",
+				opts.right or "",
+			}, "")
+		end)
 	end)
 end
 

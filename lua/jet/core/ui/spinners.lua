@@ -42,13 +42,16 @@ M.run = function(on_tick, on_complete, interval, spinner)
 	local frame_count = #frames
 	local current_frame = 0
 	local timer = vim.uv.new_timer()
+	local done = false
 
 	timer:start(
 		0,
 		interval,
 		vim.schedule_wrap(function()
-			current_frame = (current_frame % frame_count) + 1
-			on_tick(frames[current_frame])
+			if not done then
+				current_frame = (current_frame % frame_count) + 1
+				on_tick(frames[current_frame])
+			end
 		end)
 	)
 
@@ -59,6 +62,7 @@ M.run = function(on_tick, on_complete, interval, spinner)
 			end
 			timer:stop()
 			timer:close()
+			done = true
 		end)
 	end
 end
