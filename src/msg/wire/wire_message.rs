@@ -196,16 +196,18 @@ impl WireMessage {
         match &self.parent_header {
             Some(parent) => {
                 trace!(
-                    "Sending '{}' message (reply to '{}') via {} socket",
+                    "Sending '{}' message {} (reply to '{}') via {} socket",
                     self.msg_type(),
+                    self.header.msg_id,
                     parent.msg_type,
                     socket.name
                 );
             }
             None => {
                 trace!(
-                    "Sending '{}' message via {} socket",
+                    "Sending '{}' message {} via {} socket",
                     self.msg_type(),
+                    self.header.msg_id,
                     socket.name
                 );
             }

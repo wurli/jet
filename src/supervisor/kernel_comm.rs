@@ -368,6 +368,14 @@ impl KernelComm {
     }
 
     pub fn recv_interrupt_reply(&self, receivers: &ReplyReceivers) -> KernelResponse {
+        if !self.is_request_active(&receivers.id) {
+            log::trace!(
+                "Request {} is no longer active, returning Idle",
+                receivers.id
+            );
+            return KernelResponse::Idle;
+        }
+
         self.route_all_incoming_shell();
 
         while let Ok(reply) = receivers.iopub.try_recv() {
@@ -445,7 +453,7 @@ impl KernelComm {
 
         if !self.is_request_active(&receivers.id) {
             log::trace!(
-                "Request {} is no longer active, returning None",
+                "Request {} is no longer active, returning Idle",
                 receivers.id
             );
             return KernelResponse::Idle;
@@ -485,7 +493,7 @@ impl KernelComm {
     pub fn recv_execute_reply(&self, receivers: &ReplyReceivers) -> KernelResponse {
         if !self.is_request_active(&receivers.id) {
             log::trace!(
-                "Request {} is no longer active, returning None",
+                "Request {} is no longer active, returning Idle",
                 receivers.id
             );
             return KernelResponse::Idle;
@@ -568,7 +576,7 @@ impl KernelComm {
 
     pub fn recv_comm_general(&self, comm_id: &Id, receiver: &Receiver<Message>) -> KernelResponse {
         if !self.iopub_broker.is_comm_open(&comm_id) {
-            log::trace!("Comm {comm_id} is no longer active, returning None");
+            log::trace!("Comm {comm_id} is no longer active, returning Idle");
             return KernelResponse::Idle;
         }
 
@@ -624,7 +632,7 @@ impl KernelComm {
         }
         if !self.is_request_active(&receiver.id) {
             log::trace!(
-                "Request {} is no longer active, returning None",
+                "Request {} is no longer active, returning Idle",
                 receiver.id
             );
             return Ok(KernelResponse::Idle);
