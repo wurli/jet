@@ -198,15 +198,16 @@ function manager:_filter(kernels, opts)
 		opts.filetype = opts.filetype or vim.bo[opts.bufnr].filetype
 		opts.id = self.map_kernel_buffer[opts.bufnr] and self.map_kernel_buffer[opts.bufnr][opts.filetype]
 
-		-- If we still haven't found a kernel then there isn't an active one
-		-- for the buffer
+		-- If we couldn't resolve an id based on the given buffer then there is
+		-- no associated kernel currently running
 		if not opts.id then
 			return {}
 		end
 	end
 
 	if opts.id then
-		kernels = vim.tbl_filter(
+		-- There will be one kernel with a given id
+		return vim.tbl_filter(
 			---@param k Jet.Manager.ListItem
 			function(k)
 				return k.id == opts.id
