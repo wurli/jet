@@ -253,6 +253,13 @@ function ReplSplit:_init_ui()
 		end,
 	})
 
+	vim.api.nvim_create_autocmd("WinResized", {
+		group = self._augroup,
+		callback = function()
+			self:_set_layout()
+		end,
+	})
+
 	vim.api.nvim_create_autocmd("WinClosed", {
 		group = self._augroup,
 		callback = function(e)
@@ -276,8 +283,8 @@ function ReplSplit:_set_layout()
 	end
 
 	vim.api.nvim_win_set_config(self.ui.prompt.winnr, {
-		-- We need to subtract 1 to account for the borders (the output's
 		-- bottom border should overlap with the input's top border)
+		-- We need to subtract 1 to account for the borders (the output's
 		height = vim.api.nvim_buf_line_count(self.ui.prompt.bufnr),
 	})
 
@@ -287,11 +294,11 @@ end
 ---Executes code in the kernel and displays results in the REPL.
 ---Leaves the REPL input window unchanged.
 ---Shows a fancy spinner. Swish!
----@param code string[]
+---@param code { code: string[] }
 function ReplSplit:execute(code)
 	self:_spinner_start()
 
-	self.kernel:execute(code, function(msg)
+	self.kernel:execute(code.code, function(msg)
 		if msg.type == "execute_input" then
 			-- Add the prompt indent to input code, otherwise it can be hard to
 			-- tell what's input and what's output.
@@ -310,7 +317,7 @@ end
 function ReplSplit:execute_prompt()
 	local code = self:_prompt_get()
 	self:_prompt_set({})
-	self:execute(code)
+	self:execute({ code = code })
 	vim.api.nvim_win_set_config(self.ui.prompt.winnr, { height = 1 })
 end
 

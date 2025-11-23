@@ -1,5 +1,5 @@
 ---@class Jet.Extension.FileType
----@field get_expr? fun(opts: Jet.GetExpr.Opts?): Jet.GetExpr.Result?
+---@field get_expr? fun(opts: Jet.GetExpr.Opts): Jet.GetExpr.Result?
 local M = {}
 
 ---@param node TSNode
@@ -37,7 +37,9 @@ local descend_tree_until = function(node, ...)
 end
 
 ---@class Jet.GetExpr.Result
----@field filetype string
+---@field bufnr number
+---@field winnr number
+---@field filetype string The filetype of the code is not always the filetype of the buffer
 ---@field start_row number
 ---@field start_col number
 ---@field end_row number
@@ -47,13 +49,16 @@ end
 ---@class Jet.GetExpr.Opts
 ---
 ---Defaults to `vim.fn.line(".")`
----@field cursor_row? number
+---@field cursor_row number
 ---
 ---Defaults to `vim.fn.col(".")`
----@field cursor_col? number
+---@field cursor_col number
 ---
 ---Defaults to 0 the current buffer
----@field bufnr? number
+---@field bufnr number
+---
+---Needed in order to know where to place the execution results
+---@field winnr number
 
 ---@param opts Jet.GetExpr.Opts?
 ---@return Jet.GetExpr.Result?
@@ -94,6 +99,8 @@ M.get_expr = function(opts)
 	local range = { chunk_node:range(false) }
 
 	return {
+		bufnr = opts.bufnr,
+		winnr = opts.winnr,
 		filetype = language,
 		code = vim.split(code, "\n", { trimempty = false }),
 		start_row = range[1],

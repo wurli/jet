@@ -42,35 +42,55 @@ M.listen = function(callback, opts)
 	loop()
 end
 
--- Unfortunately `vim.filetype.match()` doesn't always do the trick.
-local extension_filetypes = {
-	[".R"] = "r",
-}
+---@param opts { extension?: string, language?: string }
+---@return string
+M.resolve_filetype = function(opts)
+	if opts.extension then
+		if opts.extension:sub(1, 1) ~= "." then
+			opts.extension = "." .. opts.extension
+		end
 
---- Convert a file extension (with or without leading period) to a vim filetype.
----
---- Wraps `vim.filetype.match()`.
----
----@param ext string File extension (e.g. ".py" or "py")
----@return string|nil Filetype (e.g. "python") or `nil` if not found
-M.ext_to_filetype = function(ext)
-	if ext:sub(1, 1) ~= "." then
-		ext = "." .. ext
+		local ft, _ = vim.filetype.match({ filename = "file" .. opts.extension })
+
+		if ft then
+			return ft
+		end
 	end
 
-	local ft, _ = vim.filetype.match({ filename = "file" .. ext })
+	if opts.language then
+		-- :'(
+		local vim_filetypes = vim.fn.getcompletion("", "filetype")
 
-	-- Prioritise built-in filetypes over our extension map since the built-in
-	-- option is more configurable by the user.
-	return ft or extension_filetypes[ext]
+		-- If vim has a built-in filetype which matches the language then we
+		-- can be pretty sure that's the one.
+		for _, ft in ipairs(vim_filetypes) do
+			if ft:lower() == opts.language:lower() then
+				return ft
+			end
+		end
+
+		-- If vim has no matching built-in filetype then use the kernel
+		-- language anyway.
+		M.log_debug(
+			"Could not resolve kernel filetype for extension `%s`; falling back to language `%s`",
+			opts.extension,
+			opts.language
+		)
+
+		return opts.language
+	end
+
+	error(("Could not resolve filetype based on extension `%s`"):format(opts.extension))
 end
 
 ---Gets the filetype, first at the position, then for the buffer if that fails.
 ---
----@param bufnr number
+---@param bufnr? number
 ---@param pos? number[]
 ---@return string|nil
-M.get_filetype = function(bufnr, pos)
+M.get_cur_filetype = function(bufnr, pos)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	pos = pos or { vim.fn.line("."), vim.fn.col(".") }
 	local buf_ft = vim.bo[bufnr].filetype
 	local ft = buf_ft == "" and nil or buf_ft
 

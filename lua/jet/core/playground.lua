@@ -15,7 +15,7 @@ end)
 -- Ipy = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
 
 vim.ui.select(
-    Manager:list_kernels({ language = "python" }),
+    Manager:list_kernels({ filetype = "python" }),
     {
         ---@param item Jet.Manager.Kernel
         format_item = function(item)
@@ -33,7 +33,8 @@ vim.ui.select(
 )
 
 -- Ark:execute({ "jkhist(rnorm(100))" })
--- Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" })
+-- Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" 21 +
+-- 2})
 -- Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
 
 local start_ark_lsp = function(id)

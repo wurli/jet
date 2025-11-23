@@ -13,11 +13,9 @@ local Jet = {}
 --                                If currently in a notebook, this should open
 --                                the REPL for the linked kernel.
 --
--- :Jet mode <repl|notebook|both> Set the current buffer's interaction mode.
+-- :Jet repl <start|stop>         Start/stop a Jet REPL
 --
--- :Jet start <kernel>?           Start a new kernel
---
--- :Jet stop <kernel>?            Stop a running kernel
+-- :Jet notebook <start|stop>     Enable Jet for the current notebook
 --
 -- :Jet restart <kernel>?         Restart a running kernel
 --
@@ -30,29 +28,6 @@ local Jet = {}
 -- All the above should use vim.ui.select if no kernel is provided. Can also
 -- pass parameters as in Lua api, e.g. like trouble.nvim.
 
----@class Jet.Manager.Filter
----
----A buffer number; 0 for the current buffer. Note: this filters for (a) the
----linked kernel for the buffer if it exists, and if not, (b) the primary
----kernel for the buffer's filetype.
----@field buf? number
----
----Case-insensitive Lua pattern; matched against the kernel spec path
----@field spec_path? string
----
----Case-insensitive language name (not a pattern); matched against the language
----as given in the kernel spec
----@field language? string
----
----Case-insensitive pattern; matched against the kernel display name
----@field name? string
----
----The ID of an existing kernel instance to get
----@field id? string
----
----Active status
----@field status? "active" | "inactive"
-
 ---By default opens the kernel for the current buffer.
 ---@param opts Jet.Manager.Filter
 function Jet.open(opts)
@@ -60,17 +35,16 @@ function Jet.open(opts)
 end
 
 function Jet.send()
-	local pos = vim.fn.getpos(".")
-    local filetype = utils.get_filetype(0, { pos[2], pos[3] })
+	---@type Jet.Manager.Filter
+	local filter = { status = "active", filetype = utils.get_filetype() }
+	if vim.tbl_contains({ "markdown" }, vim.bo.filetype) then
+		filter.bufnr = 0
+	end
 	manager:get_kernel(function(_, id)
 		if id then
-			-- Restore the cursor position after getting the kernel (e.g.
-			-- in case the user had to enter a dialog to choose a kernel)
-			-- so  the kernel can resolve the code to send.
-			vim.fn.setpos(".", pos)
-			manager.running[id]:send_from_buf()
-        end
-	end, { buf = 0, status = "active", language = filetype })
+			manager.running[id].ui:execute()
+		end
+	end, filter)
 end
 
 -- How to design multiple UI options - e.g. repls and notebooks?
@@ -159,7 +133,39 @@ end
 --
 
 Jet.setup = function(_)
-    require("jet.core.ui.highlights").set()
+	require("jet.core.ui.highlights").set()
+
+	vim.api.nvim_create_user_command("Jet", function(x)
+		local args = x.fargs
+
+		if args[1] == "notebook" then
+		end
+
+		error(("Unsupported option '%s'"):format(args[1]))
+	end, {
+		nargs = "*",
+		---@diagnostic disable-next-line: unused-local
+		complete = function(prefix, line, col)
+			local args = vim.split(line, " ", { trimempty = true })
+			if args[1] ~= "Jet" then
+				return {}
+			end
+
+			if #args == 1 then
+				return {
+					"notebook",
+					"repl",
+				}
+			end
+
+			if args[2] == "notebook" or args[2] == "repl" then
+				return { "start", "stop" }
+			end
+
+			return {}
+		end,
+		desc = "Jupyter kernel management",
+	})
 end
 
 return Jet

@@ -137,44 +137,58 @@ function kernel:send_from_buf()
 	local mode = vim.fn.mode()
 
 	local code = (
-		mode == "n" and self.get_buf_text_normal().code
-		or mode == "i" and self.get_buf_text_insert().code
-		or mode:lower() == "v" and self.get_buf_text_visual().code
+		mode == "n" and self.get_buf_text_normal()
+		or mode == "i" and self.get_buf_text_insert()
+		or mode:lower() == "v" and self.get_buf_text_visual()
 		or {}
 	)
 
+	-- We defer to the UI to decide the details of how execution happens, e.g.
+	-- what to show the user etc. At some point the UI should also tell the
+	-- kernel to actually perform the execution.
 	self.ui:execute(code)
 end
 
----@return Jet.GetExpr.Result
+---@return Jet.GetExpr.Result?
 function kernel.get_buf_text_normal()
 	local ft = vim.bo.filetype
+	---@type boolean, Jet.Extension.FileType
 	local ok, ft_module = pcall(require, "jet.filetype." .. ft)
 	if ok and ft_module.get_expr then
-		return ft_module.get_expr()
+		return ft_module.get_expr({
+			bufnr = vim.fn.bufnr(),
+			winnr = vim.fn.winnr(),
+			cursor_col = vim.fn.col("."),
+			cursor_row = vim.fn.line("."),
+		})
 	end
 
 	local line = vim.fn.line(".")
 	local code = vim.api.nvim_buf_get_lines(0, line - 1, line, false)
 	return {
+		--TODO: more fields
 		code = code,
 	}
 end
 
----@return Jet.GetExpr.Result
+---@return Jet.GetExpr.Result?
 function kernel.get_buf_text_insert()
 	return kernel.get_buf_text_normal()
 end
 
----@return Jet.GetExpr.Result
+---@return Jet.GetExpr.Result?
 function kernel.get_buf_text_visual()
 	local start, stop = vim.fn.getpos("v"), vim.fn.getpos(".")
-	-- local escape_keycode = "\27"
-	-- vim.fn.feedkeys(escape_keycode, "L")
-	-- vim.fn.cursor(math.min(vim.fn.nextnonblank(stop[2] + 1), stop[2]), 0)
 	local code = vim.fn.getregion(start, stop, { type = vim.fn.mode() })
 	return {
-		-- TODO: add additional fields
+		bufnr = vim.fn.bufnr(),
+		winnr = vim.fn.winnr(),
+		--TODO: use treesitter if available
+		filetype = vim.bo.filetype,
+		start_row = start[2],
+		start_col = start[3],
+		end_row = stop[2],
+		end_col = stop[3],
 		code = code,
 	}
 end
@@ -201,9 +215,9 @@ end
 ---@param increment number
 ---@return string[]?
 function kernel:history_get(increment)
-    if not self.history_index then
-        return
-    end
+	if not self.history_index then
+		return
+	end
 
 	local new_index = self.history_index + increment
 	self.history_index = math.max(1, math.min(new_index, #self.history + 1))
@@ -222,26 +236,10 @@ end
 ---
 ---@return string
 function kernel:_filetype_get()
-	local file_extension = self.instance.info.language_info.file_extension
-
-	local filetype = utils.ext_to_filetype(file_extension)
-
-	if filetype then
-		return filetype
-	end
-
-	-- Unfortunately vim.filetype.match() doesn't always seem to work.
-	-- E.g. vim.print({ vim.filetype.match({ filename = "test.R" }) })
-	-- The Jupyter protocol enforces that kernel specs must have a language, so
-	-- we fall back to that if needed.
-	local lang = self.instance.spec.language
-	utils.log_debug(
-		"Could not resolve kernel filetype for extension `%s`; falling back to language `%s`",
-		file_extension,
-		lang
-	)
-
-	return lang
+	return utils.resolve_filetype({
+		extension = self.instance.info.language_info.file_extension,
+		language = self.instance.spec.language,
+	})
 end
 
 return kernel

@@ -14,13 +14,9 @@ local utils = require("jet.core.utils")
 ---for a particular filetype.
 ---@field map_kernel_filetype table<string, string>
 ---
----A mapping of buffer numbers to kernels. This supports running dedicated
----kernel instances for particular buffers. This is most often used for
----notebooks. NB, linking buffers (rather than files) to kernels brings the
----limitation that if the buffer quits and reopens (i.e. with a differnt bufnr)
----the link is broken. This feels like intuitive behaviour, so this is a
----conscious design decision.
----@field map_kernel_buffer table<string, string>
+---A map of buffer numbers -> filetypes -> kernel ids (some buffers, e.g.
+---markdown, may have many associated filetypes).
+---@field map_kernel_buffer table<string, table<string, string>>
 local manager = {
 	running = {},
 	map_kernel_filetype = {},
@@ -133,6 +129,7 @@ end
 ---@field id? string
 ---@field info? Jet.Kernel.Info
 ---@field start_time? number
+---@field filetype string
 
 ---@param opts? Jet.Manager.Filter
 ---@return Jet.Manager.ListItem[]
@@ -140,12 +137,14 @@ function manager:list_kernels(opts)
 	local available = engine.list_available_kernels()
 	local running = engine.list_running_kernels()
 
+	---@type Jet.Manager.ListItem[]
 	local kernels = {}
 
 	for path, spec in pairs(available) do
 		table.insert(kernels, {
 			spec_path = path,
 			spec = spec,
+			filetype = utils.resolve_filetype({ language = spec.language }),
 		})
 	end
 
@@ -156,11 +155,36 @@ function manager:list_kernels(opts)
 			id = id,
 			info = instance.info,
 			start_time = instance.start_time,
+			filetype = self.running[id] and self.running[id].filetype
+				or utils.resolve_filetype({ language = instance.spec.language }),
 		})
 	end
 
 	return self:_filter(kernels, opts)
 end
+
+---@class Jet.Manager.Filter
+---
+---A buffer number; 0 for the current buffer.
+---@field bufnr? number
+---
+---Case-insensitive Lua pattern; matched against the kernel spec path
+---@field spec_path? string
+---
+---Filetype for the kernel
+---@field filetype? string
+---
+---How the kernel is being used
+---@field usage? "last_used"
+---
+---Case-insensitive pattern; matched against the kernel display name
+---@field name? string
+---
+---The ID of an existing kernel instance to get
+---@field id? string
+---
+---Active status.
+---@field status? "active" | "inactive"
 
 ---@param kernels Jet.Manager.ListItem[]
 ---@param opts? Jet.Manager.Filter
@@ -169,18 +193,10 @@ function manager:_filter(kernels, opts)
 		return kernels
 	end
 
-	if opts.buf then
-		-- First we try and get a kernel which may have been explicitly linked
-		-- to the buffer
-		opts.buf = opts.buf ~= 0 and opts.buf or vim.api.nvim_get_current_buf()
-		opts.id = self.map_kernel_buffer[opts.buf]
-		-- If no linked kernel, then try and get the 'primary' kernel for the
-		-- current filetype
-		if not opts.id then
-			-- Try to get kernel from filetype mapping
-			local ft = opts.language or vim.bo[opts.buf].filetype
-			opts.id = self.map_kernel_filetype[ft:lower()]
-		end
+	if opts.bufnr then
+		opts.bufnr = opts.bufnr ~= 0 and opts.bufnr or vim.api.nvim_get_current_buf()
+		opts.filetype = opts.filetype or vim.bo[opts.bufnr].filetype
+		opts.id = self.map_kernel_buffer[opts.bufnr] and self.map_kernel_buffer[opts.bufnr][opts.filetype]
 
 		-- If we still haven't found a kernel then there isn't an active one
 		-- for the buffer
@@ -209,11 +225,11 @@ function manager:_filter(kernels, opts)
 		)
 	end
 
-	if opts.language then
+	if opts.filetype then
 		kernels = vim.tbl_filter(
 			---@param k Jet.Manager.ListItem
 			function(k)
-				return k.spec.language:lower() == opts.language:lower()
+				return k.filetype == opts.filetype
 			end,
 			kernels
 		)
@@ -240,6 +256,16 @@ function manager:_filter(kernels, opts)
 				else
 					return true
 				end
+			end,
+			kernels
+		)
+	end
+
+	if opts.usage == "last_used" then
+		kernels = vim.tbl_filter(
+			---@param k Jet.Manager.ListItem
+			function(k)
+				return self.map_kernel_filetype[k.filetype] == k.id
 			end,
 			kernels
 		)
