@@ -1,4 +1,4 @@
-local jet = require("jet.core.rust")
+local jet = require("jet.core.engine")
 
 local kernel_id, _ = jet.start_kernel("./kernels/ark/kernel.json")
 

@@ -8,7 +8,7 @@ local M = {}
 ---@field action fun(result): "exit" Terminate
 ---| "handle" Pass the result to `handler()`
 ---| "retry" Continue polling after `interval` milliseconds
----@field handler fun(result: any): any
+---@field handler? fun(result: any): any
 ---@field on_exit? fun(): any
 
 ---Repeatedly run a callback until a particular result is returned

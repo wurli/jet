@@ -1,5 +1,5 @@
 ---@diagnostic disable-next-line: different-requires
-local engine = require("jet.core.rust")
+local engine = require("jet.core.engine")
 local manager = require("jet.core.manager")
 local utils = require("jet.core.utils")
 
@@ -108,7 +108,7 @@ function kernel:if_complete(code, opts)
 end
 
 ---@param code string[]
----@param callback fun(msg: Jet.Callback.Execute.Result)
+---@param callback? fun(msg: Jet.Callback.Execute.Result)
 ---@param on_exit? fun()
 function kernel:execute(code, callback, on_exit)
 	if vim.tbl_count(code) == 0 then

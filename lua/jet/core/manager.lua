@@ -1,4 +1,4 @@
-local engine = require("jet.core.rust")
+local engine = require("jet.core.engine")
 local utils = require("jet.core.utils")
 
 ---@class Jet.Manager

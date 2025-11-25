@@ -1,86 +1,34 @@
-Jet = require("jet.core.rust")
+Jet = require("jet.core.engine")
 Manager = require("jet.core.manager")
 Manager:open_kernel()
+
 vim.keymap.set({ "n", "v" }, "<leader>s", function()
 	require("jet").send()
 end)
 
--- vim.print(vim.api.nvim_get_hl(0, { name = "JetReplIndent" }))
--- vim.print(Manager.map_kernel_filetype)
--- vim.print(Manager:list_kernels({ status = "active" }))
--- vim.print({ vim.filetype.match({ filename = "bla.md" }) })
-
--- Kernel = require("jet.core.kernel")
--- Ark = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
--- Ipy = Kernel.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
-
-vim.ui.select(
-    Manager:list_kernels({ filetype = "python" }),
-    {
-        ---@param item Jet.Manager.Kernel
-        format_item = function(item)
-            local out = item.spec.display_name
-            if #item.instances > 0 then
-                local s = #item.instances == 1 and "" or "s"
-                out = out .. (" (%d running instance%s)"):format(#item.instances, s)
-            end
-            return out
-        end
-    },
-    function(choice)
-        vim.print(choice)
-    end
-)
-
--- Ark:execute({ "jkhist(rnorm(100))" })
--- Ark:execute({ "dplyr::tibble(x = 1:5, y = rnorm(5))" 21 +
--- 2})
--- Ark:execute({ "for (i in 1:3) {Sys.sleep(0.5); print(i)}" })
-
 local start_ark_lsp = function(id)
-	vim.print("Starting Ark LSP for kernel " .. id)
-	local _comm_id, callback = Jet.comm_open(id, "lsp", { ip_address = "126.0.0.1" })
+	local _comm_id, callback = Jet.comm_open(id, "lsp", { ip_address = "127.0.0.1" })
 	local function drain_callback()
-		-- Continuously check for results until we fail to receive a result
 		while true do
-			print("getting result")
 			local result = callback()
-			vim.print(result)
-			-- If idle then the execution is complete
 			if result.status == "idle" then
 				return
 			end
-			-- If no data yet, wait a bit (so we don't block the main thread)
-			-- and check again later
 			if not result.data then
 				return vim.defer_fn(drain_callback, 100)
 			end
 			local port = result.data.data.params.port
-			print(("'Connecting to LSP on port %s'"):format(port))
 			vim.lsp.config.ark = {
 				cmd = vim.lsp.rpc.connect("127.0.0.1", port),
 				root_markers = { ".git", ".Rprofile", ".Rproj", "DESCRIPTION" },
 				filetypes = { "r", "R" },
 			}
 			vim.lsp.enable("ark")
+			return
 		end
 	end
 	drain_callback()
 end
-Manager:get_kernel(function(_, id)
-	if id then
-		start_ark_lsp(id)
-	end
-end, { name = "Ark", status = "active" })
-
-local test = function()
-    local buf1 = vim.api.nvim_create_buf(false, true)
-    local buf2 = vim.api.nvim_create_buf(false, true)
-    vim.bo[buf1].filetype = "jet"
-	local win1 = vim.api.nvim_open_win(buf1, true, { split = "right" })
-	local win2 = vim.api.nvim_open_win(buf2, false, { split = "below" })
-    vim.wo[win1].statusline = "hello!%=there"
-end
-test()
-
-
+local ark_id = Manager:list_kernels({ status = "active" })[1].id or ""
+Manager.running[ark_id]:execute({ "options(cli.default_num_colors = 256L)" })
+start_ark_lsp(ark_id)
