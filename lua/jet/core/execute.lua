@@ -2,15 +2,17 @@ local utils = require("jet.core.utils")
 
 local M = {}
 
+---For notebook code chunks we track the treesitter node rather than the buffer
+---text. This is because the user might edit the chunk between executions, and
+---this lets us update rather than re-create the chunk when this happens. This
+---would also be quite hard to do, since we'd need to somehow know when it's
+---okay to delete old chunks.
+---
 ---@class Jet.Execute.Chunk
----@field code string[]
 ---@field bufnr number
 ---@field winnr number
 ---@field filetype string Position filetype, not buffer filetype
----@field start_row number
----@field start_col number
----@field end_row number
----@field end_col number
+---@field node TSNode
 
 ---@return Jet.Execute.Chunk?
 M.get_chunk = function()

@@ -1,9 +1,10 @@
 # This is a test document
 
 ``` r
-print("hellooooo")
+print("yo")
 123
 Sys.sleep(3)
+print("hi")
 ```
 
 ``` python

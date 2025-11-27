@@ -31,6 +31,7 @@ end
 
 ---@class Jet.Ui.Init.Opts
 ---@field show boolean
+---@field bufnr? number The bufnr if the UI is a notebook
 
 ---@param kernel Jet.Kernel
 ---@param opts? Jet.Ui.Init.Opts

@@ -61,7 +61,12 @@ function Manager:open_notebook(opts)
 			if kernel.ui then
 				kernel.ui:show()
 			else
-				kernel:init_ui("notebook", { show = true })
+				-- I'm not sure why this would ever be the case but seems like
+				-- the right thing to do?
+				kernel:init_ui("notebook", {
+					show = true,
+					bufnr = opts.bufnr,
+				})
 			end
 			return
 		end
@@ -75,7 +80,10 @@ function Manager:open_notebook(opts)
 			local kernel = require("jet.core.kernel").start(spec_path)
 			self.map_kernel_buffer[opts.bufnr] = self.map_kernel_buffer[opts.bufnr] or {}
 			self.map_kernel_buffer[opts.bufnr][opts.filetype] = kernel
-			kernel:init_ui("notebook", { show = true })
+			kernel:init_ui("notebook", {
+				show = true,
+				bufnr = opts.bufnr,
+			})
 		end)
 	end)
 end

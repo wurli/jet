@@ -65,25 +65,17 @@ M.get_chunk = function()
 		return nil
 	end
 
-	local lang_node = descend_tree_until(chunk_node, "info_string", "language")
 	local code_node = descend_tree_until(chunk_node, "code_fence_content")
 
-	if not (lang_node and code_node) then
+	if not code_node then
 		return nil
 	end
 
-	local code = vim.treesitter.get_node_text(code_node, bufnr, {})
-	local range = { chunk_node:range(false) }
-
 	return {
 		bufnr = bufnr,
+		node = code_node,
 		winnr = vim.api.nvim_get_current_win(),
 		filetype = utils.get_cur_filetype(),
-		code = vim.split(code, "\n", { trimempty = false }),
-		start_row = range[1],
-		start_col = range[2],
-		end_row = range[3],
-		end_col = range[4],
 	}
 end
 
