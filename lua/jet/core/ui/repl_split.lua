@@ -295,10 +295,15 @@ end
 ---Leaves the REPL input window unchanged.
 ---Shows a fancy spinner. Swish!
 ---@param code { code: string[] }
-function ReplSplit:execute(code)
+---@param callback? fun(msg: Jet.Callback.Execute.Result)
+---@param on_complete? fun()
+function ReplSplit:execute(code, callback, on_complete)
 	self:_spinner_start()
 
 	self.kernel:execute(code.code, function(msg)
+		if callback then
+			callback(msg)
+		end
 		if msg.type == "execute_input" then
 			-- Add the prompt indent to input code, otherwise it can be hard to
 			-- tell what's input and what's output.
@@ -307,6 +312,9 @@ function ReplSplit:execute(code)
 		self:_display_output(utils.msg_to_string(msg))
 		self:_scroll_to_end()
 	end, function()
+		if on_complete then
+			on_complete()
+		end
 		self:_display_output("\n")
 		self:_scroll_to_end()
 		self:_spinner_stop()

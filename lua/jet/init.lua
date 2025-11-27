@@ -34,17 +34,76 @@ function Jet.open(opts)
 	manager:open_kernel(opts or { buf = 0 })
 end
 
-function Jet.send()
-	---@type Jet.Manager.Filter
-	local filter = { status = "active", filetype = utils.get_filetype() }
-	if vim.tbl_contains({ "markdown" }, vim.bo.filetype) then
-		filter.bufnr = 0
+---@class Jet.Send.Opts
+---
+---Selection criteria used to choose the target kernel. By default will look
+---for an active kernel for the filetype at the cursor position.
+---@field kernel Jet.Manager.Filter?
+---
+---If `true`, don't show output in the UI.
+---@field silent boolean?
+---
+---Will be passed any output from the kernel. Note that this may be called
+---multiple times!
+---@field callback fun()?
+---
+---Will be called once execution is complete.
+---@field on_complete fun()?
+
+---Execute code from the cursor position
+---
+---@param opts? Jet.Send.Opts
+function Jet.send_from_cursor(opts)
+	Jet.send_code(require("jet.core.execute").get_code_auto(), opts)
+end
+
+---Execute code from a motion
+---
+---``` lua
+----- You can set an op-leading keymap like so:
+---vim.keymap.set({ "n", "v" }, "gj", require("jet").send_motion(), { expr = true })
+---```
+---
+---@param opts? Jet.Send.Opts
+---@return fun(): "g@" # A function that can be used in an operator-pending mapping
+function Jet.send_from_motion(opts)
+	return require("jet.core.execute").handle_motion(function(code)
+		Jet.send_code(code, opts)
+	end)
+end
+
+---Execute code from Lua
+---
+---@param code string | string[] | Jet.Execute.Code
+---@param opts? Jet.Send.Opts
+function Jet.send_code(code, opts)
+	if type(code) == "string" then
+		code = { code = vim.split(code, "\n") }
+	elseif type(code) == "table" and code.code == nil then
+		code = { code = code }
 	end
+
+	opts = opts or {}
+
+	local kernel_criteria = opts.kernel
+		or {
+			status = "active",
+			filetype = utils.get_cur_filetype(),
+			-- If we're in a notebook context, then use a kernel which is
+			-- linked to the current buffer.
+			bufnr = vim.tbl_contains({ "markdown" }, vim.bo.filetype) and 0 or nil,
+		}
+
 	manager:get_kernel(function(_, id)
 		if id then
-			manager.running[id].ui:execute()
+			local kernel = manager.running[id]
+			if opts.silent then
+				kernel:execute(code, opts.callback, opts.on_complete)
+			else
+				kernel.ui:execute(code, opts.callback, opts.on_complete)
+			end
 		end
-	end, filter)
+	end, kernel_criteria)
 end
 
 -- How to design multiple UI options - e.g. repls and notebooks?

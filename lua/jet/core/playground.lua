@@ -1,10 +1,11 @@
 Jet = require("jet.core.engine")
 Manager = require("jet.core.manager")
 Manager:open_kernel()
-
 vim.keymap.set({ "n", "v" }, "<leader>s", function()
-	require("jet").send()
+	require("jet").send_from_cursor()
 end)
+
+vim.keymap.set({ "n", "v" }, "gj", require("jet").send_from_motion(), { expr = true })
 
 local start_ark_lsp = function(id)
 	local _comm_id, callback = Jet.comm_open(id, "lsp", { ip_address = "127.0.0.1" })

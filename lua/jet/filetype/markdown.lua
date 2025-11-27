@@ -36,16 +36,6 @@ local descend_tree_until = function(node, ...)
 	return node
 end
 
----@class Jet.GetExpr.Result
----@field bufnr number
----@field winnr number
----@field filetype string The filetype of the code is not always the filetype of the buffer
----@field start_row number
----@field start_col number
----@field end_row number
----@field end_col number
----@field code string[]
-
 ---@class Jet.GetExpr.Opts
 ---
 ---Defaults to `vim.fn.line(".")`

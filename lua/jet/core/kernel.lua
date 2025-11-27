@@ -20,7 +20,7 @@ local utils = require("jet.core.utils")
 ---Information about the kernel
 ---@field instance Jet.Kernel.Instance
 ---
----@field ui Jet.Ui.ReplSplit
+---@field ui Jet.Ui.ReplSplit | Jet.Ui.Notebook
 local kernel = {}
 kernel.__index = kernel
 
@@ -109,8 +109,8 @@ end
 
 ---@param code string[]
 ---@param callback? fun(msg: Jet.Callback.Execute.Result)
----@param on_exit? fun()
-function kernel:execute(code, callback, on_exit)
+---@param on_complete? fun()
+function kernel:execute(code, callback, on_complete)
 	if vim.tbl_count(code) == 0 then
 		return
 	end
@@ -122,75 +122,9 @@ function kernel:execute(code, callback, on_exit)
 			return res.status == "idle" and "exit" or res.data and "handle" or "retry"
 		end,
 		handler = callback,
-		-- handler = function(res)
-		--     self:_msg_to_string(res)
-		--     if callback then
-		--         callback(res)
-		--     end
-		-- end,
-		on_exit = on_exit,
+		on_exit = on_complete,
 		interval = 50,
 	})
-end
-
-function kernel:send_from_buf()
-	local mode = vim.fn.mode()
-
-	local code = (
-		mode == "n" and self.get_buf_text_normal()
-		or mode == "i" and self.get_buf_text_insert()
-		or mode:lower() == "v" and self.get_buf_text_visual()
-		or {}
-	)
-
-	-- We defer to the UI to decide the details of how execution happens, e.g.
-	-- what to show the user etc. At some point the UI should also tell the
-	-- kernel to actually perform the execution.
-	self.ui:execute(code)
-end
-
----@return Jet.GetExpr.Result?
-function kernel.get_buf_text_normal()
-	local ft = vim.bo.filetype
-	---@type boolean, Jet.Extension.FileType
-	local ok, ft_module = pcall(require, "jet.filetype." .. ft)
-	if ok and ft_module.get_expr then
-		return ft_module.get_expr({
-			bufnr = vim.fn.bufnr(),
-			winnr = vim.fn.winnr(),
-			cursor_col = vim.fn.col("."),
-			cursor_row = vim.fn.line("."),
-		})
-	end
-
-	local line = vim.fn.line(".")
-	local code = vim.api.nvim_buf_get_lines(0, line - 1, line, false)
-	return {
-		--TODO: more fields
-		code = code,
-	}
-end
-
----@return Jet.GetExpr.Result?
-function kernel.get_buf_text_insert()
-	return kernel.get_buf_text_normal()
-end
-
----@return Jet.GetExpr.Result?
-function kernel.get_buf_text_visual()
-	local start, stop = vim.fn.getpos("v"), vim.fn.getpos(".")
-	local code = vim.fn.getregion(start, stop, { type = vim.fn.mode() })
-	return {
-		bufnr = vim.fn.bufnr(),
-		winnr = vim.fn.winnr(),
-		--TODO: use treesitter if available
-		filetype = vim.bo.filetype,
-		start_row = start[2],
-		start_col = start[3],
-		end_row = stop[2],
-		end_col = stop[3],
-		code = code,
-	}
 end
 
 ---@param callback fun(msg: Jet.Callback.Interrupt.Result)
