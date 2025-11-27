@@ -68,6 +68,10 @@ function Manager:open_notebook(opts)
 
 		--- ...If there's no kernel already active, start one
 		self:get_kernel({ filetype = opts.filetype, status = "inactive" }, function(spec_path, _)
+			if not spec_path then
+				utils.log_info("No available kernel for filetype '%s'", opts.filetype)
+				return
+			end
 			local kernel = require("jet.core.kernel").start(spec_path)
 			self.map_kernel_buffer[opts.bufnr] = self.map_kernel_buffer[opts.bufnr] or {}
 			self.map_kernel_buffer[opts.bufnr][opts.filetype] = kernel
@@ -79,6 +83,11 @@ end
 ---@param opts? Jet.Manager.Filter
 function Manager:open_repl(opts)
 	self:get_kernel(opts, function(spec_path, id)
+		if not spec_path then
+			utils.log_info("No available kernel for filetype '%s'", opts.filetype)
+			return
+		end
+
 		if not id then
 			id = require("jet.core.kernel").start(spec_path).id
 		end

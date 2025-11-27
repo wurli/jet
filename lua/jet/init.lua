@@ -34,6 +34,14 @@ local Jet = {}
 -- 	manager:open_kernel(opts or { buf = 0 })
 -- end
 
+function Jet.repl()
+	manager:open_repl()
+end
+
+function Jet.notebook()
+	manager:open_notebook()
+end
+
 ---@param opts Jet.Send.Opts?
 function Jet.send_chunk(opts)
 	opts = opts or {}
@@ -218,6 +226,13 @@ Jet.setup = function(_)
 		local args = x.fargs
 
 		if args[1] == "notebook" then
+			Jet.notebook()
+			return
+		end
+
+		if args[1] == "repl" then
+			Jet.repl()
+			return
 		end
 
 		error(("Unsupported option '%s'"):format(args[1]))
