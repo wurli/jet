@@ -297,7 +297,7 @@ end
 ---@param code string[]
 ---@param callback? fun(msg: Jet.Callback.Execute.Result)
 ---@param on_complete? fun()
-function ReplSplit:execute(code, callback, on_complete)
+function ReplSplit:execute_code(code, callback, on_complete)
 	self:_spinner_start()
 
 	self.kernel:execute(code, function(msg)
@@ -325,7 +325,7 @@ end
 function ReplSplit:execute_prompt()
 	local code = self:_prompt_get()
 	self:_prompt_set({})
-	self:execute(code)
+	self:execute_code(code)
 	vim.api.nvim_win_set_config(self.ui.prompt.winnr, { height = 1 })
 end
 

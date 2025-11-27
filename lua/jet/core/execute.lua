@@ -1,17 +1,25 @@
+local utils = require("jet.core.utils")
+
 local M = {}
 
----@class Jet.Execute.Code
+---@class Jet.Execute.Chunk
 ---@field code string[]
----@field region? Jet.Execute.Region
-
----@class Jet.Execute.Region
 ---@field bufnr number
 ---@field winnr number
----@field filetype string The filetype of the code is not always the filetype of the buffer
+---@field filetype string Position filetype, not buffer filetype
 ---@field start_row number
 ---@field start_col number
 ---@field end_row number
 ---@field end_col number
+
+---@return Jet.Execute.Chunk?
+M.get_chunk = function()
+	-- Note: we want the filetype for the _buffer_, not at the cursor
+	local ok, ft_module = pcall(require, "jet.filetype." .. vim.bo.filetype)
+	if ok and ft_module.get_chunk then
+		return ft_module.get_chunk()
+	end
+end
 
 ---@return string[]
 M.get_code_auto = function()
@@ -24,9 +32,8 @@ end
 
 ---@return string[]
 M.get_curr_expr = function()
-	local buf_ft = vim.bo.filetype
-
-	local ok, ft_module = pcall(require, "jet.filetype." .. buf_ft)
+	-- Note: we want the filetype at the _cursor_, not the buffer filetype
+	local ok, ft_module = pcall(require, "jet.filetype." .. utils.get_cur_filetype())
 	if not ok or not ft_module.get_expr then
 		return M.get_curr_line()
 	end

@@ -1,5 +1,8 @@
+local utils = require("jet.utils")
+
 ---@class Jet.Extension.FileType
----@field get_expr? fun(opts: Jet.GetExpr.Opts): Jet.GetExpr.Result?
+---@field get_chunk? fun(): Jet.Execute.Chunk?
+---@field get_expr? fun(): string[]?
 local M = {}
 
 ---@param node TSNode
@@ -36,42 +39,27 @@ local descend_tree_until = function(node, ...)
 	return node
 end
 
----@class Jet.GetExpr.Opts
----
----Defaults to `vim.fn.line(".")`
----@field cursor_row number
----
----Defaults to `vim.fn.col(".")`
----@field cursor_col number
----
----Defaults to 0 the current buffer
----@field bufnr number
----
----Needed in order to know where to place the execution results
----@field winnr number
+---@return Jet.Execute.Chunk?
+M.get_chunk = function()
+	local bufnr = vim.api.nvim_get_current_buf()
+	local cursor_row = vim.fn.line(".")
+	local cursor_col = vim.fn.col(".")
 
----@param opts Jet.GetExpr.Opts?
----@return Jet.GetExpr.Result?
-M.get_expr = function(opts)
-	opts = opts or {}
-	if not opts.bufnr or opts.bufnr == 0 then
-		opts.bufnr = vim.api.nvim_get_current_buf()
-	end
-
-	opts.cursor_row = opts.cursor_row or vim.fn.line(".")
-	opts.cursor_col = opts.cursor_col or vim.fn.col(".")
-
-	local node = vim.treesitter.get_node({
-		bufnr = opts.bufnr,
-		pos = { opts.cursor_row - 1, opts.cursor_col - 1 },
-		ignore_injections = true,
-	})
-
-	if not node then
+	if not vim.treesitter.get_parser(bufnr, nil, { error = false }) then
 		return nil
 	end
 
-	local chunk_node = ascend_tree_until(node, "fenced_code_block")
+	local cursor_node = vim.treesitter.get_node({
+		bufnr = bufnr,
+		pos = { cursor_row - 1, cursor_col - 1 },
+		ignore_injections = true,
+	})
+
+	if not cursor_node then
+		return nil
+	end
+
+	local chunk_node = ascend_tree_until(cursor_node, "fenced_code_block")
 
 	if not chunk_node then
 		return nil
@@ -84,14 +72,13 @@ M.get_expr = function(opts)
 		return nil
 	end
 
-	local language = vim.treesitter.get_node_text(lang_node, opts.bufnr, {})
-	local code = vim.treesitter.get_node_text(code_node, opts.bufnr, {})
+	local code = vim.treesitter.get_node_text(code_node, bufnr, {})
 	local range = { chunk_node:range(false) }
 
 	return {
-		bufnr = opts.bufnr,
-		winnr = opts.winnr,
-		filetype = language,
+		bufnr = bufnr,
+		winnr = vim.api.nvim_get_current_win(),
+		filetype = utils.get_cur_filetype(),
 		code = vim.split(code, "\n", { trimempty = false }),
 		start_row = range[1],
 		start_col = range[2],
@@ -99,9 +86,5 @@ M.get_expr = function(opts)
 		end_col = range[4],
 	}
 end
-
--- vim.keymap.set("n", "<cr>", function()
--- 	vim.print(M.get_expr())
--- end, { desc = "Get Markdown Code Block Expr" })
 
 return M

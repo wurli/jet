@@ -34,6 +34,32 @@ function Jet.open(opts)
 	manager:open_kernel(opts or { buf = 0 })
 end
 
+---@param opts Jet.Send.Opts
+function Jet.send_chunk(opts)
+	opts = opts or {}
+
+	local chunk = require("jet.core.execute").get_chunk()
+	if not chunk then
+		return
+	end
+
+	local kernel_criteria = opts.kernel
+		or {
+			status = "active",
+			filetype = utils.get_cur_filetype(),
+			buffer = 0,
+		}
+
+	manager:get_kernel(function(_, id)
+		if id then
+			local kernel = manager.running[id]
+			if chunk and kernel.ui.execute_chunk then
+				kernel.ui:execute_chunk(chunk)
+			end
+		end
+	end, kernel_criteria)
+end
+
 ---@class Jet.Send.Opts
 ---
 ---Selection criteria used to choose the target kernel. By default will look
@@ -93,8 +119,8 @@ function Jet.send_code(code, opts)
 			local kernel = manager.running[id]
 			if opts.silent then
 				kernel:execute(code, opts.callback, opts.on_complete)
-			else
-				kernel.ui:execute(code, opts.callback, opts.on_complete)
+			elseif kernel.ui and kernel.ui.execute_code then
+				kernel.ui:execute_code(code, opts.callback, opts.on_complete)
 			end
 		end
 	end, kernel_criteria)
