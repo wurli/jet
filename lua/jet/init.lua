@@ -74,25 +74,19 @@ end
 
 ---Execute code from Lua
 ---
----@param code string | string[] | Jet.Execute.Code
+---@param code string | string[]
 ---@param opts? Jet.Send.Opts
 function Jet.send_code(code, opts)
 	if type(code) == "string" then
-		code = { code = vim.split(code, "\n") }
-	elseif type(code) == "table" and code.code == nil then
-		code = { code = code }
+		code = vim.split(code, "\n")
 	end
 
 	opts = opts or {}
 
-	local kernel_criteria = opts.kernel
-		or {
-			status = "active",
-			filetype = utils.get_cur_filetype(),
-			-- If we're in a notebook context, then use a kernel which is
-			-- linked to the current buffer.
-			bufnr = vim.tbl_contains({ "markdown" }, vim.bo.filetype) and 0 or nil,
-		}
+	local kernel_criteria = opts.kernel or {
+		status = "active",
+		filetype = utils.get_cur_filetype(),
+	}
 
 	manager:get_kernel(function(_, id)
 		if id then

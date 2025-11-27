@@ -294,13 +294,13 @@ end
 ---Executes code in the kernel and displays results in the REPL.
 ---Leaves the REPL input window unchanged.
 ---Shows a fancy spinner. Swish!
----@param code { code: string[] }
+---@param code string[]
 ---@param callback? fun(msg: Jet.Callback.Execute.Result)
 ---@param on_complete? fun()
 function ReplSplit:execute(code, callback, on_complete)
 	self:_spinner_start()
 
-	self.kernel:execute(code.code, function(msg)
+	self.kernel:execute(code, function(msg)
 		if callback then
 			callback(msg)
 		end
