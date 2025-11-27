@@ -15,8 +15,10 @@ function Notebook.new()
 end
 
 ---@param kernel Jet.Kernel
-function Notebook:init(kernel)
+---@param opts? Jet.Ui.Init.Opts
+function Notebook:init(kernel, opts)
 	self.kernel = kernel
+	return self
 end
 
 ---@class Jet.CodeChunk
@@ -30,14 +32,13 @@ end
 ---@field code string[]
 ---@field spinner table
 
----@param code Jet.Execute.Chunk
-function Notebook:execute_chunk(code)
+---@param chunk Jet.Execute.Chunk
+function Notebook:execute_chunk(chunk)
 	local buf = vim.api.nvim_create_buf(false, true)
 	local channel = vim.api.nvim_open_term(buf, {})
 	local win = vim.api.nvim_open_win(buf, false, {
-        relative = "win",
-        win =
-    })
+		relative = "win",
+	})
 end
 
 return Notebook

@@ -1,4 +1,4 @@
-local utils = require("jet.utils")
+local utils = require("jet.core.utils")
 
 ---@class Jet.Extension.FileType
 ---@field get_chunk? fun(): Jet.Execute.Chunk?

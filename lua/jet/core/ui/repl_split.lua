@@ -29,8 +29,11 @@ function ReplSplit.new()
 	return setmetatable({}, ReplSplit)
 end
 
+---@class Jet.Ui.Init.Opts
+---@field show boolean
+
 ---@param kernel Jet.Kernel
----@param opts? { show: boolean }
+---@param opts? Jet.Ui.Init.Opts
 function ReplSplit:init(kernel, opts)
 	opts = vim.tbl_extend("force", opts or {}, {
 		show = true,

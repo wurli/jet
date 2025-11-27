@@ -28,13 +28,13 @@ local Jet = {}
 -- All the above should use vim.ui.select if no kernel is provided. Can also
 -- pass parameters as in Lua api, e.g. like trouble.nvim.
 
----By default opens the kernel for the current buffer.
----@param opts Jet.Manager.Filter
-function Jet.open(opts)
-	manager:open_kernel(opts or { buf = 0 })
-end
+-- ---By default opens the kernel for the current buffer.
+-- ---@param opts Jet.Manager.Filter
+-- function Jet.open(opts)
+-- 	manager:open_kernel(opts or { buf = 0 })
+-- end
 
----@param opts Jet.Send.Opts
+---@param opts Jet.Send.Opts?
 function Jet.send_chunk(opts)
 	opts = opts or {}
 
@@ -50,14 +50,14 @@ function Jet.send_chunk(opts)
 			buffer = 0,
 		}
 
-	manager:get_kernel(function(_, id)
+	manager:get_kernel(kernel_criteria, function(_, id)
 		if id then
 			local kernel = manager.running[id]
-			if chunk and kernel.ui.execute_chunk then
+			if chunk and kernel.ui and kernel.ui.execute_chunk then
 				kernel.ui:execute_chunk(chunk)
 			end
 		end
-	end, kernel_criteria)
+	end)
 end
 
 ---@class Jet.Send.Opts
@@ -114,7 +114,7 @@ function Jet.send_code(code, opts)
 		filetype = utils.get_cur_filetype(),
 	}
 
-	manager:get_kernel(function(_, id)
+	manager:get_kernel(kernel_criteria, function(_, id)
 		if id then
 			local kernel = manager.running[id]
 			if opts.silent then
@@ -123,7 +123,7 @@ function Jet.send_code(code, opts)
 				kernel.ui:execute_code(code, opts.callback, opts.on_complete)
 			end
 		end
-	end, kernel_criteria)
+	end)
 end
 
 -- How to design multiple UI options - e.g. repls and notebooks?

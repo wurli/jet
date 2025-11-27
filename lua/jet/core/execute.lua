@@ -19,6 +19,8 @@ M.get_chunk = function()
 	if ok and ft_module.get_chunk then
 		return ft_module.get_chunk()
 	end
+
+	utils.log_debug("Couldn't get Jet filetype module: " .. vim.inspect(ft_module))
 end
 
 ---@return string[]

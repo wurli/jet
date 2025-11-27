@@ -20,7 +20,7 @@ local utils = require("jet.core.utils")
 ---Information about the kernel
 ---@field instance Jet.Kernel.Instance
 ---
----@field ui Jet.Ui.ReplSplit | Jet.Ui.Notebook
+---@field ui? Jet.Ui.ReplSplit | Jet.Ui.Notebook
 local kernel = {}
 kernel.__index = kernel
 
@@ -38,7 +38,6 @@ function kernel.start(spec_path)
 	self.id, self.instance = engine.start_kernel(spec_path)
 	manager.running[self.id] = self
 	self.filetype = self:_filetype_get()
-	self:init_repl()
 	return self
 end
 
@@ -68,11 +67,20 @@ function kernel:icon()
 	return { icon = icon, hl = hl }
 end
 
-function kernel:init_repl()
+---@param type "repl" | "notebook"
+---@param opts? Jet.Ui.Init.Opts
+function kernel:init_ui(type, opts)
 	if self.ui then
 		error("UI already exists")
 	end
-	self.ui = require("jet.core.ui.repl_split").new():init(self)
+
+	if type == "notebook" then
+		self.ui = require("jet.core.ui.notebook").new():init(self, opts)
+	elseif type == "repl" then
+		self.ui = require("jet.core.ui.repl_split").new():init(self, opts)
+	else
+		error("Unrecognised UI type: " .. tostring(type))
+	end
 end
 
 function kernel:stop()
