@@ -67,6 +67,19 @@ function manager:get_kernel(callback, opts)
 		return
 	end
 
+	table.sort(kernels, function(a, b)
+		if a.id and not b.id then
+			return true
+		end
+		if b.id and not a.id then
+			return false
+		end
+		if a.spec.display_name ~= b.spec.display_name then
+			return a.spec.display_name < b.spec.display_name
+		end
+		return a.spec_path < b.spec_path
+	end)
+
 	-- Formatting stuff for a nicer display
 	kernels = vim.tbl_map(function(k)
 		local time = k.start_time and utils.time_since(k.start_time)
@@ -100,11 +113,6 @@ function manager:get_kernel(callback, opts)
 			),
 		}
 	end, kernels)
-
-	-- TODO: more helpful sorting
-	table.sort(kernels, function(a, b)
-		return a.desc < b.desc
-	end)
 
 	vim.ui.select(
 		kernels,
