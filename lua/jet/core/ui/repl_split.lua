@@ -325,7 +325,7 @@ end
 function ReplSplit:execute_prompt()
 	local code = self:_prompt_get()
 	self:_prompt_set({})
-	self:execute({ code = code })
+	self:execute(code)
 	vim.api.nvim_win_set_config(self.ui.prompt.winnr, { height = 1 })
 end
 
