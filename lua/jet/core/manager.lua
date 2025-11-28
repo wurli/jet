@@ -51,7 +51,7 @@ setmetatable(Manager, {
 function Manager:open_notebook(opts)
 	opts = opts or {}
 	opts.bufnr = opts.bufnr or 0
-	opts.filetype = opts.filetype or opts.bufnr == 0 and utils.get_cur_filetype() or vim.bo[opts.bufnr].filetype
+	-- opts.filetype = opts.filetype or opts.bufnr == 0 and utils.get_cur_filetype() or vim.bo[opts.bufnr].filetype
 	opts.bufnr = opts.bufnr ~= 0 and opts.bufnr or vim.api.nvim_get_current_buf()
 
 	-- First try looking for an active kernel for the current buffer
@@ -72,7 +72,7 @@ function Manager:open_notebook(opts)
 		end
 
 		--- ...If there's no kernel already active, start one
-		self:get_kernel({ filetype = opts.filetype, status = "inactive" }, function(spec_path, _)
+		self:get_kernel({ status = "inactive" }, function(spec_path, _)
 			if not spec_path then
 				utils.log_info("No available kernel for filetype '%s'", opts.filetype)
 				return
@@ -92,7 +92,11 @@ end
 function Manager:open_repl(opts)
 	self:get_kernel(opts, function(spec_path, id)
 		if not spec_path then
-			utils.log_info("No available kernel for filetype '%s'", opts.filetype)
+			if opts and opts.filetype then
+				utils.log_info("No available kernel found for filetype `%s`", opts.filetype)
+			else
+				utils.log_info("No available kernel found")
+			end
 			return
 		end
 
@@ -236,7 +240,7 @@ end
 ---@field bufnr? number
 ---
 ---Case-insensitive Lua pattern; matched against the kernel spec path
----@field spec_path? string
+---@field spec_path? string | string[]
 ---
 ---Filetype for the kernel
 ---@field filetype? string
@@ -256,6 +260,11 @@ end
 ---@param kernels Jet.Manager.ListItem[]
 ---@param opts? Jet.Manager.Filter
 function Manager:_filter(kernels, opts)
+	---@return boolean
+	local is_in = function(x, tbl)
+		return vim.tbl_contains(type(tbl) == "table" and tbl or { tbl }, x)
+	end
+
 	if not opts then
 		return kernels
 	end
@@ -277,7 +286,7 @@ function Manager:_filter(kernels, opts)
 		return vim.tbl_filter(
 			---@param k Jet.Manager.ListItem
 			function(k)
-				return k.id == opts.id
+				return is_in(k.id, opts.id)
 			end,
 			kernels
 		)
@@ -287,7 +296,14 @@ function Manager:_filter(kernels, opts)
 		kernels = vim.tbl_filter(
 			---@param k Jet.Manager.ListItem
 			function(k)
-				return k.spec_path:lower():find(opts.spec_path:lower()) ~= nil
+				---@diagnostic disable-next-line: param-type-mismatch
+				for _, path in ipairs(type(opts.spec_path) == "table" and opts.spec_path or { opts.spec_path }) do
+					---@diagnostic disable-next-line: param-type-mismatch
+					if k.spec_path:lower():find(path:lower()) ~= nil then
+						return true
+					end
+				end
+				return false
 			end,
 			kernels
 		)
@@ -297,7 +313,7 @@ function Manager:_filter(kernels, opts)
 		kernels = vim.tbl_filter(
 			---@param k Jet.Manager.ListItem
 			function(k)
-				return k.filetype == opts.filetype
+				return is_in(k.filetype, opts.filetype)
 			end,
 			kernels
 		)
