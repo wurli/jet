@@ -10,14 +10,14 @@ function M._attach(buf, opts)
 	end
 	opts = opts or {}
 	local file = opts.src or vim.api.nvim_buf_get_name(buf)
-	if not Snacks.image.supports(file) then
+	if not require("jet.core.ui.image").supports(file) then
 		local lines = {} ---@type string[]
 		lines[#lines + 1] = "# Image viewer"
 		lines[#lines + 1] = "- **file**: `" .. file .. "`"
-		if not Snacks.image.supports_file(file) then
+		if not require("jet.core.ui.image").supports_file(file) then
 			lines[#lines + 1] = "- unsupported image format"
 		end
-		if not Snacks.image.supports_terminal() then
+		if not require("jet.core.ui.image").supports_terminal() then
 			lines[#lines + 1] = "- terminal does not support the kitty graphics protocol."
 			lines[#lines + 1] = "  See `:checkhealth snacks` for more info."
 		end
@@ -42,10 +42,7 @@ end
 ---@param buf number
 ---@param opts? Jet.Ui.Image.Opts|{src?: string}
 function M.attach(buf, opts)
-	if require("jet.core.ui.image.config").enabled == false then
-		return
-	end
-	local Terminal = require("snacks.image.terminal")
+	local Terminal = require("jet.core.ui.image.terminal")
 	Terminal.detect(function()
 		M._attach(buf, opts)
 	end)

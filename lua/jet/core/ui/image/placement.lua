@@ -17,7 +17,7 @@ M.__index = M
 
 ---@alias Jet.Ui.Image.Extmark vim.api.keyset.set_extmark|{row:number, col:number}
 
-local terminal = Snacks.image.terminal
+local terminal = require("jet.core.ui.image").terminal
 local uv = vim.uv or vim.loop
 local ns = vim.api.nvim_create_namespace("snacks.image")
 M.ns = ns
@@ -51,7 +51,7 @@ end
 function M.new(buf, src, opts)
 	assert(type(buf) == "number", "`Image.new`: buf should be a number")
 	assert(type(src) == "string", "`Image.new`: src should be a string")
-	Snacks.image.setup() -- always setup so that images/videos can be opened
+	require("jet.core.ui.image").setup() -- always setup so that images/videos can be opened
 	local self = setmetatable({}, M)
 
 	self.img = require("jet.core.ui.image.image").new(src)
