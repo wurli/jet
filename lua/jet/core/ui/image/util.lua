@@ -28,7 +28,7 @@ end
 
 ---@param size Jet.Ui.Image.Size
 function M.pixels_to_cells(size)
-	local terminal = require("jet.ui.image.terminal").size()
+	local terminal = require("jet.core.ui.image.terminal").size()
 	return M.norm({
 		width = size.width / terminal.cell_width,
 		height = size.height / terminal.cell_height,
@@ -51,7 +51,7 @@ function M.fit(file, cells, opts)
 	opts = opts or {}
 	local img_pixels ---@type Jet.Ui.Image.Size
 	if opts.info then
-		local terminal = require("jet.ui.image.terminal").size()
+		local terminal = require("jet.core.ui.image.terminal").size()
 		img_pixels = {}
 		img_pixels.height = opts.info.size.height / opts.info.dpi.height * 96 * terminal.scale
 		img_pixels.width = opts.info.size.width / opts.info.dpi.width * 96 * terminal.scale

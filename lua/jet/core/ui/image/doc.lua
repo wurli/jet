@@ -134,7 +134,7 @@ end
 function M.resolve(buf, src)
 	src = M.url_decode(src)
 	local file = svim.fs.normalize(vim.api.nvim_buf_get_name(buf))
-	local s = require("jet.ui.image.config").resolve and require("jet.ui.image.config").resolve(file, src) or nil
+	local s = require("jet.core.ui.image.config").resolve and require("jet.core.ui.image.config").resolve(file, src) or nil
 	if s then
 		return s
 	end
@@ -143,7 +143,7 @@ function M.resolve(buf, src)
 		local checks = { [src] = true }
 		for _, root in ipairs({ cwd, vim.fs.dirname(file) }) do
 			checks[root .. "/" .. src] = true
-			for _, dir in ipairs(require("jet.ui.image.config").img_dirs) do
+			for _, dir in ipairs(require("jet.core.ui.image.config").img_dirs) do
 				dir = root .. "/" .. dir
 				if M.is_dir(dir) then
 					checks[dir .. "/" .. src] = true
@@ -253,7 +253,7 @@ function M._img(ctx)
 	elseif img.ext then
 		img.type = img.ext:match("^(%w+)%.") or img.type
 	end
-	if not require("jet.ui.image.config").math.enabled and img.type == "math" then
+	if not require("jet.core.ui.image.config").math.enabled and img.type == "math" then
 		return
 	end
 	if ctx.src then
@@ -275,7 +275,7 @@ function M._img(ctx)
 		img.src = M.resolve(ctx.buf, img.src)
 	end
 	if img.content and not img.src then
-		local root = require("jet.ui.image.config").cache
+		local root = require("jet.core.ui.image.config").cache
 		vim.fn.mkdir(root, "p")
 		img.src = root
 			.. "/"
@@ -320,8 +320,8 @@ function M._attach(buf)
 		return
 	end
 	vim.b[buf].snacks_image_attached = true
-	local inline = require("jet.ui.image.config").doc.inline and require("jet.ui.image.terminal").env().placeholders
-	local float = require("jet.ui.image.config").doc.float and not inline
+	local inline = require("jet.core.ui.image.config").doc.inline and require("jet.core.ui.image.terminal").env().placeholders
+	local float = require("jet.core.ui.image.config").doc.float and not inline
 
 	if not inline and not float then
 		return
@@ -332,7 +332,7 @@ end
 
 ---@param buf number
 function M.attach(buf)
-	if require("jet.ui.image.config").enabled == false then
+	if require("jet.core.ui.image.config").enabled == false then
 		return
 	end
 	local Terminal = require("snacks.image.terminal")

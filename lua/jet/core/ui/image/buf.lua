@@ -4,7 +4,7 @@ local M = {}
 ---@param buf number
 ---@param opts? Jet.Ui.Image.Opts|{src?: string}
 function M._attach(buf, opts)
-	require("jet.ui.image.placement").clean(buf)
+	require("jet.core.ui.image.placement").clean(buf)
 	if not vim.api.nvim_buf_is_valid(buf) then
 		return
 	end
@@ -35,14 +35,14 @@ function M._attach(buf, opts)
 		})
 		opts.conceal = true
 		opts.auto_resize = true
-		return require("jet.ui.image.placement").new(buf, file, opts)
+		return require("jet.core.ui.image.placement").new(buf, file, opts)
 	end
 end
 
 ---@param buf number
 ---@param opts? Jet.Ui.Image.Opts|{src?: string}
 function M.attach(buf, opts)
-	if require("jet.ui.image.config").enabled == false then
+	if require("jet.core.ui.image.config").enabled == false then
 		return
 	end
 	local Terminal = require("snacks.image.terminal")

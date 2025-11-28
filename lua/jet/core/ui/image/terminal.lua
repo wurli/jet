@@ -170,7 +170,7 @@ function M.request(opts)
 		msg[#msg + 1] = tostring(opts.data)
 	end
 	local data = "\27_G" .. table.concat(msg) .. "\27\\"
-	if require("jet.ui.image.config").debug.request and opts.m ~= 1 then
+	if require("jet.core.ui.image.config").debug.request and opts.m ~= 1 then
 		Snacks.debug.inspect(opts)
 	end
 	M.write(data)

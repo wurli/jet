@@ -18,7 +18,7 @@ local _pid = 10
 local nvim_id = 0
 local uv = vim.uv or vim.loop
 local images = {} ---@type table<string, Jet.Ui.Image>
-local terminal = Snacks.image.terminal
+local terminal = require("jet.core.ui.image.terminal")
 local lru = {} ---@type {img:Jet.Ui.Image, used:number}[]
 local lru_fsize = 0
 
@@ -118,7 +118,7 @@ function M:run()
 end
 
 function M:convert()
-	self._convert = require("jet.ui.image.convert").convert({
+	self._convert = require("jet.core.ui.image.convert").convert({
 		src = self.src,
 		on_done = function(convert)
 			if convert:error() then

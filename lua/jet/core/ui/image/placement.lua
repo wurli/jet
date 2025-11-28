@@ -54,7 +54,7 @@ function M.new(buf, src, opts)
 	Snacks.image.setup() -- always setup so that images/videos can be opened
 	local self = setmetatable({}, M)
 
-	self.img = require("jet.ui.image.image").new(src)
+	self.img = require("jet.core.ui.image.image").new(src)
 	self.img:place(self)
 	self.opts = opts or {}
 	self.opts.pos = self.opts.pos or { 1, 0 }
@@ -229,7 +229,7 @@ function M:render_grid(loc)
 		[hl] = {
 			fg = self.img.id,
 			sp = self.id,
-			bg = require("jet.ui.image.config").debug.placement and "#FF007C" or "none",
+			bg = require("jet.core.ui.image.config").debug.placement and "#FF007C" or "none",
 			nocombine = true,
 		},
 	})
@@ -348,7 +348,7 @@ function M:render_grid(loc)
 		self:_render(extmarks)
 	else
 		local is_inline = has_before or has_after
-		local icon = require("jet.ui.image.config").icons[self.opts.type or "image"] or require("jet.ui.image.config").icons.image
+		local icon = require("jet.core.ui.image.config").icons[self.opts.type or "image"] or require("jet.core.ui.image.config").icons.image
 		-- render below in virtual lines
 		extmarks[#extmarks + 1] = {
 			row = range[1] - 1,
@@ -440,7 +440,7 @@ function M:render_fallback(state)
 end
 
 function M:debug(...)
-	if true or not require("jet.ui.image.config").debug then
+	if true or not require("jet.core.ui.image.config").debug then
 		return
 	end
 	Snacks.debug.inspect({ ... }, self.img.src, self.img.id, self.id)
@@ -471,7 +471,7 @@ function M:state()
 
 	width = minmax(self.opts.width or width, self.opts.min_width, self.opts.max_width)
 	height = minmax(self.opts.height or height, self.opts.min_height, self.opts.max_height)
-	local size = require("jet.ui.image.util").fit(self.img.file, { width = width, height = height }, { info = self.img.info })
+	local size = require("jet.core.ui.image.util").fit(self.img.file, { width = width, height = height }, { info = self.img.info })
 
 	local pos = self.opts.pos or { 1, 0 }
 
@@ -544,7 +544,7 @@ function M:update()
 
 	if not self.opts.inline then
 		for _, win in ipairs(state.wins) do
-			Snacks.util.wo(win, require("jet.ui.image.config").wo or {})
+			Snacks.util.wo(win, require("jet.core.ui.image.config").wo or {})
 		end
 	end
 

@@ -48,7 +48,8 @@ M.meta = {
 --- When `nil`, the path is resolved relative to the file.
 ---@field resolve? fun(file: string, src: string): string?
 ---@field convert? Jet.Ui.Image.convert.Config
-local defaults = {
+M.config = {
+	enabled = true,
 	formats = {
 		"png",
 		"jpg",
@@ -165,7 +166,6 @@ local defaults = {
 		},
 	},
 }
-M.config = Snacks.config.get("image", defaults)
 
 Snacks.config.style("snacks_image", {
 	relative = "cursor",
@@ -219,11 +219,6 @@ function M.supports_terminal()
 	return M.terminal.env().supported or M.config.force or false
 end
 
---- Show the image at the cursor in a floating window
-function M.hover()
-	M.doc.hover()
-end
-
 ---@return string[]
 function M.langs()
 	local queries = vim.api.nvim_get_runtime_file("queries/*/images.scm", true)
@@ -246,7 +241,7 @@ function M.setup(ev)
 		group = group,
 		callback = function(e)
 			vim.schedule(function()
-				require("jet.ui.image.placement").clean(e.buf)
+				require("jet.core.ui.image.placement").clean(e.buf)
 			end)
 		end,
 	})
@@ -254,7 +249,7 @@ function M.setup(ev)
 		group = group,
 		once = true,
 		callback = function()
-			require("jet.ui.image.placement").clean()
+			require("jet.core.ui.image.placement").clean()
 		end,
 	})
 
@@ -296,87 +291,6 @@ function M.setup(ev)
 	end
 	if ev and ev.event == "BufReadCmd" then
 		M.buf.attach(ev.buf)
-	end
-end
-
----@private
-function M.health()
-	local detected = false
-	require("snacks.image.terminal").detect(function()
-		detected = true
-	end)
-	vim.wait(1500, function()
-		return detected
-	end, 10)
-	Snacks.health.have_tool({ "kitty", "wezterm", "ghostty" })
-	local is_win = jit.os:find("Windows")
-	if not Snacks.health.have_tool({ "magick", not is_win and "convert" or nil }) then
-		Snacks.health.error("`magick` is required to convert images. Only PNG files will be displayed.")
-	end
-	local env = M.terminal.env()
-	for _, e in ipairs(M.terminal.envs()) do
-		if e.detected then
-			if e.supported == false then
-				Snacks.health.error("`" .. e.name .. "` is not supported")
-			else
-				Snacks.health.ok("`" .. e.name .. "` detected and supported")
-				if e.placeholders == false then
-					Snacks.health.warn(
-						"`" .. e.name .. "` does not support placeholders. Fallback rendering will be used"
-					)
-					Snacks.health.warn("Inline images are disabled")
-				elseif e.placeholders == true then
-					Snacks.health.ok("`" .. e.name .. "` supports unicode placeholders")
-					Snacks.health.ok("Inline images are available")
-				end
-			end
-		end
-	end
-	local size = M.terminal.size()
-	Snacks.health.ok(
-		("Terminal Dimensions:\n- {size}: `%d` x `%d` pixels\n- {scale}: `%.2f`\n- {cell}: `%d` x `%d` pixels"):format(
-			size.width,
-			size.height,
-			size.scale,
-			size.cell_width,
-			size.cell_height
-		)
-	)
-
-	local langs, _, missing = Snacks.health.has_lang(M.langs())
-	if missing > 0 then
-		Snacks.health.warn("Image rendering in docs with missing treesitter parsers won't work")
-	end
-
-	if Snacks.health.have_tool("gs") then
-		Snacks.health.ok("PDF files are supported")
-	else
-		Snacks.health.warn("`gs` is required to render PDF files")
-	end
-
-	if Snacks.health.have_tool({ "tectonic", "pdflatex" }) then
-		if langs.latex then
-			Snacks.health.ok("LaTeX math equations are supported")
-		else
-			Snacks.health.warn("The `latex` treesitter parser is required to render LaTeX math expressions")
-		end
-	else
-		Snacks.health.warn("`tectonic` or `pdflatex` is required to render LaTeX math expressions")
-	end
-
-	if Snacks.health.have_tool("mmdc") then
-		Snacks.health.ok("Mermaid diagrams are supported")
-	else
-		Snacks.health.warn("`mmdc` is required to render Mermaid diagrams")
-	end
-
-	if env.supported then
-		Snacks.health.ok("your terminal supports the kitty graphics protocol")
-	elseif M.config.force then
-		Snacks.health.warn("image viewer is enabled with `opts.force = true`. Use at your own risk")
-	else
-		Snacks.health.error("your terminal does not support the kitty graphics protocol")
-		Snacks.health.info("supported terminals: `kitty`, `wezterm`, `ghostty`")
 	end
 end
 
