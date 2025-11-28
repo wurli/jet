@@ -1,11 +1,11 @@
----@class Jet.Ui.image.util
+---@class Jet.Ui.Image.util
 local M = {}
 
-local dims = {} ---@type table<string, Jet.Ui.image.Size>
+local dims = {} ---@type table<string, Jet.Ui.Image.Size>
 
 --- Get the dimensions of a PNG file
 ---@param file string
----@return Jet.Ui.image.Size
+---@return Jet.Ui.Image.Size
 function M.dim(file)
   file = svim.fs.normalize(file)
   if dims[file] then
@@ -26,7 +26,7 @@ function M.dim(file)
   return dims[file]
 end
 
----@param size Jet.Ui.image.Size
+---@param size Jet.Ui.Image.Size
 function M.pixels_to_cells(size)
   local terminal = Snacks.image.terminal.size()
   return M.norm({
@@ -35,8 +35,8 @@ function M.pixels_to_cells(size)
   })
 end
 
----@param size Jet.Ui.image.Size
----@return Jet.Ui.image.Size
+---@param size Jet.Ui.Image.Size
+---@return Jet.Ui.Image.Size
 function M.norm(size)
   return {
     width = math.max(1, math.ceil(size.width)),
@@ -45,11 +45,11 @@ function M.norm(size)
 end
 
 ---@param file string
----@param cells Jet.Ui.image.Size size in rows x columns
----@param opts? { full?: boolean, info?: Jet.Ui.image.Info }
+---@param cells Jet.Ui.Image.Size size in rows x columns
+---@param opts? { full?: boolean, info?: Jet.Ui.Image.Info }
 function M.fit(file, cells, opts)
   opts = opts or {}
-  local img_pixels ---@type Jet.Ui.image.Size
+  local img_pixels ---@type Jet.Ui.Image.Size
   if opts.info then
     local terminal = Snacks.image.terminal.size()
     img_pixels = {}

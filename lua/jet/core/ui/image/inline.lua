@@ -1,7 +1,7 @@
----@class Jet.Ui.image.inline
+---@class Jet.Ui.Image.inline
 ---@field buf number
----@field imgs table<number, Jet.Ui.image.Placement>
----@field idx table<number, Jet.Ui.image.Placement>
+---@field imgs table<number, Jet.Ui.Image.Placement>
+---@field idx table<number, Jet.Ui.Image.Placement>
 local M = {}
 M.__index = M
 
@@ -56,7 +56,7 @@ function M:conceal()
 end
 
 function M:visible()
-  local ret = {} ---@type table<number, Jet.Ui.image.Placement>
+  local ret = {} ---@type table<number, Jet.Ui.Image.Placement>
   for _, win in ipairs(vim.fn.win_findbuf(self.buf)) do
     local info = vim.fn.getwininfo(win)[1]
     for k, v in pairs(self:get(math.max(info.topline - 1, 1), info.botline)) do
@@ -69,13 +69,13 @@ end
 ---@param from number 1-indexed inclusive
 ---@param to number 1-indexed inclusive
 function M:get(from, to)
-  local ret = {} ---@type table<number, Jet.Ui.image.Placement>
+  local ret = {} ---@type table<number, Jet.Ui.Image.Placement>
   local marks = vim.api.nvim_buf_get_extmarks(self.buf, Snacks.image.placement.ns, { from - 1, 0 }, { to, -1 }, {
     overlap = true,
     hl_name = false,
   })
   for _, m in ipairs(marks) do
-    local p = self.idx[m[1]] ---@type Jet.Ui.image.Placement?
+    local p = self.idx[m[1]] ---@type Jet.Ui.Image.Placement?
     if p and not self.imgs[p.id] then
       self.idx[m[1]] = nil
       p = nil
@@ -96,7 +96,7 @@ function M:update()
     local visible = self:visible()
     local stats = { new = 0, del = 0, update = 0 }
     for _, i in ipairs(imgs) do
-      local img ---@type Jet.Ui.image.Placement?
+      local img ---@type Jet.Ui.Image.Placement?
       for v, o in pairs(visible) do
         if o.img.src == i.src then
           img = o
@@ -115,7 +115,7 @@ function M:update()
             inline = true,
             conceal = vim.b[self.buf].snacks_image_conceal or conceal(i.lang, i.type),
             type = i.type,
-            ---@param p Jet.Ui.image.Placement
+            ---@param p Jet.Ui.Image.Placement
             on_update = function(p)
               for _, eid in ipairs(p.eids) do
                 self.idx[eid] = p

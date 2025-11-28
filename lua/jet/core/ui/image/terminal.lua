@@ -1,9 +1,9 @@
----@class Jet.Ui.image.terminal
+---@class Jet.Ui.Image.terminal
 ---@field transform? fun(data: string): string
 local M = {}
 
-local size ---@type Jet.Ui.image.terminal.Dim?
----@type Jet.Ui.image.Env[]
+local size ---@type Jet.Ui.Image.terminal.Dim?
+---@type Jet.Ui.Image.Env[]
 local environments = {
   {
     name = "kitty",
@@ -37,9 +37,9 @@ local environments = {
   { name = "ssh", env = { SSH_CLIENT = true, SSH_CONNECTION = true }, remote = true },
 }
 
-M._env = nil ---@type Jet.Ui.image.Env?
+M._env = nil ---@type Jet.Ui.Image.Env?
 
-M._terminal = nil ---@type Jet.Ui.image.Terminal?
+M._terminal = nil ---@type Jet.Ui.Image.Terminal?
 
 vim.api.nvim_create_autocmd("VimResized", {
   group = vim.api.nvim_create_augroup("snacks.image.terminal", { clear = true }),
@@ -71,7 +71,7 @@ function M.size()
   end
 
   local dw, dh = 9, 18
-  ---@class Jet.Ui.image.terminal.Dim
+  ---@class Jet.Ui.Image.terminal.Dim
   size = {
     width = vim.o.columns * dw,
     height = vim.o.lines * dh,
@@ -193,7 +193,7 @@ end
 --- Detect terminal capabilities
 --- Will call the callback when detection is complete,
 --- or block until detection is complete if no callback is provided.
----@param cb? fun(term: Jet.Ui.image.Terminal)
+---@param cb? fun(term: Jet.Ui.Image.Terminal)
 function M.detect(cb)
   if cb then -- async
     return M._detect(cb)
@@ -208,7 +208,7 @@ function M.detect(cb)
   end, 10)
 end
 
----@param cb fun(term: Jet.Ui.image.Terminal)
+---@param cb fun(term: Jet.Ui.Image.Terminal)
 function M._detect(cb)
   if M._terminal then
     if M._terminal.pending then
@@ -218,7 +218,7 @@ function M._detect(cb)
     return cb(M._terminal)
   end
 
-  ---@class Jet.Ui.image.Terminal
+  ---@class Jet.Ui.Image.Terminal
   ---@field terminal? string
   ---@field version? string
   ---@field supported? boolean
@@ -226,7 +226,7 @@ function M._detect(cb)
   local ret = {
     terminal = "unknown",
     version = "unknown",
-    pending = { cb }, ---@type fun(term: Jet.Ui.image.Terminal)[]
+    pending = { cb }, ---@type fun(term: Jet.Ui.Image.Terminal)[]
   }
   M._terminal = ret
 
