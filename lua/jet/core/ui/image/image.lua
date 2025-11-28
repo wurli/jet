@@ -118,7 +118,7 @@ function M:run()
 end
 
 function M:convert()
-	self._convert = Snacks.image.convert.convert({
+	self._convert = require("jet.ui.image.convert").convert({
 		src = self.src,
 		on_done = function(convert)
 			if convert:error() then

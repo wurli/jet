@@ -246,7 +246,7 @@ function M.setup(ev)
 		group = group,
 		callback = function(e)
 			vim.schedule(function()
-				Snacks.image.placement.clean(e.buf)
+				require("jet.ui.image.placement").clean(e.buf)
 			end)
 		end,
 	})
@@ -254,7 +254,7 @@ function M.setup(ev)
 		group = group,
 		once = true,
 		callback = function()
-			Snacks.image.placement.clean()
+			require("jet.ui.image.placement").clean()
 		end,
 	})
 

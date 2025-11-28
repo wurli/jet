@@ -70,7 +70,7 @@ end
 ---@param to number 1-indexed inclusive
 function M:get(from, to)
 	local ret = {} ---@type table<number, Jet.Ui.Image.Placement>
-	local marks = vim.api.nvim_buf_get_extmarks(self.buf, Snacks.image.placement.ns, { from - 1, 0 }, { to, -1 }, {
+	local marks = vim.api.nvim_buf_get_extmarks(self.buf, require("jet.ui.image.placement").ns, { from - 1, 0 }, { to, -1 }, {
 		overlap = true,
 		hl_name = false,
 	})
@@ -88,11 +88,11 @@ function M:get(from, to)
 end
 
 function M:update()
-	local conceal = Snacks.image.config.doc.conceal
+	local conceal = require("jet.ui.image.config").doc.conceal
 	conceal = type(conceal) ~= "function" and function()
 		return conceal
 	end or conceal
-	Snacks.image.doc.find_visible(self.buf, function(imgs)
+	require("jet.ui.image.doc").find_visible(self.buf, function(imgs)
 		local visible = self:visible()
 		local stats = { new = 0, del = 0, update = 0 }
 		for _, i in ipairs(imgs) do
@@ -106,10 +106,10 @@ function M:update()
 			end
 			if not img then
 				stats.new = stats.new + 1
-				img = Snacks.image.placement.new(
+				img = require("jet.ui.image.placement").new(
 					self.buf,
 					i.src,
-					Snacks.config.merge({}, Snacks.image.config.doc, {
+					Snacks.config.merge({}, require("jet.ui.image.config").doc, {
 						pos = i.pos,
 						range = i.range,
 						inline = true,

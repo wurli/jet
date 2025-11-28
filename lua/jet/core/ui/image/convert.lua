@@ -89,7 +89,7 @@ local commands = {
 	tex = {
 		ft = "pdf",
 		file = function(convert, ctx)
-			ctx.pdf = Snacks.image.config.cache .. "/" .. vim.fs.basename(ctx.src):gsub("%.tex$", ".pdf")
+			ctx.pdf = require("jet.ui.image.config").cache .. "/" .. vim.fs.basename(ctx.src):gsub("%.tex$", ".pdf")
 			return convert:tmpfile("pdf")
 		end,
 		cmd = {
@@ -120,7 +120,7 @@ local commands = {
 	mmd = {
 		cmd = {
 			cmd = "mmdc",
-			args = Snacks.image.config.convert.mermaid,
+			args = require("jet.ui.image.config").convert.mermaid,
 		},
 		file = function(convert, ctx)
 			return convert:tmpfile(vim.o.background .. ".png")
@@ -165,7 +165,7 @@ local commands = {
 	convert = {
 		ft = "png",
 		cmd = function(step)
-			local formats = vim.deepcopy(Snacks.image.config.convert.magick or {})
+			local formats = vim.deepcopy(require("jet.ui.image.config").convert.magick or {})
 			local args = formats.default or { "{src}[{page}]" }
 			local info = step.meta.info
 			local format = info and info.format or vim.fn.fnamemodify(step.meta.src, ":e")
@@ -253,7 +253,7 @@ Convert.__index = Convert
 
 ---@param opts Jet.Ui.Image.convert.Opts
 function Convert.new(opts)
-	vim.fn.mkdir(Snacks.image.config.cache, "p")
+	vim.fn.mkdir(require("jet.ui.image.config").cache, "p")
 	local self = setmetatable({}, Convert)
 	opts.src, self.page = M.get_page(opts.src)
 	opts.src = M.norm(opts.src)
@@ -268,9 +268,9 @@ function Convert.new(opts)
 	self.meta = { src = opts.src }
 	self.steps = {}
 	self.tpl_data = {
-		cache = Snacks.image.config.cache,
+		cache = require("jet.ui.image.config").cache,
 		bg = vim.o.background,
-		scale = tostring(Snacks.image.terminal.size().scale or 1),
+		scale = tostring(require("jet.ui.image.terminal").size().scale or 1),
 	}
 	self:resolve()
 	return self
@@ -295,7 +295,7 @@ end
 
 ---@param ft string
 function Convert:tmpfile(ft)
-	return Snacks.image.config.cache .. "/" .. self.prefix .. "." .. ft
+	return require("jet.ui.image.config").cache .. "/" .. self.prefix .. "." .. ft
 end
 
 ---@param target string
@@ -372,7 +372,7 @@ end
 function Convert:on_done()
 	local step = self:current()
 	self._done = true
-	if self._err and Snacks.image.config.convert.notify then
+	if self._err and require("jet.ui.image.config").convert.notify then
 		local title = step and ("Conversion failed at step `%s`"):format(step.name) or "Conversion failed"
 		if step and step.proc then
 			step.proc:debug({ title = title })
@@ -437,7 +437,7 @@ function Convert:step()
 
 	step.proc = Spawn.new({
 		run = false,
-		debug = Snacks.image.config.debug.convert,
+		debug = require("jet.ui.image.config").debug.convert,
 		cwd = cmd.cwd and Snacks.picker.util.tpl(cmd.cwd, data) or nil,
 		cmd = cmd.cmd,
 		args = args,
