@@ -1,16 +1,16 @@
----@class snacks.image.doc
+---@class Jet.Ui.image.doc
 local M = {}
 
 ---@alias TSMatch {node:TSNode, meta:vim.treesitter.query.TSMetadata}
----@alias snacks.image.transform fun(match: snacks.image.match, ctx: snacks.image.ctx)
----@alias snacks.image.find fun(matches: snacks.image.match[])
+---@alias snacks.image.transform fun(match: snacks.image.match, ctx: Jet.Ui.image.ctx)
+---@alias snacks.image.find fun(matches: Jet.Ui.image.match[])
 
----@class snacks.image.Hover
----@field img snacks.image.Placement
----@field win snacks.win
+---@class Jet.Ui.image.Hover
+---@field img Jet.Ui.image.Placement
+---@field win Jet.Ui.win
 ---@field buf number
 
----@class snacks.image.ctx
+---@class Jet.Ui.image.ctx
 ---@field buf number
 ---@field lang string
 ---@field meta vim.treesitter.query.TSMetadata
@@ -18,16 +18,16 @@ local M = {}
 ---@field src? TSMatch
 ---@field content? TSMatch
 
----@class snacks.image.match
+---@class Jet.Ui.image.match
 ---@field id string
----@field pos snacks.image.Pos
+---@field pos Jet.Ui.image.Pos
 ---@field src? string
 ---@field content? string
 ---@field content_id? string
 ---@field ext? string
 ---@field range? Range4
 ---@field lang string
----@field type snacks.image.Type
+---@field type Jet.Ui.image.Type
 
 local META_EXT = "image.ext"
 local META_SRC = "image.src"
@@ -35,7 +35,7 @@ local META_TYPE = "image.type"
 local META_IGNORE = "image.ignore"
 local META_LANG = "image.lang"
 
----@type table<string, snacks.image.transform>
+---@type table<string, Jet.Ui.image.transform>
 M.transforms = {
   norg = function(img, ctx)
     local row, col = ctx.src.node:start()
@@ -101,7 +101,7 @@ M.transforms = {
   end,
 }
 
-local hover ---@type snacks.image.Hover?
+local hover ---@type Jet.Ui.image.Hover?
 local uv = vim.uv or vim.loop
 local dir_cache = {} ---@type table<string, boolean>
 local buf_cache = {} ---@type table<number,{tick: number, [string]:any}>
@@ -209,9 +209,9 @@ function M.resolve(buf, src)
 end
 
 ---@param buf number
----@param cb snacks.image.find
+---@param cb Jet.Ui.image.find
 function M.find_visible(buf, cb)
-  local ret = {} ---@type table<string,snacks.image.match>
+  local ret = {} ---@type table<string,Jet.Ui.image.match>
   local wins = vim.fn.win_findbuf(buf)
   local count = #wins
   for _, win in ipairs(wins) do
@@ -229,7 +229,7 @@ function M.find_visible(buf, cb)
 end
 
 ---@param buf number
----@param cb snacks.image.find
+---@param cb Jet.Ui.image.find
 ---@param opts? {from?: number, to?: number}
 function M.find(buf, cb, opts)
   local ok, parser = pcall(vim.treesitter.get_parser, buf)
@@ -239,7 +239,7 @@ function M.find(buf, cb, opts)
   opts = opts or {}
   local from, to = opts.from, opts.to
   Snacks.util.parse(parser, from and to and { from, to } or true, function()
-    local ret = {} ---@type snacks.image.match[]
+    local ret = {} ---@type Jet.Ui.image.match[]
     parser:for_each_tree(function(tstree, tree)
       if not tstree then
         return
@@ -250,7 +250,7 @@ function M.find(buf, cb, opts)
       end
       for _, match, meta in query:iter_matches(tstree:root(), buf, from and from - 1 or nil, to) do
         if not meta[META_IGNORE] then
-          ---@type snacks.image.ctx
+          ---@type Jet.Ui.image.ctx
           local ctx = {
             buf = buf,
             lang = tostring(meta[META_LANG] or meta["injection.language"] or tree:lang()),
@@ -273,7 +273,7 @@ function M.find(buf, cb, opts)
   end)
 end
 
----@param ctx snacks.image.ctx
+---@param ctx Jet.Ui.image.ctx
 function M._img(ctx)
   ctx.pos = ctx.pos or ctx.src or ctx.content
   assert(ctx.pos, "no image node")
@@ -285,7 +285,7 @@ function M._img(ctx)
     local line = vim.api.nvim_buf_get_lines(ctx.buf, range[3], range[3] + 1, false)[1]
     range[4] = #line
   end
-  ---@type snacks.image.match
+  ---@type Jet.Ui.image.match
   local img = {
     ext = ctx.meta[META_EXT],
     src = ctx.meta[META_SRC],
@@ -347,7 +347,7 @@ function M.hover_close()
 end
 
 --- Get the image at the cursor (if any)
----@param cb fun(image_src?:string, image_pos?: snacks.image.Pos)
+---@param cb fun(image_src?:string, image_pos?: Jet.Ui.image.Pos)
 function M.at_cursor(cb)
   local cursor = vim.api.nvim_win_get_cursor(0)
   M.find(vim.api.nvim_get_current_buf(), function(imgs)

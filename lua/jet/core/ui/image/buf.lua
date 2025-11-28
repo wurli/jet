@@ -1,8 +1,8 @@
----@class snacks.image.buf
+---@class Jet.Ui.image.buf
 local M = {}
 
 ---@param buf number
----@param opts? snacks.image.Opts|{src?: string}
+---@param opts? Jet.Ui.image.Opts|{src?: string}
 function M._attach(buf, opts)
   Snacks.image.placement.clean(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
@@ -40,7 +40,7 @@ function M._attach(buf, opts)
 end
 
 ---@param buf number
----@param opts? snacks.image.Opts|{src?: string}
+---@param opts? Jet.Ui.image.Opts|{src?: string}
 function M.attach(buf, opts)
   if Snacks.image.config.enabled == false then
     return

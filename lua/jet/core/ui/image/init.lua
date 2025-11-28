@@ -1,14 +1,14 @@
----@class snacks.image
----@field terminal snacks.image.terminal
----@field image snacks.Image
----@field placement snacks.image.Placement
----@field util snacks.image.util
----@field buf snacks.image.buf
----@field doc snacks.image.doc
----@field convert snacks.image.convert
----@field inline snacks.image.inline
+---@class Jet.Ui.image
+---@field terminal Jet.Ui.image.terminal
+---@field image Jet.Ui.Image
+---@field placement Jet.Ui.image.Placement
+---@field util Jet.Ui.image.util
+---@field buf Jet.Ui.image.buf
+---@field doc Jet.Ui.image.doc
+---@field convert Jet.Ui.image.convert
+---@field inline Jet.Ui.image.inline
 local M = setmetatable({}, {
-  ---@param M snacks.image
+  ---@param M Jet.Ui.image
   __index = function(M, k)
     if vim.tbl_contains({ "terminal", "image", "placement", "util", "doc", "buf", "convert", "inline" }, k) then
       M[k] = require("snacks.image." .. k)
@@ -22,12 +22,12 @@ M.meta = {
   needs_setup = true,
 }
 
----@alias snacks.image.Size {width: number, height: number}
----@alias snacks.image.Pos {[1]: number, [2]: number}
----@alias snacks.image.Loc snacks.image.Pos|snacks.image.Size|{zindex?: number}
----@alias snacks.image.Type "image"|"math"|"chart"
+---@alias Jet.Ui.image.Size {width: number, height: number}
+---@alias Jet.Ui.image.Pos {[1]: number, [2]: number}
+---@alias snacks.image.Loc snacks.image.Pos|Jet.Ui.image.Size|{zindex?: number}
+---@alias Jet.Ui.image.Type "image"|"math"|"chart"
 
----@class snacks.image.Env
+---@class Jet.Ui.image.Env
 ---@field name string
 ---@field env? table<string, string|true>
 ---@field terminal? string
@@ -38,7 +38,7 @@ M.meta = {
 ---@field detected? boolean
 ---@field remote? boolean this is a remote client, so full transfer of the image data is required
 
----@class snacks.image.Config
+---@class Jet.Ui.image.Config
 ---@field enabled? boolean enable image viewer
 ---@field wo? vim.wo|{} options for windows showing the image
 ---@field bo? vim.bo|{} options for the image buffer
@@ -47,7 +47,7 @@ M.meta = {
 --- Return the absolute path or url to the image.
 --- When `nil`, the path is resolved relative to the file.
 ---@field resolve? fun(file: string, src: string): string?
----@field convert? snacks.image.convert.Config
+---@field convert? Jet.Ui.image.convert.Config
 local defaults = {
   formats = {
     "png",
@@ -84,7 +84,7 @@ local defaults = {
     -- Set to `true`, to conceal the image text when rendering inline.
     -- (experimental)
     ---@param lang string tree-sitter language
-    ---@param type snacks.image.Type image type
+    ---@param type Jet.Ui.image.Type image type
     conceal = function(lang, type)
       -- only conceal math expressions
       return type == "math"
@@ -118,15 +118,15 @@ local defaults = {
     chart = "󰄧 ",
     image = " ",
   },
-  ---@class snacks.image.convert.Config
+  ---@class Jet.Ui.image.convert.Config
   convert = {
     notify = false, -- show a notification on error
-    ---@type snacks.image.args
+    ---@type Jet.Ui.image.args
     mermaid = function()
       local theme = vim.o.background == "light" and "neutral" or "dark"
       return { "-i", "{src}", "-o", "{file}", "-b", "transparent", "-t", theme, "-s", "{scale}" }
     end,
-    ---@type table<string,snacks.image.args>
+    ---@type table<string,Jet.Ui.image.args>
     magick = {
       default = { "{src}[0]", "-scale", "1920x1080>" }, -- default for raster images
       vector = { "-density", 192, "{src}[{page}]" }, -- used by vector images like svg
@@ -184,8 +184,8 @@ Snacks.util.set_hl({
   Math = { fg = Snacks.util.color({ "@markup.math.latex", "Special", "Normal" }) },
 }, { prefix = "SnacksImage", default = true })
 
----@class snacks.image.Opts
----@field pos? snacks.image.Pos (row, col) (1,0)-indexed. defaults to the top-left corner
+---@class Jet.Ui.image.Opts
+---@field pos? Jet.Ui.image.Pos (row, col) (1,0)-indexed. defaults to the top-left corner
 ---@field range? Range4
 ---@field conceal? boolean
 ---@field inline? boolean render the image inline in the buffer
@@ -195,9 +195,9 @@ Snacks.util.set_hl({
 ---@field height? number
 ---@field min_height? number
 ---@field max_height? number
----@field on_update? fun(placement: snacks.image.Placement)
----@field on_update_pre? fun(placement: snacks.image.Placement)
----@field type? snacks.image.Type
+---@field on_update? fun(placement: Jet.Ui.image.Placement)
+---@field on_update_pre? fun(placement: Jet.Ui.image.Placement)
+---@field type? Jet.Ui.image.Type
 ---@field auto_resize? boolean
 
 local did_setup = false

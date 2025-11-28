@@ -1,51 +1,51 @@
 local Spawn = require("snacks.util.spawn")
 
----@class snacks.image.convert
+---@class Jet.Ui.image.convert
 local M = {}
 
 local uv = vim.uv or vim.loop
 
----@class snacks.image.Info
+---@class Jet.Ui.image.Info
 ---@field format string
----@field size snacks.image.Size
----@field dpi snacks.image.Size
+---@field size Jet.Ui.image.Size
+---@field dpi Jet.Ui.image.Size
 
----@class snacks.image.convert.Opts
+---@class Jet.Ui.image.convert.Opts
 ---@field src string
----@field on_done? fun(convert: snacks.image.Convert)
+---@field on_done? fun(convert: Jet.Ui.image.Convert)
 
----@class snacks.image.meta
+---@class Jet.Ui.image.meta
 ---@field src string
----@field info? snacks.image.Info
+---@field info? Jet.Ui.image.Info
 ---@field [string] string|number|boolean
 
----@alias snacks.image.args (number|string)[] | fun(): ((number|string)[])
+---@alias Jet.Ui.image.args (number|string)[] | fun(): ((number|string)[])
 
----@class snacks.image.Proc
+---@class Jet.Ui.image.Proc
 ---@field cmd string
 ---@field cwd? string
----@field args snacks.image.args
+---@field args Jet.Ui.image.args
 
----@class snacks.image.step
+---@class Jet.Ui.image.step
 ---@field name string
 ---@field file string
 ---@field ft string
----@field cmd snacks.image.cmd
----@field meta snacks.image.meta
+---@field cmd Jet.Ui.image.cmd
+---@field meta Jet.Ui.image.meta
 ---@field done? boolean
 ---@field err? string
----@field proc? snacks.spawn.Proc
+---@field proc? Jet.Ui.spawn.Proc
 
----@class snacks.image.cmd
----@field cmd (fun(step: snacks.image.step):(snacks.image.Proc|snacks.image.Proc[]))|snacks.image.Proc|snacks.image.Proc[]
+---@class Jet.Ui.image.cmd
+---@field cmd (fun(step: snacks.image.step):(snacks.image.Proc|snacks.image.Proc[]))|snacks.image.Proc|Jet.Ui.image.Proc[]
 ---@field ft? string
----@field file? fun(convert: snacks.image.Convert, meta: snacks.image.meta): string
+---@field file? fun(convert: snacks.image.Convert, meta: Jet.Ui.image.meta): string
 ---@field depends? string[]
----@field on_done? fun(step: snacks.image.step)
----@field on_error? fun(step: snacks.image.step):boolean? when return true, continue to next step
+---@field on_done? fun(step: Jet.Ui.image.step)
+---@field on_error? fun(step: Jet.Ui.image.step):boolean? when return true, continue to next step
 ---@field pipe? boolean
 
----@type table<string, snacks.image.cmd>
+---@type table<string, Jet.Ui.image.cmd>
 local commands = {
   icns = {
     ft = "png",
@@ -198,11 +198,11 @@ local commands = {
 }
 
 local have = {} ---@type table<string, boolean>
-local proc_queue = {} ---@type snacks.spawn.Proc[]
+local proc_queue = {} ---@type Jet.Ui.spawn.Proc[]
 local proc_running = 0 ---@type number
 local MAX_PROCS = 3
 
----@param proc? snacks.spawn.Proc
+---@param proc? Jet.Ui.spawn.Proc
 local function schedule(proc)
   if proc then
     table.insert(proc_queue, proc)
@@ -217,12 +217,12 @@ local function schedule(proc)
   end
 end
 
----@param step snacks.image.step
+---@param step Jet.Ui.image.step
 local function get_cmd(step)
   local cmd = step.cmd.cmd
   cmd = type(cmd) == "function" and cmd(step) or cmd
   local cmds = cmd.cmd and { cmd } or cmd
-  ---@cast cmds snacks.image.Proc[]
+  ---@cast cmds Jet.Ui.image.Proc[]
   for _, c in ipairs(cmds) do
     if have[c.cmd] == nil then
       have[c.cmd] = vim.fn.executable(c.cmd) == 1
@@ -233,14 +233,14 @@ local function get_cmd(step)
   end
 end
 
----@class snacks.image.Convert
----@field opts snacks.image.convert.Opts
+---@class Jet.Ui.image.Convert
+---@field opts Jet.Ui.image.convert.Opts
 ---@field src string
 ---@field page number
 ---@field file string
 ---@field prefix string
----@field meta snacks.image.meta
----@field steps snacks.image.step[]
+---@field meta Jet.Ui.image.meta
+---@field steps Jet.Ui.image.step[]
 ---@field _done? boolean
 ---@field _err? string
 ---@field _step number
@@ -248,7 +248,7 @@ end
 local Convert = {}
 Convert.__index = Convert
 
----@param opts snacks.image.convert.Opts
+---@param opts Jet.Ui.image.convert.Opts
 function Convert.new(opts)
   vim.fn.mkdir(Snacks.image.config.cache, "p")
   local self = setmetatable({}, Convert)
@@ -273,7 +273,7 @@ function Convert.new(opts)
   return self
 end
 
----@return snacks.image.step?
+---@return Jet.Ui.image.step?
 function Convert:current()
   return self.steps[self._step]
 end
@@ -303,7 +303,7 @@ function Convert:_resolve(target)
     self:_resolve(dep)
   end
   local file = cmd.file and cmd.file(self, self.meta) or self:tmpfile(cmd.ft)
-  ---@type snacks.image.step
+  ---@type Jet.Ui.image.step
   local step = {
     name = target,
     file = file,
@@ -492,7 +492,7 @@ function M.get_page(src)
   return parts[1], page_number - 1
 end
 
----@param opts snacks.image.convert.Opts
+---@param opts Jet.Ui.image.convert.Opts
 function M.convert(opts)
   return Convert.new(opts)
 end

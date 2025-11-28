@@ -1,11 +1,11 @@
----@class snacks.Image
+---@class Jet.Ui.Image
 ---@field src string
 ---@field file string
 ---@field id number image id. unique per nvim instance and file
 ---@field sent? boolean image data is sent
----@field placements table<number, snacks.image.Placement> image placements
----@field info? snacks.image.Info
----@field _convert? snacks.image.Convert
+---@field placements table<number, Jet.Ui.image.Placement> image placements
+---@field info? Jet.Ui.image.Info
+---@field _convert? Jet.Ui.image.Convert
 ---@field fsize? number
 local M = {}
 M.__index = M
@@ -17,12 +17,12 @@ local _id = 30
 local _pid = 10
 local nvim_id = 0
 local uv = vim.uv or vim.loop
-local images = {} ---@type table<string, snacks.Image>
+local images = {} ---@type table<string, Jet.Ui.Image>
 local terminal = Snacks.image.terminal
-local lru = {} ---@type {img:snacks.Image, used:number}[]
+local lru = {} ---@type {img:Jet.Ui.Image, used:number}[]
 local lru_fsize = 0
 
----@param img snacks.Image
+---@param img Jet.Ui.Image
 local function use(img)
   if img.fsize == 0 then
     return
@@ -181,7 +181,7 @@ function M:send()
   self:on_send()
 end
 
----@param placement snacks.image.Placement
+---@param placement Jet.Ui.image.Placement
 function M:place(placement)
   if not placement.id then
     _pid = _pid + 1
