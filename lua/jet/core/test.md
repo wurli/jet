@@ -1,16 +1,24 @@
 # This is a test document
 
 ``` r
-print("hello")
-123
-Sys.sleep(3)
-print("there")
+print("Hello")
+Sys.sleep(1)
+print("from")
+Sys.sleep(1)
+print("this")
+Sys.sleep(1)
+print("notebook!")
+```
+
+``` r
+print("hi")
 ```
 
 ``` python
-print("hello from python!")
+print("hello from python")
 import time
-time.sleep(3)
+time.sleep(1)
+print("Pretty swish!")
 ```
 
 ``` lua

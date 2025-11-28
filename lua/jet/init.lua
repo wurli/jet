@@ -219,8 +219,38 @@ end
 --   style just involves unhiding the REPL and not showing code cells.
 --
 
+local jet_augroup = vim.api.nvim_create_augroup("Jet", { clear = true })
+
 Jet.setup = function(_)
 	require("jet.core.ui.highlights").set()
+
+	vim.api.nvim_create_autocmd("BufWinEnter", {
+		pattern = "*",
+		group = jet_augroup,
+		callback = function(args)
+			if vim.b[args.buf].jet and vim.b[args.buf].jet.type == "notebook" then
+				for _, kernel in pairs(manager.map_kernel_buffer[args.buf]) do
+					if kernel.ui and kernel.ui then
+						kernel.ui:show()
+					end
+				end
+			end
+		end,
+	})
+
+	vim.api.nvim_create_autocmd("BufWinLeave", {
+		pattern = "*",
+		group = jet_augroup,
+		callback = function(args)
+			if vim.b[args.buf].jet and vim.b[args.buf].jet.type == "notebook" then
+				for _, kernel in pairs(manager.map_kernel_buffer[args.buf]) do
+					if kernel.ui and kernel.ui then
+						kernel.ui:hide()
+					end
+				end
+			end
+		end,
+	})
 
 	vim.api.nvim_create_user_command("Jet", function(x)
 		local args = x.fargs

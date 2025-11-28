@@ -12,7 +12,8 @@ local M = {}
 ---@field bufnr number
 ---@field winnr number
 ---@field filetype string Position filetype, not buffer filetype
----@field node TSNode
+---@field start_row number 1-indexed
+---@field end_row number 1-indexed
 
 ---@return Jet.Execute.Chunk?
 M.get_chunk = function()

@@ -71,10 +71,13 @@ M.get_chunk = function()
 		return nil
 	end
 
+	local code_range = { code_node:range() }
+
 	return {
 		bufnr = bufnr,
-		node = code_node,
 		winnr = vim.api.nvim_get_current_win(),
+		start_row = code_range[1],
+		end_row = code_range[3],
 		filetype = utils.get_cur_filetype(),
 	}
 end
