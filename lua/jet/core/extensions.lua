@@ -25,32 +25,32 @@ local utils = require("jet.core.utils")
 ---@class Jet.Extensions
 ---@field extensions table<string, Jet.Extension>
 local M = {
-    is_initialised = false,
-    extensions = {}
+	is_initialised = false,
+	extensions = {},
 }
 
 function M:init()
-    if self.is_initialised then
-        return
-    end
-    self.is_initialised = true
+	if self.is_initialised then
+		return
+	end
+	self.is_initialised = true
 
-    local modules = vim.iter(vim.api.nvim_get_runtime_file("*/jet/*/init.lua", true))
-        :map(function(file)
-            return vim.fs.basename(vim.fs.dirname(file))
-        end)
-        :totable()
+	local modules = vim.iter(vim.api.nvim_get_runtime_file("*/jet/*/init.lua", true))
+		:map(function(file)
+			return vim.fs.basename(vim.fs.dirname(file))
+		end)
+		:totable()
 
-    for _, mod in ipairs(modules) do
-        local ok, ext = pcall(require, "jet." .. mod)
+	for _, mod in ipairs(modules) do
+		local ok, ext = pcall(require, "jet." .. mod)
 
-        if ok then
-            utils.log_trace("Loaded Jet extension '%s'", mod)
-            self.extensions[mod] = ext
-        else
-            utils.log_error("Failed to load Jet extension '%s': %s", mod, ext)
-        end
-    end
+		if ok then
+			utils.log_trace("Loaded Jet extension '%s'", mod)
+			self.extensions[mod] = ext
+		else
+			utils.log_error("Failed to load Jet extension '%s': %s", mod, ext)
+		end
+	end
 end
 
 return M

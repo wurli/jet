@@ -14,16 +14,13 @@ print(instance.info.banner)
 utils.execute(jet, kernel_id, "1 + 1")
 
 local _comm_id, comm_callback = utils.comm_open(jet, kernel_id, "lsp", {
-    ip_address = "127.0.0.1"
+	ip_address = "127.0.0.1",
 })
 
 for _ = 1, 5 do
-    os.execute("sleep 0.5")
-    print(utils.dump(comm_callback()))
+	os.execute("sleep 0.5")
+	print(utils.dump(comm_callback()))
 end
-
-
-
 
 -- utils.execute(jet, kernel_id, "readline('Enter something: ')")
 -- utils.execute(jet, kernel_id, "Sys.sleep(1); 1 + 1")

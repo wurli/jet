@@ -5,18 +5,17 @@ local bar = {}
 bar.__index = bar
 
 setmetatable(bar, {
-    __call = function(self, ...)
-        return self.init(...)
-    end,
+	__call = function(self, ...)
+		return self.init(...)
+	end,
 })
 
 function bar.init(foo)
-    local self = setmetatable({}, bar)
-    self.foo = foo
-    self.type = "bar"
-    return self
+	local self = setmetatable({}, bar)
+	self.foo = foo
+	self.type = "bar"
+	return self
 end
-
 
 ---@class foo
 ---@field bar bar
@@ -25,22 +24,18 @@ local foo = {}
 foo.__index = foo
 
 setmetatable(foo, {
-    __call = function(self, ...)
-        return self.init(...)
-    end,
+	__call = function(self, ...)
+		return self.init(...)
+	end,
 })
 
 function foo.init()
-    local self = setmetatable({}, foo)
-    self.bar = bar(self)
-    self.type = "foo"
-    return self
+	local self = setmetatable({}, foo)
+	self.bar = bar(self)
+	self.type = "foo"
+	return self
 end
 
 local f = foo()
 
-
 print(f.bar.foo.type)
-
-
-

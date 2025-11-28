@@ -5,11 +5,6 @@ local M = {}
 ---@alias Jet.Ui.Image.transform fun(match: Jet.Ui.Image.match, ctx: Jet.Ui.Image.ctx)
 ---@alias Jet.Ui.Image.find fun(matches: Jet.Ui.Image.match[])
 
----@class Jet.Ui.Image.Hover
----@field img Jet.Ui.Image.Placement
----@field win snacks.win
----@field buf number
-
 ---@class Jet.Ui.Image.ctx
 ---@field buf number
 ---@field lang string
@@ -42,16 +37,6 @@ M.transforms = {
 		local line = vim.api.nvim_buf_get_lines(ctx.buf, row, row + 1, false)[1]
 		img.src = line:sub(col + 1)
 	end,
-	typst = function(img, ctx)
-		if not img.content then
-			return
-		end
-		img.content = Snacks.picker.util.tpl(Snacks.image.config.math.typst.tpl, {
-			color = Snacks.util.color("SnacksImageMath") or "#000000",
-			header = M.get_header(ctx.buf),
-			content = img.content,
-		}, { indent = true, prefix = "$" })
-	end,
 	data_img = function(img, ctx)
 		if not vim.base64 then
 			return
@@ -68,40 +53,8 @@ M.transforms = {
 		img.src = nil
 		img.ext = ft:match("^image/(%w+)$") or "png"
 	end,
-	latex = function(img, ctx)
-		if not (img.content and img.ext == "math.tex") then
-			return
-		end
-		local fg = Snacks.util.color("SnacksImageMath") or "#000000"
-		local content = vim.trim(img.content or "")
-		content = content:gsub("^%$+`?", ""):gsub("`?%$+$", "")
-		content = content:gsub("^\\[%[%(]", ""):gsub("\\[%]%)]$", "")
-		if not content:find("^\\begin") then
-			content = ("\\[%s\\]"):format(content)
-		end
-		local packages = { "xcolor" }
-		vim.list_extend(packages, Snacks.image.config.math.latex.packages)
-		vim.list_extend(packages, M.get_packages(ctx.buf))
-		table.sort(packages)
-		local seen = {} ---@type table<string, boolean>
-		packages = vim.tbl_filter(function(p)
-			if seen[p] then
-				return false
-			end
-			seen[p] = true
-			return true
-		end, packages)
-		img.content = Snacks.picker.util.tpl(Snacks.image.config.math.latex.tpl, {
-			font_size = Snacks.image.config.math.latex.font_size or "large",
-			packages = table.concat(packages, ", "),
-			header = M.get_header(ctx.buf),
-			color = fg:upper():sub(2),
-			content = content,
-		}, { indent = true, prefix = "$" })
-	end,
 }
 
-local hover ---@type Jet.Ui.Image.Hover?
 local uv = vim.uv or vim.loop
 local dir_cache = {} ---@type table<string, boolean>
 local buf_cache = {} ---@type table<number,{tick: number, [string]:any}>
@@ -338,14 +291,6 @@ function M._img(ctx)
 	return img
 end
 
-function M.hover_close()
-	if hover then
-		hover.win:close()
-		hover.img:close()
-		hover = nil
-	end
-end
-
 --- Get the image at the cursor (if any)
 ---@param cb fun(image_src?:string, image_pos?: Jet.Ui.Image.Pos)
 function M.at_cursor(cb)
@@ -366,73 +311,6 @@ function M.at_cursor(cb)
 	end, { from = cursor[1], to = cursor[1] + 1 })
 end
 
-function M.hover()
-	local current_win = vim.api.nvim_get_current_win()
-	local current_buf = vim.api.nvim_get_current_buf()
-
-	if hover and hover.win.win == current_win and hover.win:valid() then
-		return
-	end
-
-	if hover and (hover.buf ~= current_buf or vim.fn.mode() ~= "n") then
-		return M.hover_close()
-	end
-
-	if hover and not hover.win:valid() then
-		M.hover_close()
-	end
-
-	M.at_cursor(function(src)
-		if not src then
-			return M.hover_close()
-		end
-
-		if hover and hover.img.img.src ~= src then
-			M.hover_close()
-		elseif hover then
-			hover.img:update()
-			return
-		end
-
-		local win = Snacks.win(Snacks.win.resolve(Snacks.image.config.doc, "snacks_image", {
-			show = false,
-			enter = false,
-			wo = { winblend = Snacks.image.terminal.env().placeholders and 0 or nil },
-		}))
-		win:open_buf()
-		local updated = false
-		local o = Snacks.config.merge({}, Snacks.image.config.doc, {
-			on_update_pre = function()
-				if hover and not updated then
-					updated = true
-					local loc = hover.img:state().loc
-					win.opts.width = loc.width
-					win.opts.height = loc.height
-					win:show()
-				end
-			end,
-			inline = false,
-		})
-		hover = {
-			win = win,
-			buf = current_buf,
-			img = Snacks.image.placement.new(win.buf, src, o),
-		}
-		vim.api.nvim_create_autocmd({ "BufWritePost", "CursorMoved", "ModeChanged", "BufLeave" }, {
-			group = vim.api.nvim_create_augroup("snacks.image.hover", { clear = true }),
-			callback = function()
-				if not hover then
-					return true
-				end
-				M.hover()
-				if not hover then
-					return true
-				end
-			end,
-		})
-	end)
-end
-
 ---@param buf number
 function M._attach(buf)
 	if not vim.api.nvim_buf_is_valid(buf) then
@@ -449,17 +327,7 @@ function M._attach(buf)
 		return
 	end
 
-	if inline then
-		Snacks.image.inline.new(buf)
-	else
-		local group = vim.api.nvim_create_augroup("snacks.image.doc." .. buf, { clear = true })
-		vim.api.nvim_create_autocmd({ "CursorMoved" }, {
-			group = group,
-			buffer = buf,
-			callback = vim.schedule_wrap(M.hover),
-		})
-		vim.schedule(M.hover)
-	end
+	require("jet.core.ui.image.inline").new(buf)
 end
 
 ---@param buf number

@@ -5,7 +5,7 @@ local jet = utils.load_jet()
 utils.cat_header("Available kernels", "=")
 print()
 for path, spec in pairs(jet.list_available_kernels()) do
-    print(("- %s (%s)"):format(spec.display_name, path))
+	print(("- %s (%s)"):format(spec.display_name, path))
 end
 print()
 
@@ -32,4 +32,3 @@ utils.list_running_kernels(jet)
 utils.execute(jet, ipy_id, "2 + 2", {}, ipy_info.display_name)
 
 -- Jet should automatically clean up the ARK kernel on shutdown
-

@@ -9,11 +9,15 @@ print(info.banner)
 
 utils.execute(jet, kernel_id, "1 + 1")
 utils.execute(jet, kernel_id, "input('Enter something')")
-utils.execute(jet, kernel_id, [[
+utils.execute(
+	jet,
+	kernel_id,
+	[[
 import time
 time.sleep(1)
 1 + 1
-]])
+]]
+)
 
 -- User expressions
 utils.execute(jet, kernel_id, "1 + 1", { test = "2 ** 2" })
@@ -24,11 +28,7 @@ utils.is_complete(jet, kernel_id, "for i in range(3):")
 utils.is_complete(jet, kernel_id, "1 + 1")
 utils.is_complete(jet, kernel_id, "$")
 
-utils.execute(
-    jet,
-    kernel_id,
-    [[my_inconveniently_named_var = 1]]
-)
+utils.execute(jet, kernel_id, [[my_inconveniently_named_var = 1]])
 
 -- Try getting completions (ark doesn't do these)
 utils.get_completions(jet, kernel_id, "my_inconv", 9)
