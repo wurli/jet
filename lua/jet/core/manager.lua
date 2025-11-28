@@ -47,44 +47,19 @@ setmetatable(Manager, {
 	end,
 })
 
----@param opts? { bufnr?: number, filetype?: string }
-function Manager:open_notebook(opts)
-	opts = opts or {}
-	opts.bufnr = opts.bufnr or 0
-	-- opts.filetype = opts.filetype or opts.bufnr == 0 and utils.get_cur_filetype() or vim.bo[opts.bufnr].filetype
-	opts.bufnr = opts.bufnr ~= 0 and opts.bufnr or vim.api.nvim_get_current_buf()
-
-	-- First try looking for an active kernel for the current buffer
-	self:get_kernel(opts, function(_, id)
-		if id then
-			local kernel = self.running[id]
-			if kernel.ui then
-				kernel.ui:show()
-			else
-				-- I'm not sure why this would ever be the case but seems like
-				-- the right thing to do?
-				kernel:init_ui("notebook", {
-					show = true,
-					bufnr = opts.bufnr,
-				})
-			end
+---@param bufnr? number
+function Manager:open_notebook(bufnr)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	local running = vim.tbl_keys(self.map_kernel_buffer[bufnr] or {})
+	self:get_kernel({ status = "inactive", not_filetype = running }, function(spec_path, _)
+		if not spec_path then
+			utils.log_info("Could not find an avaialble kernel")
 			return
 		end
-
-		--- ...If there's no kernel already active, start one
-		self:get_kernel({ status = "inactive" }, function(spec_path, _)
-			if not spec_path then
-				utils.log_info("No available kernel for filetype '%s'", opts.filetype)
-				return
-			end
-			local kernel = require("jet.core.kernel").start(spec_path)
-			self.map_kernel_buffer[opts.bufnr] = self.map_kernel_buffer[opts.bufnr] or {}
-			self.map_kernel_buffer[opts.bufnr][opts.filetype] = kernel
-			kernel:init_ui("notebook", {
-				show = true,
-				bufnr = opts.bufnr,
-			})
-		end)
+		local kernel = require("jet.core.kernel").start(spec_path)
+		self.map_kernel_buffer[bufnr] = self.map_kernel_buffer[bufnr] or {}
+		self.map_kernel_buffer[bufnr][kernel.filetype] = kernel
+		kernel:init_ui("notebook", { show = true, bufnr = bufnr })
 	end)
 end
 
@@ -245,6 +220,8 @@ end
 ---Filetype for the kernel
 ---@field filetype? string
 ---
+---@field not_filetype? string | string[]
+---
 ---How the kernel is being used
 ---@field usage? "last_used"
 ---
@@ -314,6 +291,16 @@ function Manager:_filter(kernels, opts)
 			---@param k Jet.Manager.ListItem
 			function(k)
 				return is_in(k.filetype, opts.filetype)
+			end,
+			kernels
+		)
+	end
+
+	if opts.not_filetype then
+		kernels = vim.tbl_filter(
+			---@param k Jet.Manager.ListItem
+			function(k)
+				return not is_in(k.filetype, opts.not_filetype)
 			end,
 			kernels
 		)

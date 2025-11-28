@@ -18,12 +18,12 @@ print("hi")
 print("hello from python")
 import time
 time.sleep(1)
-print("Pretty swish!")
+for i in range(3):
+    print(i)
+    time.sleep(1)
 ```
 
 ``` lua
-
 kernel.execute = function()
 end
-
 ```
