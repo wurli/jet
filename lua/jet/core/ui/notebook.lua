@@ -119,21 +119,26 @@ function NotebookChunk:show()
 		})
 	end
 
-	local chunk_backdrop_padding = {}
+	local chunk_backdrop_lines = {}
 	for _ = 1, n_lines do
-		table.insert(chunk_backdrop_padding, { "", "Normal" })
+		table.insert(chunk_backdrop_lines, { { "", "Normal" } })
 	end
 
-	-- if #vim.api.nvim_buf_get_extmark_by_id(self.notebook.bufnr, self.notebook.ns, self.extmark or -99, {}) == 0 then
-	-- 	self.extmark = vim.api.nvim_buf_set_extmark(self.notebook.bufnr, self.notebook.ns, self:src().end_row, 0, {
-	-- 		virt_lines = chunk_backdrop_padding,
-	-- 	})
-	-- else
-	-- 	vim.api.nvim_buf_set_extmark(self.notebook.bufnr, self.notebook.ns, self:src().end_row, 0, {
-	-- 		id = self.extmark,
-	-- 		virt_lines = chunk_backdrop_padding,
-	-- 	})
-	-- end
+    vim.print({
+        output = self.output,
+        backdrop = chunk_backdrop_lines
+    })
+
+	if #vim.api.nvim_buf_get_extmark_by_id(self.notebook.bufnr, self.notebook.ns, self.extmark or -99, {}) == 0 then
+		self.extmark = vim.api.nvim_buf_set_extmark(self.notebook.bufnr, self.notebook.ns, self:src().end_row, 0, {
+			virt_lines = chunk_backdrop_lines,
+		})
+	else
+		vim.api.nvim_buf_set_extmark(self.notebook.bufnr, self.notebook.ns, self:src().end_row, 0, {
+			id = self.extmark,
+			virt_lines = chunk_backdrop_lines,
+		})
+	end
 
 	vim.api.nvim_win_set_config(self.winnr, {
 		height = n_lines,
@@ -147,6 +152,7 @@ end
 ---@param chunk Jet.Execute.Chunk
 function Notebook:execute_chunk(chunk)
 	local id = chunk.node:id()
+    vim.print(id)
 	self.results[id] = self.results[id] or NotebookChunk(chunk, self)
 end
 

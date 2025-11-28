@@ -57,6 +57,10 @@ M.resolve_filetype = function(opts)
 		end
 	end
 
+    -- TODO: add a mapped list which users can add to.
+    -- Turns out this is quite handy to have, e.g. if you have a ftplugin named
+    -- 'R.lua' then 'R' will be returned by `vim.fn.getcompletion("", "filetype")`.
+    -- Obvs you should probs just rename your ftplugin, but it's not an obvious fix.
 	if opts.language then
 		-- :'(
 		local vim_filetypes = vim.fn.getcompletion("", "filetype")

@@ -1,6 +1,6 @@
 Jet = require("jet.core.engine")
 Manager = require("jet.core.manager")
-Manager:open_repl()
+vim.print(Manager:list_kernels())
 
 local start_ark_lsp = function(id)
 	local _comm_id, callback = Jet.comm_open(id, "lsp", { ip_address = "127.0.0.1" })
