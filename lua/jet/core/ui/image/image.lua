@@ -49,6 +49,7 @@ end
 ---@param src string
 function M.new(src)
 	local self = setmetatable({}, M)
+	self.data = src
 	self.src = src
 	self.file = self:convert()
 	if images[self.file] then
@@ -144,10 +145,12 @@ function M:send()
 	-- local image
 	if not terminal.env().remote then
 		terminal.request({
-			t = "f",
+			-- t = "f",
+			t = "d",
 			i = self.id,
 			f = 100,
-			data = Snacks.util.base64(self.file),
+			-- data = Snacks.util.base64(self.file),
+			data = self.data,
 		})
 	else
 		-- remote image

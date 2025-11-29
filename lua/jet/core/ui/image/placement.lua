@@ -19,7 +19,7 @@ M.__index = M
 
 local terminal = require("jet.core.ui.image").terminal
 local uv = vim.uv or vim.loop
-local ns = vim.api.nvim_create_namespace("snacks.image")
+local ns = vim.api.nvim_create_namespace("jet.image")
 M.ns = ns
 local PLACEHOLDER = vim.fn.nr2char(0x10EEEE)
 local placements = {} ---@type table<number, table<number, Jet.Ui.Image.Placement>>
@@ -348,7 +348,8 @@ function M:render_grid(loc)
 		self:_render(extmarks)
 	else
 		local is_inline = has_before or has_after
-		local icon = require("jet.core.ui.image.config").icons[self.opts.type or "image"] or require("jet.core.ui.image.config").icons.image
+		local icon = require("jet.core.ui.image.config").icons[self.opts.type or "image"]
+			or require("jet.core.ui.image.config").icons.image
 		-- render below in virtual lines
 		extmarks[#extmarks + 1] = {
 			row = range[1] - 1,
@@ -471,7 +472,11 @@ function M:state()
 
 	width = minmax(self.opts.width or width, self.opts.min_width, self.opts.max_width)
 	height = minmax(self.opts.height or height, self.opts.min_height, self.opts.max_height)
-	local size = require("jet.core.ui.image.util").fit(self.img.file, { width = width, height = height }, { info = self.img.info })
+	local size = require("jet.core.ui.image.util").fit(
+		self.img.file,
+		{ width = width, height = height },
+		{ info = self.img.info }
+	)
 
 	local pos = self.opts.pos or { 1, 0 }
 

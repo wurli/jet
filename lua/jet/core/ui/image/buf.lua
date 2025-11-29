@@ -10,7 +10,7 @@ function M._attach(buf, opts)
 	end
 	opts = opts or {}
 	local file = opts.src or vim.api.nvim_buf_get_name(buf)
-	if not require("jet.core.ui.image").supports(file) then
+	if not require("jet.core.ui.image").supports(file) and false then
 		local lines = {} ---@type string[]
 		lines[#lines + 1] = "# Image viewer"
 		lines[#lines + 1] = "- **file**: `" .. file .. "`"

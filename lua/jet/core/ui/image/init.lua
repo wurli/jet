@@ -227,7 +227,6 @@ function M.langs()
 	end, queries)
 end
 
----@private
 ---@param ev? vim.api.keyset.create_autocmd.callback_args
 function M.setup(ev)
 	if did_setup then
