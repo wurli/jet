@@ -2,7 +2,14 @@
 local M = {}
 
 ---@class Jet.Config.Opts
-local defaults = {}
+local defaults = {
+	image = {
+		---@type string
+		dir = vim.fn.stdpath("data") .. "/jet/images/",
+		---@type "snacks"
+		provider = "snacks",
+	},
+}
 
 ---@as Jet.Config.Opts
 local config = vim.deepcopy(defaults)

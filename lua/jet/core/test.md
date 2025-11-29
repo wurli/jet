@@ -7,11 +7,11 @@ print("from")
 Sys.sleep(1)
 print("this")
 Sys.sleep(1)
-print("notebook!")
+hist(rnorm(1000))
 ```
 
 ``` r
-print("hi")
+hist(rnorm(100))
 ```
 
 ``` python

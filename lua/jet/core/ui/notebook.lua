@@ -177,6 +177,12 @@ function Chunk:execute()
 		if msg.type == "execute_input" then
 			return
 		end
+
+		if msg.type == "display_data" then
+			self:show_image(utils.display_data_to_file(msg, self.notebook.kernel))
+			return
+		end
+
 		local text = utils.msg_to_string(msg)
 		if text then
 			self.output.text = self.output.text .. text
@@ -186,6 +192,14 @@ function Chunk:execute()
 			pcall(vim.api.nvim_chan_send, self.output.channel, text)
 		end
 	end)
+end
+
+---@param path string?
+function Chunk:show_image(path)
+	if not path then
+		return
+	end
+	utils.image_to_buf(path, self.output.bufnr)
 end
 
 function Chunk:reset_output()

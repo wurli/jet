@@ -221,7 +221,9 @@ end
 
 local jet_augroup = vim.api.nvim_create_augroup("Jet", { clear = true })
 
-Jet.setup = function(_)
+---@param opts Jet.Config.Opts
+Jet.setup = function(opts)
+	require("jet.core.config").set(opts)
 	require("jet.core.ui.highlights").set()
 
 	vim.api.nvim_create_autocmd("BufWinEnter", {

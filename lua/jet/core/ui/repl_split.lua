@@ -313,6 +313,12 @@ function ReplSplit:execute_code(code, callback, on_complete)
 			-- tell what's input and what's output.
 			msg.data.code = self:_indent_get_main() .. msg.data.code:gsub("\n", "\n" .. self:_indent_get_continue())
 		end
+
+		if msg.type == "display_data" then
+			self:_display_image(utils.display_data_to_file(msg, self.kernel))
+			return
+		end
+
 		self:_display_output(utils.msg_to_string(msg))
 		self:_scroll_to_end()
 	end, function()
@@ -493,6 +499,29 @@ function ReplSplit:_display_output(text)
 	end
 
 	vim.api.nvim_chan_send(self.output_channel, text)
+end
+
+---@param path? string
+function ReplSplit:_display_image(path)
+	if not path then
+		return
+	end
+
+	local h_scale = 0.75
+	local v_scale = 0.75
+	local height = vim.o.lines
+	local width = vim.o.columns
+
+	local buf = vim.api.nvim_create_buf(false, true)
+	local _ = vim.api.nvim_open_win(buf, true, {
+		relative = "editor",
+		height = math.floor(height * v_scale),
+		width = math.floor(width * h_scale),
+		row = math.floor(height * (1 - v_scale) / 2),
+		col = math.floor(width * (1 - h_scale) / 2),
+	})
+
+	utils.image_to_buf(path, buf)
 end
 
 return ReplSplit

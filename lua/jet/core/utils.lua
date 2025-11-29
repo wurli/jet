@@ -218,6 +218,77 @@ M.msg_to_string = function(msg)
 	return out
 end
 
+---@param path string
+---@param buf integer
+M.image_to_buf = function(path, buf)
+	Snacks.image.buf.attach(buf, {
+		src = path,
+		inline = true,
+	})
+end
+
+---@param msg Jet.Msg.DisplayData
+---@param kernel Jet.Kernel
+---@return string? # The path to the created file
+M.display_data_to_file = function(msg, kernel)
+	if vim.tbl_count(msg.data.data) > 1 then
+		M.log_warning("Display data has more than one entry: %s", vim.inspect(vim.tbl_keys(msg.data.data)))
+	end
+	for mimetype, data in pairs(msg.data.data) do
+		return M.base64_to_file(mimetype, data, {
+			filetype = kernel and kernel.filetype,
+			kernel_name = kernel and kernel.instance.spec.display_name,
+		})
+	end
+end
+
+---@param x string
+---@param multiple integer
+---@param pad string Should be a single character
+---@return string
+local pad_to_multiple = function(x, multiple, pad)
+	local n_pad = (multiple - (#x % multiple)) % multiple
+	return x .. pad:rep(n_pad)
+end
+
+---@param mimetype string E.g. `"image/png"`
+---@param data string Base64-encoded data
+---@param opts? { kernel_name: string?, filetype: string? }
+---@return string?
+M.base64_to_file = function(mimetype, data, opts)
+	local bytes = vim.base64.decode(pad_to_multiple(data, 4, "="))
+
+	local dir = require("jet.core.config").image.dir
+	pcall(vim.fn.mkdir, dir, "p")
+
+	---@param s string?
+	local sanitise = function(s)
+		return (s or ""):lower():gsub("%W", "-"):gsub("^-*", ""):gsub("-*$", ""):gsub("-+", "-")
+	end
+
+	opts = opts or {}
+	local file_name = table.concat({
+		os.date("%Y-%m-%d-%H:%M:%S"),
+		sanitise(opts.filetype or vim.bo.filetype),
+		sanitise(opts.kernel_name or "jet"),
+	}, "__")
+
+	local extension = mimetype:gsub("^[^/]*/", "")
+	local file_path = vim.fs.joinpath(dir, file_name .. "." .. extension)
+	-- local file_path = file_name .. "." .. extension
+
+	local file, error = io.open(file_path, "wb")
+	if not file then
+		M.log_error("Failed to write file `%s`: %s", file_path, error)
+		return
+	end
+
+	file:write(bytes)
+	file:close()
+
+	return file_path
+end
+
 M.log_debug = function(msg, ...)
 	vim.notify(msg:format(...), vim.log.levels.DEBUG, {})
 end
@@ -236,28 +307,5 @@ end
 M.log_warn = function(msg, ...)
 	vim.notify(msg:format(...), vim.log.levels.WARN, {})
 end
-
--- local get_win_move_keymaps = function()
--- 	local patterns = {}
--- 	for _, key in ipairs({ "h", "j", "k", "l" }) do
--- 		table.insert(patterns, "<c%-w><c%-" .. key .. ">")
--- 		table.insert(patterns, "<c%-w>" .. key)
--- 	end
--- 	local move_maps = vim.tbl_filter(function(x)
--- 		if not x.rhs then
--- 			return false
--- 		end
--- 		for _, p in ipairs(patterns) do
--- 			if x.rhs:lower():match(p) then
--- 				return true
--- 			end
--- 		end
--- 		return false
--- 	end, vim.api.nvim_get_keymap("n"))
--- 	return vim.tbl_map(function(x)
--- 		return x.lhs
--- 	end, move_maps)
--- end
--- vim.print(get_win_move_keymaps())
 
 return M
