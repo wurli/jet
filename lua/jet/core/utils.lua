@@ -220,10 +220,16 @@ end
 
 ---@param path string
 ---@param buf integer
-M.image_to_buf = function(path, buf)
+---@param opts? { row?: integer, col?: integer, height?: integer, width?: integer }
+M.image_to_buf = function(path, buf, opts)
+	opts = opts or {}
 	Snacks.image.buf.attach(buf, {
 		src = path,
 		inline = true,
+		type = "image",
+		pos = { opts.row or 1, opts.col or 0 },
+		width = opts.width,
+		height = opts.height,
 	})
 end
 

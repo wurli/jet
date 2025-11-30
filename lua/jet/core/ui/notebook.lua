@@ -1,6 +1,7 @@
 local utils = require("jet.core.utils")
 
 local USE_BORDER = true
+local IMAGE_HEIGHT = 20
 
 ---@class Jet.Ui.Notebook
 ---@field kernel Jet.Kernel
@@ -199,7 +200,10 @@ function Chunk:show_image(path)
 	if not path then
 		return
 	end
-	utils.image_to_buf(path, self.output.bufnr)
+	self.output.text = self.output.text .. ("\n"):rep(IMAGE_HEIGHT)
+	self:show()
+	vim.api.nvim_chan_send(self.output.channel, ("\n"):rep(IMAGE_HEIGHT))
+	utils.image_to_buf(path, self.output.bufnr, { row = self:n_lines() - IMAGE_HEIGHT, height = IMAGE_HEIGHT })
 end
 
 function Chunk:reset_output()
@@ -230,8 +234,9 @@ function Chunk:show()
 	local n_lines = self:n_lines()
 
 	local win_info = vim.fn.getwininfo(self.source.winnr)[1]
-	local chunk_win_width = win_info.width - win_info.textoff - 1
+	local chunk_win_width = win_info.width - win_info.textoff - (USE_BORDER and 2 or 0)
 
+	---@type vim.api.keyset.win_config
 	local win_config = {
 		relative = "win",
 		win = self.source.winnr,
