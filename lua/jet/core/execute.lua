@@ -39,11 +39,11 @@ end
 M.get_curr_expr = function()
 	-- Note: we want the filetype at the _cursor_, not the buffer filetype
 	local ok, ft_module = pcall(require, "jet.filetype." .. utils.get_cur_filetype())
-	if not ok or not ft_module.get_expr then
+	if not ok or not ft_module.get_curr_expr then
 		return M.get_curr_line()
 	end
 
-	return ft_module.get_expr()
+	return ft_module.get_curr_expr()
 end
 
 ---@return string[]

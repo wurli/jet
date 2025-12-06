@@ -38,6 +38,15 @@ function kernel.start(spec_path)
 	self.id, self.instance = engine.start_kernel(spec_path)
 	manager.running[self.id] = self
 	self.filetype = self:_filetype_get()
+
+	vim.api.nvim_exec_autocmds("User", {
+		pattern = "JetKernelStarted",
+		modeline = false,
+		data = {
+			kernel_id = self.id,
+		},
+	})
+
 	return self
 end
 

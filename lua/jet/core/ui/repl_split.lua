@@ -230,7 +230,7 @@ function ReplSplit:_init_ui()
 			for _, cfg in pairs(vim.lsp._enabled_configs) do
 				if cfg.resolved_config then
 					local ft = cfg.resolved_config.filetypes
-					if ft and vim.tbl_contains(ft, self.kernel.filetype) or not ft then
+					if vim.tbl_contains(ft or {}, self.kernel.filetype) or not ft then
 						vim.lsp.start(cfg.resolved_config, {
 							bufnr = self.ui.prompt.bufnr,
 						})

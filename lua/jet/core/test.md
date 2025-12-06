@@ -50,7 +50,7 @@ print("this")
 Sys.sleep(1)
 print("notebook!")
 Sys.sleep(1)
-# hist(rnorm(100))
+hist(rnorm(100))
 ```
 
 ``` r
