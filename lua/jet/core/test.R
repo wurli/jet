@@ -11,10 +11,8 @@ options(cli.hyperlink_run = TRUE)
 options(cli.hyperlink_help = TRUE)
 options(cli.hyperlink_vignette = TRUE)
 
-print("bla")
 
 library(tidyverse)
-
 
 tibble(x = 1:10, y = rnorm(10))
 

@@ -28,4 +28,3 @@ end
 local ark_id = Manager:list_kernels({ status = "active" })[1].id or ""
 Manager.running[ark_id]:execute({ "options(cli.default_num_colors = 256L)" })
 start_ark_lsp(ark_id)
-

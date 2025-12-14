@@ -242,24 +242,57 @@ function ReplSplit:_init_ui()
 	--- Attach LSP to the REPL input buffer
 	--- (TODO: give the user the ability to disable this)
 	self.ui.prompt:autocmd("BufEnter", {
-		callback = function()
+		callback = vim.schedule_wrap(function()
 			for _, cfg in pairs(vim.lsp._enabled_configs) do
 				if cfg.resolved_config then
+					-- vim.print({ lsp_ft = cfg.resolved_config.filetypes, repl_ft = self.kernel.filetype })
 					local ft = cfg.resolved_config.filetypes
-					if vim.tbl_contains(ft or {}, self.kernel.filetype) or not ft then
+					if vim.tbl_contains(ft or {}, self.kernel.filetype) then
 						vim.lsp.start(cfg.resolved_config, {
 							bufnr = self.ui.prompt.buf,
 						})
 					end
 				end
 			end
-		end,
+		end),
 	})
+
+	-- If the user removes the Jet repl buffer from one of the Jet repl windows
+	-- (e.g. ctrl-i/ctrl-0), hide the other window as well.
+	self.ui.prompt:autocmd("BufWinLeave", {
+		callback = vim.schedule_wrap(function()
+			print("BufLeave prompt: hiding")
+			local eventignore = vim.opt.eventignore
+			vim.opt.eventignore = "all"
+			self.ui.output:hide()
+			vim.opt.eventignore = eventignore
+		end),
+	})
+	self.ui.output:autocmd("BufWinLeave", {
+		callback = vim.schedule_wrap(function()
+			print("BufLeave output: hiding")
+			local eventignore = vim.opt.eventignore
+			vim.opt.eventignore = "all"
+			self.ui.prompt:hide()
+			vim.opt.eventignore = eventignore
+		end),
+	})
+
+	-- Conversely, if either window is entered, show both windows.
+	for _, ui in pairs(self.ui) do
+		ui:autocmd("BufWinEnter", {
+			callback = vim.schedule_wrap(function()
+				print("BufEnter: showing")
+				self:show()
+			end),
+		})
+	end
 
 	vim.api.nvim_create_autocmd("BufUnload", {
 		group = self._augroup,
 		callback = function(e)
 			if vim.tbl_contains({ self.ui.prompt.buf, self.ui.output.buf }, e.buf) then
+				print("BufUnload: deleting")
 				self:delete()
 			end
 		end,
@@ -293,7 +326,10 @@ function ReplSplit:_init_ui()
 			end
 
 			if layout_needs_reset then
-				self:set_layout()
+				print("WinResized: resetting layout")
+				vim.schedule(function()
+					self:set_layout()
+				end)
 			end
 		end,
 	})
@@ -302,7 +338,10 @@ function ReplSplit:_init_ui()
 		group = self._augroup,
 		callback = function(e)
 			if vim.tbl_contains({ self.ui.prompt.buf, self.ui.output.buf }, e.buf) then
-				self:hide()
+				print("WinClosed: hiding")
+				vim.schedule(function()
+					self:hide()
+				end)
 			end
 		end,
 	})

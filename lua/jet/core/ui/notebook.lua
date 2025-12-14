@@ -1,6 +1,6 @@
 local utils = require("jet.core.utils")
 
-local USE_BORDER = true
+local USE_BORDER = false
 local IMAGE_HEIGHT = 20
 
 ---@class Jet.Ui.Notebook
@@ -31,7 +31,7 @@ function Notebook:init(kernel, opts)
 	self.results = {}
 	self.kernel = kernel
 	self.bufnr = opts.bufnr
-	self.ns = vim.api.nvim_create_augroup("jet_notebook__" .. opts.bufnr .. "__" .. kernel.id)
+	self.ns = vim.api.nvim_create_namespace("jet_notebook__" .. opts.bufnr .. "__" .. kernel.id)
 	self.augroup = vim.api.nvim_create_augroup("jet_notebook__" .. opts.bufnr .. "__" .. kernel.id, {})
 
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "WinResized" }, {
