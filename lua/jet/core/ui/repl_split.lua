@@ -59,9 +59,15 @@ function ReplSplit:delete()
 	vim.api.nvim_delete_augroup_by_id(self._augroup)
 end
 
-function ReplSplit:show()
-	self:_show_output_win()
-	self:_show_prompt_win()
+---@param first? "prompt" | "output"
+function ReplSplit:show(first)
+	if first == "prompt" then
+		self:_show_prompt_win()
+		self:_show_output_win()
+	else
+		self:_show_output_win()
+		self:_show_prompt_win()
+	end
 	self:_statusline_set()
 	self:_set_win_heights()
 end
@@ -257,24 +263,52 @@ function ReplSplit:_init_ui()
 		end),
 	})
 
+	vim.api.nvim_create_autocmd("BufUnload", {
+		group = self._augroup,
+		callback = function(e)
+			if vim.tbl_contains({ self.ui.prompt.buf, self.ui.output.buf }, e.buf) then
+				print("BufUnload: deleting")
+				self:delete()
+			end
+		end,
+	})
+
+	vim.api.nvim_create_autocmd("WinClosed", {
+		group = self._augroup,
+		callback = function(e)
+			local to_hide, type
+			if e.buf == self.ui.output.buf then
+				to_hide = self.ui.prompt
+				type = "output"
+			elseif e.buf == self.ui.prompt.buf then
+				to_hide = self.ui.output
+				type = "prompt"
+			end
+			if to_hide then
+				vim.schedule(function()
+					print("WinClosed: hiding " .. type)
+					to_hide:hide()
+				end)
+			end
+		end,
+	})
+
 	-- If the user removes the Jet repl buffer from one of the Jet repl windows
 	-- (e.g. ctrl-i/ctrl-0), hide the other window as well.
 	self.ui.prompt:autocmd("BufWinLeave", {
 		callback = vim.schedule_wrap(function()
-			print("BufLeave prompt: hiding")
-			local eventignore = vim.opt.eventignore
-			vim.opt.eventignore = "all"
-			self.ui.output:hide()
-			vim.opt.eventignore = eventignore
+			self.ui.prompt:with_eventignore("BufWinLeave", function()
+				print("BufWinLeave prompt: hiding")
+				self.ui.output:hide()
+			end)
 		end),
 	})
 	self.ui.output:autocmd("BufWinLeave", {
 		callback = vim.schedule_wrap(function()
-			print("BufLeave output: hiding")
-			local eventignore = vim.opt.eventignore
-			vim.opt.eventignore = "all"
-			self.ui.prompt:hide()
-			vim.opt.eventignore = eventignore
+			self.ui.output:with_eventignore("BufWinLeave", function()
+				print("BufWinLeave output: hiding")
+				self.ui.prompt:hide()
+			end)
 		end),
 	})
 
@@ -287,22 +321,6 @@ function ReplSplit:_init_ui()
 			end),
 		})
 	end
-
-	vim.api.nvim_create_autocmd("BufUnload", {
-		group = self._augroup,
-		callback = function(e)
-			if vim.tbl_contains({ self.ui.prompt.buf, self.ui.output.buf }, e.buf) then
-				print("BufUnload: deleting")
-				self:delete()
-			end
-		end,
-	})
-
-	self.ui.prompt:autocmd({ "TextChanged", "TextChangedI" }, {
-		callback = function()
-			self:_indent_reset()
-		end,
-	})
 
 	vim.api.nvim_create_autocmd("WinResized", {
 		group = self._augroup,
@@ -326,23 +344,17 @@ function ReplSplit:_init_ui()
 			end
 
 			if layout_needs_reset then
-				print("WinResized: resetting layout")
-				vim.schedule(function()
+				utils.schedule(10, function()
+					print("WinResized: resetting layout")
 					self:set_layout()
 				end)
 			end
 		end,
 	})
 
-	vim.api.nvim_create_autocmd("WinClosed", {
-		group = self._augroup,
-		callback = function(e)
-			if vim.tbl_contains({ self.ui.prompt.buf, self.ui.output.buf }, e.buf) then
-				print("WinClosed: hiding")
-				vim.schedule(function()
-					self:hide()
-				end)
-			end
+	self.ui.prompt:autocmd({ "TextChanged", "TextChangedI" }, {
+		callback = function()
+			self:_indent_reset()
 		end,
 	})
 end

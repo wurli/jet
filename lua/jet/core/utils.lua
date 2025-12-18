@@ -295,6 +295,61 @@ M.base64_to_file = function(mimetype, data, opts)
 	return file_path
 end
 
+local _scheduled_callbacks = {}
+local _run_scheduled_callbacks = vim.schedule_wrap(function()
+	table.sort(_scheduled_callbacks, function(a, b)
+		return a.priority > b.priority
+	end)
+
+	local function run_next_callback()
+		if #_scheduled_callbacks > 0 then
+			vim.schedule(function()
+				local callback = table.remove(_scheduled_callbacks)
+				if callback then
+					callback.callback()
+				end
+				run_next_callback()
+			end)
+		end
+	end
+	run_next_callback()
+end)
+
+---Wraps `vim.schedule()` but allows prioritization and grouping of callbacks.
+---
+---@param priority number Lower numbers run first.
+---@param callback fun()
+---@param group any
+M.schedule = function(priority, callback, group)
+	table.insert(_scheduled_callbacks, {
+		priority = priority,
+		group = group,
+		callback = callback,
+	})
+	_run_scheduled_callbacks()
+end
+
+---@param group any
+M.unschedule = function(group)
+	for index, cb in ipairs(_scheduled_callbacks) do
+		if cb.group == group then
+			table.remove(_scheduled_callbacks, index)
+		end
+	end
+end
+
+---@param priority number
+---@param callback fun(...)
+---@param group any
+M.schedule_wrap = function(priority, callback, group)
+	return function(...)
+		local args = { ... }
+		M.schedule(priority, function()
+			callback(unpack(args))
+		end, group)
+	end
+end
+
 M.log_debug = function(msg, ...)
 	vim.notify(msg:format(...), vim.log.levels.DEBUG, {})
 end

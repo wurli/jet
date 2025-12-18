@@ -214,6 +214,15 @@ function win:autocmd(event, opts)
 	vim.api.nvim_create_autocmd(event, opts)
 end
 
+---@param events string
+---@param callback fun()
+function win:with_eventignore(events, callback)
+	local old = vim.wo[self.win].eventignorewin
+	vim.wo[self.win].eventignorewin = events
+	callback()
+	vim.wo[self.win].eventignorewin = old
+end
+
 ---@param f fun(): any
 ---@return any
 function win:win_call(f)
