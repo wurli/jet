@@ -2,6 +2,12 @@ local utils = require("jet.core.utils")
 local win = require("jet.core.ui.win")
 local spinners = require("jet.core.ui.spinners")
 
+---@param e vim.api.keyset.create_autocmd.callback_args
+local debug = function(e, msg)
+	local buf = ("%s:%s"):format(e.buf, (vim.b[e.buf].jet or {}).type or "na")
+	print(buf .. " - " .. msg)
+end
+
 ---@class Jet.Ui.ReplSplit
 ---@field ui { prompt: Jet.Ui.Win, output: Jet.Ui.Win }
 ---@field zindex number
@@ -149,75 +155,31 @@ function ReplSplit:_statusline_set(opts)
 end
 
 function ReplSplit:_init_ui()
+    -- stylua: ignore start
 	self.ui = {
 		prompt = win.new({
 			show = false,
 			bo = {
-				buftype = "nofile",
-				filetype = self.kernel:_filetype_get(),
+			    buftype = "nofile",
+			    filetype = self.kernel:_filetype_get()
 			},
-			b = {
-				jet = {
-					type = "repl_input",
-					kernel_id = self.kernel.id,
-				},
-			},
-			wo = {
-				signcolumn = "no",
-			},
+			b = { jet = { type = "repl_input", kernel_id = self.kernel.id, } },
+			wo = { signcolumn = "no" },
 			name = self.kernel:name(),
 			augroup = self._augroup,
 			keymaps = {
-				{
-					"ni",
-					"<CR>",
-					function()
-						self:maybe_execute_prompt()
-					end,
-					{ desc = "Jet REPL: execute code" },
-				},
-				{
-					"n",
-					"<C-x>",
-					function()
-						self:interrupt()
-					end,
-					{ desc = "Jet REPL: interrupt execution" },
-				},
-				{
-					"ni",
-					"<c-p>",
-					function()
-						self:_prompt_set(self.kernel:history_get(-1))
-					end,
-					{ desc = "Jet REPL: history previous" },
-				},
-				{
-					"ni",
-					"<c-n>",
-					function()
-						self:_prompt_set(self.kernel:history_get(1))
-					end,
-					{ desc = "Jet REPL: history next" },
-				},
+				{ "ni", "<CR>", function() self:maybe_execute_prompt() end, { desc = "Jet REPL: execute code" } },
+				{ "n", "<C-x>", function() self:interrupt() end, { desc = "Jet REPL: interrupt execution" } },
+				{ "ni", "<c-p>", function() self:_prompt_set(self.kernel:history_get(-1)) end, { desc = "Jet REPL: history previous" } },
+				{ "ni", "<c-n>", function() self:_prompt_set(self.kernel:history_get(1)) end, { desc = "Jet REPL: history next" } },
+				{ "n", "<leader>db", function() vim.print(vim.wo[self.ui.prompt.win].eventignorewin) end, { desc = "DEBUG" } },
 			},
 		}),
 		output = win.new({
 			show = false,
-			bo = {
-				buftype = "nofile",
-				modifiable = false,
-				filetype = "jet",
-			},
-			b = {
-				jet = {
-					type = "repl_output",
-					kernel_id = self.kernel.id,
-				},
-			},
-			wo = {
-				listchars = "",
-			},
+			bo = { buftype = "nofile", modifiable = false, filetype = "jet" },
+			b = { jet = { type = "repl_output", kernel_id = self.kernel.id, } },
+			wo = { listchars = "" },
 			augroup = self._augroup,
 			keymaps = vim.tbl_map(function(key)
 				return {
@@ -233,6 +195,7 @@ function ReplSplit:_init_ui()
 			end, { "i", "I", "a", "A", "c", "C", "s", "S", "o", "O", "p", "P" }),
 		}),
 	}
+	-- stylua: ignore end
 
 	-- Jet sends output from the kernel to a terminal channel in order to
 	-- format ansi formatting.
@@ -251,7 +214,7 @@ function ReplSplit:_init_ui()
 		callback = vim.schedule_wrap(function()
 			for _, cfg in pairs(vim.lsp._enabled_configs) do
 				if cfg.resolved_config then
-					-- vim.print({ lsp_ft = cfg.resolved_config.filetypes, repl_ft = self.kernel.filetype })
+					-- vim.debug({ lsp_ft = cfg.resolved_config.filetypes, repl_ft = self.kernel.filetype })
 					local ft = cfg.resolved_config.filetypes
 					if vim.tbl_contains(ft or {}, self.kernel.filetype) then
 						vim.lsp.start(cfg.resolved_config, {
@@ -267,7 +230,7 @@ function ReplSplit:_init_ui()
 		group = self._augroup,
 		callback = function(e)
 			if vim.tbl_contains({ self.ui.prompt.buf, self.ui.output.buf }, e.buf) then
-				print("BufUnload: deleting")
+				debug(e, "BufUnload: deleting")
 				self:delete()
 			end
 		end,
@@ -276,18 +239,18 @@ function ReplSplit:_init_ui()
 	vim.api.nvim_create_autocmd("WinClosed", {
 		group = self._augroup,
 		callback = function(e)
-			local to_hide, type
+			local to_hide, to_hide_name
 			if e.buf == self.ui.output.buf then
 				to_hide = self.ui.prompt
-				type = "output"
+				to_hide_name = "prompt"
 			elseif e.buf == self.ui.prompt.buf then
 				to_hide = self.ui.output
-				type = "prompt"
+				to_hide_name = "output"
 			end
 			if to_hide then
 				vim.schedule(function()
-					print("WinClosed: hiding " .. type)
-					to_hide:hide()
+					debug(e, "WinClosed: hiding " .. to_hide_name)
+					to_hide:hide({ eventignore = "WinClosed,BufWinLeave" })
 				end)
 			end
 		end,
@@ -296,18 +259,18 @@ function ReplSplit:_init_ui()
 	-- If the user removes the Jet repl buffer from one of the Jet repl windows
 	-- (e.g. ctrl-i/ctrl-0), hide the other window as well.
 	self.ui.prompt:autocmd("BufWinLeave", {
-		callback = vim.schedule_wrap(function()
+		callback = vim.schedule_wrap(function(e)
 			self.ui.prompt:with_eventignore("BufWinLeave", function()
-				print("BufWinLeave prompt: hiding")
-				self.ui.output:hide()
+				debug(e, "BufWinLeave prompt: hiding output")
+				self.ui.output:hide({ eventignore = "WinClosed,BufWinLeave" })
 			end)
 		end),
 	})
 	self.ui.output:autocmd("BufWinLeave", {
-		callback = vim.schedule_wrap(function()
+		callback = vim.schedule_wrap(function(e)
 			self.ui.output:with_eventignore("BufWinLeave", function()
-				print("BufWinLeave output: hiding")
-				self.ui.prompt:hide()
+				debug(e, "BufWinLeave output: hiding prompt")
+				self.ui.prompt:hide({ eventignore = "WinClosed,BufWinLeave" })
 			end)
 		end),
 	})
@@ -315,8 +278,8 @@ function ReplSplit:_init_ui()
 	-- Conversely, if either window is entered, show both windows.
 	for _, ui in pairs(self.ui) do
 		ui:autocmd("BufWinEnter", {
-			callback = vim.schedule_wrap(function()
-				print("BufEnter: showing")
+			callback = vim.schedule_wrap(function(e)
+				debug(e, "BufEnter: showing")
 				self:show()
 			end),
 		})
@@ -324,7 +287,7 @@ function ReplSplit:_init_ui()
 
 	vim.api.nvim_create_autocmd("WinResized", {
 		group = self._augroup,
-		callback = function()
+		callback = function(e)
 			local layout_needs_reset = false
 
 			-- This mildly cursed section handles the case where part of the
@@ -345,7 +308,7 @@ function ReplSplit:_init_ui()
 
 			if layout_needs_reset then
 				utils.schedule(10, function()
-					print("WinResized: resetting layout")
+					debug(e, "WinResized: resetting layout")
 					self:set_layout()
 				end)
 			end

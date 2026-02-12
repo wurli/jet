@@ -10,10 +10,10 @@
 ---@field ns? integer
 
 ---@class Jet.Ui.Win.Keymap
----@field [1] string | string[]
----@field [2] string
----@field [3] string | fun()
----@field [4]? vim.keymap.set.Opts
+---@field [1] string | string[]    Mode (accepts combined modes like "niv")
+---@field [2] string               LHS
+---@field [3] string | fun()       RHS
+---@field [4]? vim.keymap.set.Opts Extra options
 
 ---@class Jet.Ui.Win
 ---@field win integer?
@@ -32,7 +32,7 @@ win.__index = win
 setmetatable(win, {
 	---@return Jet.Ui.Win
 	__call = function(self, ...)
-		return self.init(...)
+		return self.new(...)
 	end,
 })
 
@@ -217,10 +217,15 @@ end
 ---@param events string
 ---@param callback fun()
 function win:with_eventignore(events, callback)
-	local old = vim.wo[self.win].eventignorewin
-	vim.wo[self.win].eventignorewin = events
+	local old
+	pcall(function()
+		old = vim.wo[self.win].eventignorewin
+		vim.wo[self.win].eventignorewin = events
+	end)
 	callback()
-	vim.wo[self.win].eventignorewin = old
+	pcall(function()
+		vim.wo[self.win].eventignorewin = old
+	end)
 end
 
 ---@param f fun(): any
@@ -255,9 +260,12 @@ function win:with_buf(f)
 	end
 end
 
-function win:hide()
+---@param opts? { eventignore: string }
+function win:hide(opts)
 	if self:win_exists() then
-		vim.api.nvim_win_close(self.win, true)
+		self:with_eventignore((opts or {}).eventignore or "", function()
+			vim.api.nvim_win_close(self.win, true)
+		end)
 	end
 end
 
