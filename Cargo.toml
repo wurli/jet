@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
+libc = "0.2"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"

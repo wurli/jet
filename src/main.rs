@@ -5,9 +5,13 @@
 // drives a line-oriented REPL. PNG outputs from the kernel are rendered
 // inline with the kitty graphics protocol.
 
+use std::fmt::Write as FmtWrite;
 use std::io::{Read, Write as IoWrite};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::OnceLock;
+use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -539,72 +543,102 @@ fn warn_if_tmux_passthrough_off() {
     );
 }
 
-// ---------- kitty graphics protocol ----------
+// ---------- kitty graphics protocol (unicode placeholder mode) ----------
 //
-// Format: \x1b_G<keys>;<payload>\x1b\\
-// We use a=T (transmit & display), f=100 (PNG), m=1 for chunked,
-// q=2 (suppress responses). Final chunk has m=0.
+// Why placeholder mode: kitty graphics drawn directly in tmux are not tracked
+// by tmux — they linger across pane switches, scrolling, and redraws. With
+// "unicode placeholder" mode, the image is uploaded once with an `id`, then
+// "placed" by writing real text cells (U+10EEEE) that tmux can move, scroll,
+// and clear like any other character. ghostty/kitty repaints the image
+// wherever those placeholder cells are visible.
 //
-// Inside tmux, the kitty escape is wrapped in a DCS passthrough envelope
-// so tmux forwards it to the outer terminal: \x1bPtmux;<payload>\x1b\\,
-// with every \x1b inside <payload> doubled. tmux requires
-// `set -g allow-passthrough on` for this to work; recent tmux defaults to
-// allowing it, but older versions may need the option set.
+// Steps:
+//   1. Transmit the PNG with `a=T,U=1,i=<id>,f=100,q=2`. `U=1` says the
+//      image will be referenced from text cells, so the terminal does not
+//      draw it immediately.
+//   2. Write `rows × cols` of placeholder text. Each cell:
+//        SGR fg = i  (low 8 bits of image id encoded as 256-color)
+//        U+10EEEE  + row_diacritic + col_diacritic
+//      Image-id MSB encoded via underline color SGR (skipped here — id ≤ 255).
+//
+// Cell pixel size defaults: 10 px wide × 20 px tall. Override with
+// JET_CELL_PX_WIDTH / JET_CELL_PX_HEIGHT.
+
+static NEXT_IMG_ID: AtomicU32 = AtomicU32::new(1);
+
 fn emit_kitty_png(b64_png: &str) -> Result<()> {
-    // Strip whitespace (some kernels insert line breaks) and ensure the
-    // base64 is `=`-padded — ark/R omits trailing padding, but kitty's
-    // graphics decoder rejects unpadded base64 and silently drops the image.
     let mut payload: String = b64_png.chars().filter(|c| !c.is_whitespace()).collect();
     let pad = (4 - payload.len() % 4) % 4;
     for _ in 0..pad {
         payload.push('=');
     }
 
-    // Decode just enough of the PNG to learn its pixel height so we can
-    // advance the cursor past the image. The IHDR chunk is at a fixed
-    // offset: 8-byte signature, 4-byte length, 4-byte "IHDR", 4-byte width,
-    // 4-byte height. We only need the first ~24 base64 chars.
-    let img_px_height = png_height_from_b64_prefix(&payload).unwrap_or(0);
-    let cell_px = std::env::var("JET_CELL_PX_HEIGHT")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(20);
-    let rows = if img_px_height > 0 {
-        img_px_height.div_ceil(cell_px).max(1)
-    } else {
-        1
-    };
+    let (img_w, img_h) = png_dims_from_b64_prefix(&payload).unwrap_or((0, 0));
+    // Cell dimensions: env overrides win; otherwise query the terminal once
+    // and cache. Falls back to typical 9×18 if the query fails.
+    let (queried_w, queried_h) = cell_pixel_size().unwrap_or((9, 18));
+    let cell_w = env_u32("JET_CELL_PX_WIDTH", queried_w);
+    let cell_h = env_u32("JET_CELL_PX_HEIGHT", queried_h);
+
+    // Use floor for rows so we don't reserve a blank bottom row; ceil for
+    // columns so the right edge isn't clipped.
+    let cols = if img_w > 0 { img_w.div_ceil(cell_w).max(1) } else { 40 };
+    let rows = if img_h > 0 { (img_h / cell_h).max(1) } else { 10 };
+
+    // Image ids are 1..=255 (low byte). We wrap; the terminal recognizes
+    // the most-recent transmission for that id.
+    let id = (NEXT_IMG_ID.fetch_add(1, Ordering::Relaxed) % 255) + 1;
 
     let bytes = payload.as_bytes();
     const CHUNK: usize = 4096;
-
-    let mut raw = Vec::with_capacity(bytes.len() + 64);
-    if bytes.len() <= CHUNK {
-        write!(raw, "\x1b_Ga=T,f=100,q=2;{}\x1b\\", payload)?;
-    } else {
-        let mut i = 0;
-        let mut first = true;
-        while i < bytes.len() {
-            let end = (i + CHUNK).min(bytes.len());
-            let more = if end < bytes.len() { 1 } else { 0 };
-            let slice = &bytes[i..end];
-            if first {
-                write!(raw, "\x1b_Ga=T,f=100,q=2,m={};", more)?;
-                first = false;
-            } else {
-                write!(raw, "\x1b_Gm={};", more)?;
-            }
-            raw.extend_from_slice(slice);
-            raw.extend_from_slice(b"\x1b\\");
-            i = end;
+    let mut raw = Vec::with_capacity(bytes.len() + 128);
+    let mut i = 0;
+    let mut first = true;
+    while i < bytes.len() {
+        let end = (i + CHUNK).min(bytes.len());
+        let more = if end < bytes.len() { 1 } else { 0 };
+        if first {
+            write!(
+                raw,
+                "\x1b_Ga=T,U=1,i={},f=100,q=2,m={};",
+                id, more
+            )?;
+            first = false;
+        } else {
+            write!(raw, "\x1b_Gm={};", more)?;
         }
+        raw.extend_from_slice(&bytes[i..end]);
+        raw.extend_from_slice(b"\x1b\\");
+        i = end;
     }
 
     let mut out = std::io::stdout().lock();
+    write_passthrough(&mut out, &raw)?;
+
+    // Build the placeholder grid — `rows` lines, each `cols` cells wide.
+    // Each cell: U+10EEEE then a row diacritic then a column diacritic.
+    let mut grid = String::with_capacity((rows as usize) * (cols as usize) * 16);
+    for r in 0..rows.min(ROW_COL_DIACRITICS.len() as u32) {
+        // SGR foreground = image id (256-color)
+        write!(&mut grid, "\x1b[38;5;{}m", id).unwrap();
+        let row_d = ROW_COL_DIACRITICS[r as usize];
+        for c in 0..cols.min(ROW_COL_DIACRITICS.len() as u32) {
+            let col_d = ROW_COL_DIACRITICS[c as usize];
+            grid.push('\u{10EEEE}');
+            grid.push(char::from_u32(row_d).unwrap());
+            grid.push(char::from_u32(col_d).unwrap());
+        }
+        grid.push_str("\x1b[39m\n");
+    }
+    out.write_all(grid.as_bytes())?;
+    out.flush()?;
+    Ok(())
+}
+
+fn write_passthrough<W: std::io::Write>(out: &mut W, raw: &[u8]) -> std::io::Result<()> {
     if std::env::var_os("TMUX").is_some() {
-        // Wrap in tmux DCS passthrough; double every ESC inside the payload.
         out.write_all(b"\x1bPtmux;")?;
-        for &b in &raw {
+        for &b in raw {
             if b == 0x1b {
                 out.write_all(b"\x1b\x1b")?;
             } else {
@@ -613,30 +647,115 @@ fn emit_kitty_png(b64_png: &str) -> Result<()> {
         }
         out.write_all(b"\x1b\\")?;
     } else {
-        out.write_all(&raw)?;
+        out.write_all(raw)?;
     }
-    // Advance the cursor past the image so the next prompt doesn't draw on
-    // top of it. The kitty `a=T` action does not move the cursor on most
-    // terminals, so we emit one newline per estimated text row of image
-    // height.
-    for _ in 0..rows {
-        out.write_all(b"\n")?;
-    }
-    out.flush()?;
     Ok(())
 }
 
-// Parse just the PNG IHDR to get pixel height. PNG layout:
-//   8 bytes  signature   89 50 4E 47 0D 0A 1A 0A
-//   4 bytes  IHDR length (always 13)
-//   4 bytes  "IHDR"
-//   4 bytes  width  (big-endian)
-//   4 bytes  height (big-endian)
-// We only need the first 24 PNG bytes — i.e. the first 32 base64 chars.
-fn png_height_from_b64_prefix(b64: &str) -> Option<u32> {
-    let prefix: String = b64.chars().take(36).collect();
-    // Re-pad so base64 decode works on the prefix.
-    let mut p = prefix;
+fn env_u32(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(default)
+}
+
+// Cached cell pixel size, queried once from the terminal via `CSI 16 t`.
+// Returns (width, height) or None if the terminal didn't reply or we're
+// not on a tty.
+fn cell_pixel_size() -> Option<(u32, u32)> {
+    static CACHE: OnceLock<Option<(u32, u32)>> = OnceLock::new();
+    *CACHE.get_or_init(query_cell_pixel_size)
+}
+
+fn query_cell_pixel_size() -> Option<(u32, u32)> {
+    // Must have a controlling tty for both directions.
+    let in_fd: RawFd = std::io::stdin().as_raw_fd();
+    let out_fd: RawFd = std::io::stdout().as_raw_fd();
+    if unsafe { libc::isatty(in_fd) } == 0 || unsafe { libc::isatty(out_fd) } == 0 {
+        return None;
+    }
+
+    // Save termios, switch to raw, send the query, read the reply, restore.
+    let mut saved: libc::termios = unsafe { std::mem::zeroed() };
+    if unsafe { libc::tcgetattr(in_fd, &mut saved) } != 0 {
+        return None;
+    }
+    let mut raw = saved;
+    unsafe { libc::cfmakeraw(&mut raw) };
+    raw.c_cc[libc::VMIN] = 0;
+    raw.c_cc[libc::VTIME] = 1; // 100 ms inter-byte timeout
+    if unsafe { libc::tcsetattr(in_fd, libc::TCSANOW, &raw) } != 0 {
+        return None;
+    }
+    // Always restore termios on exit from this scope.
+    struct Restore(RawFd, libc::termios);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            unsafe { libc::tcsetattr(self.0, libc::TCSANOW, &self.1) };
+        }
+    }
+    let _restore = Restore(in_fd, saved);
+
+    // Send `CSI 16 t` — request cell size in pixels. Reply: `CSI 6 ; H ; W t`.
+    let query = b"\x1b[16t";
+    if unsafe { libc::write(out_fd, query.as_ptr() as *const _, query.len()) } < 0 {
+        return None;
+    }
+
+    // Wait briefly for any response before reading.
+    let mut pfd = libc::pollfd {
+        fd: in_fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    if unsafe { libc::poll(&mut pfd, 1, 150) } <= 0 {
+        return None;
+    }
+
+    // Read up to 64 bytes (reply is < 20 bytes); stop after the terminating `t`.
+    let mut buf = [0u8; 64];
+    let mut filled = 0usize;
+    while filled < buf.len() {
+        let n = unsafe {
+            libc::read(
+                in_fd,
+                buf.as_mut_ptr().add(filled) as *mut _,
+                buf.len() - filled,
+            )
+        };
+        if n <= 0 {
+            break;
+        }
+        filled += n as usize;
+        if buf[..filled].iter().any(|&b| b == b't') {
+            break;
+        }
+    }
+
+    parse_cell_size_reply(&buf[..filled])
+}
+
+// Reply format: ESC [ 6 ; <height> ; <width> t
+fn parse_cell_size_reply(b: &[u8]) -> Option<(u32, u32)> {
+    let s = std::str::from_utf8(b).ok()?;
+    // Find "[6;" then split on ';' until 't'.
+    let start = s.find("[6;")?;
+    let after = &s[start + 3..];
+    let end = after.find('t')?;
+    let mut parts = after[..end].split(';');
+    let h: u32 = parts.next()?.parse().ok()?;
+    let w: u32 = parts.next()?.parse().ok()?;
+    if w == 0 || h == 0 {
+        return None;
+    }
+    Some((w, h))
+}
+
+// PNG IHDR layout (after 8-byte signature, 4-byte length, 4 bytes "IHDR"):
+// width: u32 BE, height: u32 BE.
+fn png_dims_from_b64_prefix(b64: &str) -> Option<(u32, u32)> {
+    let mut p: String = b64.chars().take(36).collect();
     while p.len() % 4 != 0 {
         p.push('=');
     }
@@ -644,5 +763,45 @@ fn png_height_from_b64_prefix(b64: &str) -> Option<u32> {
     if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
         return None;
     }
-    Some(u32::from_be_bytes(bytes[20..24].try_into().ok()?))
+    let w = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let h = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    Some((w, h))
 }
+
+// Diacritic codepoints used to encode row/column indices in unicode
+// placeholder cells. Index N → diacritic for row/column N.
+// Source: kitty rowcolumn-diacritics.txt.
+#[rustfmt::skip]
+const ROW_COL_DIACRITICS: &[u32] = &[
+    0x0305, 0x030D, 0x030E, 0x0310, 0x0312, 0x033D, 0x033E, 0x033F, 0x0346, 0x034A,
+    0x034B, 0x034C, 0x0350, 0x0351, 0x0352, 0x0357, 0x035B, 0x0363, 0x0364, 0x0365,
+    0x0366, 0x0367, 0x0368, 0x0369, 0x036A, 0x036B, 0x036C, 0x036D, 0x036E, 0x036F,
+    0x0483, 0x0484, 0x0485, 0x0486, 0x0487, 0x0592, 0x0593, 0x0594, 0x0595, 0x0597,
+    0x0598, 0x0599, 0x059C, 0x059D, 0x059E, 0x059F, 0x05A0, 0x05A1, 0x05A8, 0x05A9,
+    0x05AB, 0x05AC, 0x05AF, 0x05C4, 0x0610, 0x0611, 0x0612, 0x0613, 0x0614, 0x0615,
+    0x0616, 0x0617, 0x0657, 0x0658, 0x0659, 0x065A, 0x065B, 0x065D, 0x065E, 0x06D6,
+    0x06D7, 0x06D8, 0x06D9, 0x06DA, 0x06DB, 0x06DC, 0x06DF, 0x06E0, 0x06E1, 0x06E2,
+    0x06E4, 0x06E7, 0x06E8, 0x06EB, 0x06EC, 0x0730, 0x0732, 0x0733, 0x0735, 0x0736,
+    0x073A, 0x073D, 0x073F, 0x0740, 0x0741, 0x0743, 0x0745, 0x0747, 0x0749, 0x074A,
+    0x07EB, 0x07EC, 0x07ED, 0x07EE, 0x07EF, 0x07F0, 0x07F1, 0x07F3, 0x0816, 0x0817,
+    0x0818, 0x0819, 0x081B, 0x081C, 0x081D, 0x081E, 0x081F, 0x0820, 0x0821, 0x0822,
+    0x0823, 0x0825, 0x0826, 0x0827, 0x0829, 0x082A, 0x082B, 0x082C, 0x082D, 0x0951,
+    0x0953, 0x0954, 0x0F82, 0x0F83, 0x0F86, 0x0F87, 0x135D, 0x135E, 0x135F, 0x17DD,
+    0x193A, 0x1A17, 0x1A75, 0x1A76, 0x1A77, 0x1A78, 0x1A79, 0x1A7A, 0x1A7B, 0x1A7C,
+    0x1B6B, 0x1B6D, 0x1B6E, 0x1B6F, 0x1B70, 0x1B71, 0x1B72, 0x1B73, 0x1CD0, 0x1CD1,
+    0x1CD2, 0x1CDA, 0x1CDB, 0x1CE0, 0x1DC0, 0x1DC1, 0x1DC3, 0x1DC4, 0x1DC5, 0x1DC6,
+    0x1DC7, 0x1DC8, 0x1DC9, 0x1DCB, 0x1DCC, 0x1DD1, 0x1DD2, 0x1DD3, 0x1DD4, 0x1DD5,
+    0x1DD6, 0x1DD7, 0x1DD8, 0x1DD9, 0x1DDA, 0x1DDB, 0x1DDC, 0x1DDD, 0x1DDE, 0x1DDF,
+    0x1DE0, 0x1DE1, 0x1DE2, 0x1DE3, 0x1DE4, 0x1DE5, 0x1DE6, 0x1DFE, 0x20D0, 0x20D1,
+    0x20D4, 0x20D5, 0x20D6, 0x20D7, 0x20DB, 0x20DC, 0x20E1, 0x20E7, 0x20E9, 0x20F0,
+    0x2CEF, 0x2CF0, 0x2CF1, 0x2DE0, 0x2DE1, 0x2DE2, 0x2DE3, 0x2DE4, 0x2DE5, 0x2DE6,
+    0x2DE7, 0x2DE8, 0x2DE9, 0x2DEA, 0x2DEB, 0x2DEC, 0x2DED, 0x2DEE, 0x2DEF, 0x2DF0,
+    0x2DF1, 0x2DF2, 0x2DF3, 0x2DF4, 0x2DF5, 0x2DF6, 0x2DF7, 0x2DF8, 0x2DF9, 0x2DFA,
+    0x2DFB, 0x2DFC, 0x2DFD, 0x2DFE, 0x2DFF, 0xA66F, 0xA67C, 0xA67D, 0xA6F0, 0xA6F1,
+    0xA8E0, 0xA8E1, 0xA8E2, 0xA8E3, 0xA8E4, 0xA8E5, 0xA8E6, 0xA8E7, 0xA8E8, 0xA8E9,
+    0xA8EA, 0xA8EB, 0xA8EC, 0xA8ED, 0xA8EE, 0xA8EF, 0xA8F0, 0xA8F1, 0xAAB0, 0xAAB2,
+    0xAAB3, 0xAAB7, 0xAAB8, 0xAABE, 0xAABF, 0xAAC1, 0xFE20, 0xFE21, 0xFE22, 0xFE23,
+    0xFE24, 0xFE25, 0xFE26, 0x10A0F, 0x10A38, 0x1D185, 0x1D186, 0x1D187, 0x1D188,
+    0x1D189, 0x1D1AA, 0x1D1AB, 0x1D1AC, 0x1D1AD, 0x1D242, 0x1D243, 0x1D244,
+];
+

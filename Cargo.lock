@@ -627,6 +627,7 @@ dependencies = [
  "base64",
  "clap",
  "futures-util",
+ "libc",
  "rand 0.8.6",
  "reqwest",
  "rustyline",
