@@ -28,10 +28,17 @@ struct Args {
     #[arg(long, default_value = "kcserver")]
     kcserver: String,
 
-    /// Kernel argv. Use `{connection_file}` as the placeholder the kernel
-    /// will receive. Default starts an ipython kernel.
-    #[arg(long, num_args = 1.., value_delimiter = ' ')]
-    kernel: Option<Vec<String>>,
+    /// Connect to an already-running kcserver instead of spawning one.
+    /// Pass the path to its connection file.
+    #[arg(long)]
+    connect: Option<PathBuf>,
+
+    /// Kernel argv. Pass after `--`. Use `{connection_file}` as the
+    /// placeholder kallichore replaces with the generated connection file.
+    /// Default starts an ipython kernel.
+    /// Example: jet --language r -- /path/to/ark --connection_file {connection_file} --session-mode console
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    kernel: Vec<String>,
 
     /// Language label for the session.
     #[arg(long, default_value = "python")]
@@ -40,11 +47,6 @@ struct Args {
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
     #[arg(long)]
     no_graphics: bool,
-
-    /// Connect to an already-running kcserver instead of spawning one.
-    /// Pass the path to its connection file.
-    #[arg(long)]
-    connect: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,7 +87,7 @@ async fn main() -> Result<()> {
     wait_for_status(&http, &base).await?;
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
-    let kernel_argv = build_kernel_argv(args.kernel.as_deref());
+    let kernel_argv = build_kernel_argv(&args.kernel);
     create_session(&http, &base, &session_id, &args.language, &kernel_argv).await?;
 
     // Open the channels websocket BEFORE start so we don't miss startup messages.
@@ -108,6 +110,9 @@ async fn main() -> Result<()> {
 
     // Spawn the websocket reader. It prints kernel output as it arrives.
     let render_graphics = !args.no_graphics;
+    if render_graphics && std::env::var_os("TMUX").is_some() {
+        warn_if_tmux_passthrough_off();
+    }
     tokio::spawn(async move {
         let mut stream = ws_stream;
         while let Some(msg) = stream.next().await {
@@ -260,9 +265,9 @@ async fn wait_for_status(http: &reqwest::Client, base: &str) -> Result<()> {
 
 // ---------- session creation ----------
 
-fn build_kernel_argv(custom: Option<&[String]>) -> Vec<String> {
-    if let Some(c) = custom {
-        return c.to_vec();
+fn build_kernel_argv(custom: &[String]) -> Vec<String> {
+    if !custom.is_empty() {
+        return custom.to_vec();
     }
     // Default: ipython kernel. {connection_file} is replaced by kallichore.
     // Resolve `python3`/`python` to an absolute path — kallichore requires it.
@@ -508,37 +513,136 @@ fn render_data(content: &Value, render_graphics: bool) {
     }
 }
 
+// Warn (once, at startup) if we're inside tmux and `allow-passthrough` is
+// off — the kitty graphics escapes will be silently swallowed.
+fn warn_if_tmux_passthrough_off() {
+    // Check pane-scope first (snacks.nvim and friends set it per-pane), then
+    // fall back to global.
+    for scope in ["-pv", "-gv"] {
+        let out = match Command::new("tmux")
+            .args(["show-options", scope, "allow-passthrough"])
+            .output()
+        {
+            Ok(o) if o.status.success() => o.stdout,
+            _ => continue,
+        };
+        let val = String::from_utf8_lossy(&out).trim().to_lowercase();
+        if val == "on" || val == "all" {
+            return;
+        }
+    }
+    eprintln!(
+        "\x1b[33m[jet] warning: tmux `allow-passthrough` is off. \
+         Kitty graphics will not render inline.\n\
+         Enable it in this pane:    tmux set -p allow-passthrough all\n\
+         Or globally in your config: set -g allow-passthrough on\x1b[0m"
+    );
+}
+
 // ---------- kitty graphics protocol ----------
 //
 // Format: \x1b_G<keys>;<payload>\x1b\\
 // We use a=T (transmit & display), f=100 (PNG), m=1 for chunked,
 // q=2 (suppress responses). Final chunk has m=0.
+//
+// Inside tmux, the kitty escape is wrapped in a DCS passthrough envelope
+// so tmux forwards it to the outer terminal: \x1bPtmux;<payload>\x1b\\,
+// with every \x1b inside <payload> doubled. tmux requires
+// `set -g allow-passthrough on` for this to work; recent tmux defaults to
+// allowing it, but older versions may need the option set.
 fn emit_kitty_png(b64_png: &str) -> Result<()> {
-    // The b64 we got from Jupyter is already base64; kitty wants base64 too.
-    // Strip whitespace/newlines just in case.
-    let payload: String = b64_png.chars().filter(|c| !c.is_whitespace()).collect();
+    // Strip whitespace (some kernels insert line breaks) and ensure the
+    // base64 is `=`-padded — ark/R omits trailing padding, but kitty's
+    // graphics decoder rejects unpadded base64 and silently drops the image.
+    let mut payload: String = b64_png.chars().filter(|c| !c.is_whitespace()).collect();
+    let pad = (4 - payload.len() % 4) % 4;
+    for _ in 0..pad {
+        payload.push('=');
+    }
+
+    // Decode just enough of the PNG to learn its pixel height so we can
+    // advance the cursor past the image. The IHDR chunk is at a fixed
+    // offset: 8-byte signature, 4-byte length, 4-byte "IHDR", 4-byte width,
+    // 4-byte height. We only need the first ~24 base64 chars.
+    let img_px_height = png_height_from_b64_prefix(&payload).unwrap_or(0);
+    let cell_px = std::env::var("JET_CELL_PX_HEIGHT")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(20);
+    let rows = if img_px_height > 0 {
+        img_px_height.div_ceil(cell_px).max(1)
+    } else {
+        1
+    };
+
     let bytes = payload.as_bytes();
     const CHUNK: usize = 4096;
-    let mut out = std::io::stdout().lock();
+
+    let mut raw = Vec::with_capacity(bytes.len() + 64);
     if bytes.len() <= CHUNK {
-        write!(out, "\x1b_Ga=T,f=100,q=2;{}\x1b\\", payload)?;
+        write!(raw, "\x1b_Ga=T,f=100,q=2;{}\x1b\\", payload)?;
     } else {
         let mut i = 0;
         let mut first = true;
         while i < bytes.len() {
             let end = (i + CHUNK).min(bytes.len());
             let more = if end < bytes.len() { 1 } else { 0 };
-            let slice = std::str::from_utf8(&bytes[i..end]).unwrap_or("");
+            let slice = &bytes[i..end];
             if first {
-                write!(out, "\x1b_Ga=T,f=100,q=2,m={};{}\x1b\\", more, slice)?;
+                write!(raw, "\x1b_Ga=T,f=100,q=2,m={};", more)?;
                 first = false;
             } else {
-                write!(out, "\x1b_Gm={};{}\x1b\\", more, slice)?;
+                write!(raw, "\x1b_Gm={};", more)?;
             }
+            raw.extend_from_slice(slice);
+            raw.extend_from_slice(b"\x1b\\");
             i = end;
         }
     }
-    writeln!(out)?;
+
+    let mut out = std::io::stdout().lock();
+    if std::env::var_os("TMUX").is_some() {
+        // Wrap in tmux DCS passthrough; double every ESC inside the payload.
+        out.write_all(b"\x1bPtmux;")?;
+        for &b in &raw {
+            if b == 0x1b {
+                out.write_all(b"\x1b\x1b")?;
+            } else {
+                out.write_all(&[b])?;
+            }
+        }
+        out.write_all(b"\x1b\\")?;
+    } else {
+        out.write_all(&raw)?;
+    }
+    // Advance the cursor past the image so the next prompt doesn't draw on
+    // top of it. The kitty `a=T` action does not move the cursor on most
+    // terminals, so we emit one newline per estimated text row of image
+    // height.
+    for _ in 0..rows {
+        out.write_all(b"\n")?;
+    }
     out.flush()?;
     Ok(())
+}
+
+// Parse just the PNG IHDR to get pixel height. PNG layout:
+//   8 bytes  signature   89 50 4E 47 0D 0A 1A 0A
+//   4 bytes  IHDR length (always 13)
+//   4 bytes  "IHDR"
+//   4 bytes  width  (big-endian)
+//   4 bytes  height (big-endian)
+// We only need the first 24 PNG bytes — i.e. the first 32 base64 chars.
+fn png_height_from_b64_prefix(b64: &str) -> Option<u32> {
+    let prefix: String = b64.chars().take(36).collect();
+    // Re-pad so base64 decode works on the prefix.
+    let mut p = prefix;
+    while p.len() % 4 != 0 {
+        p.push('=');
+    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(p).ok()?;
+    if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
+        return None;
+    }
+    Some(u32::from_be_bytes(bytes[20..24].try_into().ok()?))
 }
