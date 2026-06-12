@@ -118,19 +118,26 @@ impl Renderer {
         if !data.is_object() {
             return;
         }
-        if self.render_graphics {
-            if let Some(b64) = data.get("image/png").and_then(|s| s.as_str()) {
-                match emit_png(b64) {
-                    Ok(()) => return,
-                    Err(e) => eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m"),
+        let png = data.get("image/png").and_then(|s| s.as_str());
+        let handled = match (self.render_graphics, png) {
+            (true, Some(b64)) => match emit_png(b64) {
+                Ok(()) => true,
+                Err(e) => {
+                    eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m");
+                    false
                 }
+            },
+            (false, Some(b64)) => {
+                let len = base64::engine::general_purpose::STANDARD
+                    .decode(b64)
+                    .map(|b| b.len())
+                    .unwrap_or(0);
+                println!("[image/png {len} bytes]");
+                true
             }
-        } else if let Some(b64) = data.get("image/png").and_then(|s| s.as_str()) {
-            let len = base64::engine::general_purpose::STANDARD
-                .decode(b64)
-                .map(|b| b.len())
-                .unwrap_or(0);
-            println!("[image/png {len} bytes]");
+            (_, None) => false,
+        };
+        if handled {
             return;
         }
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
