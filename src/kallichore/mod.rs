@@ -19,6 +19,24 @@ use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 pub type WsSink = SplitSink<WsStream, Message>;
 
+/// Write-half of the channels websocket. Owns the sink so callers can
+/// `send(&msg)` without re-importing `SinkExt` or the tungstenite types.
+pub struct Channel {
+    sink: WsSink,
+}
+
+impl Channel {
+    pub fn new(sink: WsSink) -> Self {
+        Self { sink }
+    }
+
+    pub async fn send(&mut self, msg: &Value) -> Result<()> {
+        use futures_util::SinkExt;
+        self.sink.send(Message::Text(msg.to_string().into())).await?;
+        Ok(())
+    }
+}
+
 /// Bits we need for the WebSocket upgrade — the auto-generated `api::Client`
 /// handles bearer auth for HTTP, but the WS path connects directly via
 /// tungstenite and needs the headers re-applied.
@@ -103,9 +121,3 @@ impl Client {
     }
 }
 
-/// Convenience: send a Jupyter message as a tungstenite Text frame.
-pub async fn send(sink: &mut WsSink, msg: &Value) -> Result<()> {
-    use futures_util::SinkExt;
-    sink.send(Message::Text(msg.to_string().into())).await?;
-    Ok(())
-}

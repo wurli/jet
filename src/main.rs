@@ -18,7 +18,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use jet::cli::Args;
 use jet::jupyter;
-use jet::kallichore::Client;
+use jet::kallichore::{Channel, Client};
 use jet::render::{warn_if_passthrough_off, Renderer, SharedWriter};
 
 enum WaitResult {
@@ -64,7 +64,8 @@ async fn main() -> Result<()> {
 
     // Open the channels websocket BEFORE start so we don't miss startup messages.
     let ws = client.open_channels(&session_id).await?;
-    let (mut ws_sink, ws_stream) = ws.split();
+    let (ws_sink, ws_stream) = ws.split();
+    let mut channel = Channel::new(ws_sink);
 
     client.start_session(&session_id).await?;
 
@@ -102,7 +103,7 @@ async fn main() -> Result<()> {
     // first prompt — otherwise rustyline races the async banner write.
     let info_id = jupyter::new_msg_id();
     let info_req = jupyter::message("shell", &info_id, "kernel_info_request", json!({}));
-    jet::kallichore::send(&mut ws_sink, &info_req).await?;
+    channel.send(&info_req).await?;
     match wait_for_idle(&mut idle_rx, &info_id, Duration::from_secs(10)).await {
         WaitResult::Idle | WaitResult::Timeout => {}
         WaitResult::Closed => {
@@ -142,7 +143,7 @@ async fn main() -> Result<()> {
                 "stop_on_error": true,
             }),
         );
-        jet::kallichore::send(&mut ws_sink, &req).await?;
+        channel.send(&req).await?;
 
         match wait_for_idle(&mut idle_rx, &msg_id, Duration::from_secs(300)).await {
             WaitResult::Idle => {}
