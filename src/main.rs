@@ -95,7 +95,7 @@ async fn main() -> Result<()> {
     let mut rl = rustyline::DefaultEditor::new()?;
     println!("jet — connected to session {session_id}. ^D to quit.");
     loop {
-        let line = match rl.readline(">>> ") {
+        let line = match rl.readline("> ") {
             Ok(l) => l,
             Err(rustyline::error::ReadlineError::Eof)
             | Err(rustyline::error::ReadlineError::Interrupted) => break,
