@@ -29,11 +29,25 @@ pub enum Event {
     Error { traceback: String },
     Banner { text: String },
     Idle { parent_id: String },
+    /// kallichore reported the kernel has exited. The REPL uses this to
+    /// shut down immediately rather than wait for the user to press a key.
+    KernelExited,
     Other,
 }
 
+/// kallichore wraps every websocket frame in a `{kind, ...}` envelope.
+/// Jupyter messages are tagged `kind: "jupyter"` with the standard
+/// `channel`/`header`/`parent_header`/`content` fields. Server-side
+/// kernel-lifecycle events are tagged `kind: "kernel"` with shapes like
+/// `{status: {...}}`, `{exited: <code>}`, `{output: [...]}`,
+/// `{resourceUsage: {...}}`. We only act on `exited` and on
+/// `status.status == "exited"`; the other kernel-kind frames are noise
+/// for a CLI REPL.
 #[derive(Deserialize)]
 struct IncomingMessage {
+    #[serde(default)]
+    kind: String,
+    // jupyter-kind fields
     #[serde(default)]
     channel: String,
     #[serde(default)]
@@ -42,6 +56,11 @@ struct IncomingMessage {
     parent_header: Option<ParentHeader>,
     #[serde(default)]
     content: Value,
+    // kernel-kind fields
+    #[serde(default)]
+    exited: Option<i64>,
+    #[serde(default)]
+    status: Option<KernelStatus>,
 }
 
 #[derive(Deserialize, Default)]
@@ -56,8 +75,23 @@ struct ParentHeader {
     msg_id: String,
 }
 
+#[derive(Deserialize)]
+struct KernelStatus {
+    #[serde(default)]
+    status: String,
+}
+
 pub fn parse_event(text: &str) -> Result<Event> {
     let m: IncomingMessage = serde_json::from_str(text)?;
+    if m.kind == "kernel" {
+        if m.exited.is_some() {
+            return Ok(Event::KernelExited);
+        }
+        if m.status.as_ref().map(|s| s.status == "exited").unwrap_or(false) {
+            return Ok(Event::KernelExited);
+        }
+        return Ok(Event::Other);
+    }
     let event = match (m.channel.as_str(), m.header.msg_type.as_str()) {
         ("iopub", "stream") => {
             let name = m
@@ -79,6 +113,9 @@ pub fn parse_event(text: &str) -> Result<Event> {
             Event::DisplayData { data }
         }
         ("iopub", "error") => {
+            // Python kernels put the colorized backtrace in `traceback`;
+            // ark/R leaves traceback empty and puts the message in `evalue`.
+            // Fall back to `ename: evalue` when traceback is empty/missing.
             let traceback = m
                 .content
                 .get("traceback")
@@ -89,7 +126,17 @@ pub fn parse_event(text: &str) -> Result<Event> {
                         .collect::<Vec<_>>()
                         .join("\n")
                 })
-                .unwrap_or_default();
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    let ename = m.content.get("ename").and_then(|s| s.as_str()).unwrap_or("");
+                    let evalue = m.content.get("evalue").and_then(|s| s.as_str()).unwrap_or("");
+                    match (ename.is_empty(), evalue.is_empty()) {
+                        (false, false) => format!("{ename}: {evalue}"),
+                        (true, false) => evalue.to_string(),
+                        (false, true) => ename.to_string(),
+                        (true, true) => String::new(),
+                    }
+                });
             Event::Error { traceback }
         }
         ("shell", "kernel_info_reply") => {
@@ -139,30 +186,32 @@ impl Renderer {
     }
 
     pub fn handle_text(&self, text: &str) -> Result<()> {
-        match parse_event(text)? {
+        self.handle_event(parse_event(text)?)
+    }
+
+    pub fn handle_event(&self, event: Event) -> Result<()> {
+        match event {
             Event::Stream { name, text } => self.write_stream(&name, &text)?,
             Event::DisplayData { data } => self.render_data(&data)?,
             Event::Error { traceback } => {
-                let mut w = self.writer.lock().unwrap();
-                writeln!(w, "\x1b[31m{traceback}\x1b[0m")?;
-                w.flush()?;
+                if !traceback.is_empty() {
+                    let mut w = self.writer.lock().unwrap();
+                    writeln!(w, "{traceback}")?;
+                    w.flush()?;
+                }
             }
             Event::Banner { text } => self.write_banner(&text)?,
             Event::Idle { parent_id } => {
                 let _ = self.idle_tx.send(parent_id);
             }
-            Event::Other => {}
+            Event::KernelExited | Event::Other => {}
         }
         Ok(())
     }
 
-    fn write_stream(&self, name: &str, text: &str) -> Result<()> {
+    fn write_stream(&self, _name: &str, text: &str) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
-        if name == "stderr" {
-            write!(w, "\x1b[31m{text}\x1b[0m")?;
-        } else {
-            write!(w, "{text}")?;
-        }
+        write!(w, "{text}")?;
         w.flush()?;
         Ok(())
     }
@@ -228,6 +277,7 @@ mod tests {
 
     fn frame(channel: &str, msg_type: &str, parent_id: &str, content: Value) -> String {
         json!({
+            "kind": "jupyter",
             "channel": channel,
             "header": {"msg_type": msg_type},
             "parent_header": {"msg_id": parent_id},
@@ -279,6 +329,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_error_falls_back_to_evalue_when_traceback_empty() {
+        // ark/R sends `traceback: []` and puts the message in `evalue`.
+        let f = frame(
+            "iopub",
+            "error",
+            "",
+            json!({"ename": "", "evalue": "Error:\n! boom", "traceback": []}),
+        );
+        match parse_event(&f).unwrap() {
+            Event::Error { traceback } => assert_eq!(traceback, "Error:\n! boom"),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_error_with_ename_and_evalue() {
+        let f = frame(
+            "iopub",
+            "error",
+            "",
+            json!({"ename": "RuntimeError", "evalue": "boom", "traceback": []}),
+        );
+        match parse_event(&f).unwrap() {
+            Event::Error { traceback } => assert_eq!(traceback, "RuntimeError: boom"),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_banner_event() {
         let f = frame("shell", "kernel_info_reply", "", json!({"banner": "hello"}));
         match parse_event(&f).unwrap() {
@@ -325,6 +404,42 @@ mod tests {
     }
 
     #[test]
+    fn parse_kernel_exited_frame() {
+        let raw = json!({"kind": "kernel", "exited": 0}).to_string();
+        assert!(matches!(parse_event(&raw).unwrap(), Event::KernelExited));
+    }
+
+    #[test]
+    fn parse_kernel_status_exited_frame() {
+        let raw = json!({
+            "kind": "kernel",
+            "status": {"status": "exited", "reason": "child process exited"},
+        })
+        .to_string();
+        assert!(matches!(parse_event(&raw).unwrap(), Event::KernelExited));
+    }
+
+    #[test]
+    fn parse_kernel_status_busy_is_other() {
+        let raw = json!({
+            "kind": "kernel",
+            "status": {"status": "busy", "reason": "execute_request"},
+        })
+        .to_string();
+        assert!(matches!(parse_event(&raw).unwrap(), Event::Other));
+    }
+
+    #[test]
+    fn parse_kernel_resource_usage_is_other() {
+        let raw = json!({
+            "kind": "kernel",
+            "resourceUsage": {"cpu_percent": 0, "memory_bytes": 1234},
+        })
+        .to_string();
+        assert!(matches!(parse_event(&raw).unwrap(), Event::Other));
+    }
+
+    #[test]
     fn parse_handles_null_parent_header() {
         let raw = serde_json::json!({
             "channel": "iopub",
@@ -349,7 +464,8 @@ mod tests {
     }
 
     #[test]
-    fn renderer_writes_stderr_with_color() {
+    fn renderer_writes_stderr_uncolored() {
+        // The renderer must not add its own ANSI; kernels emit their own.
         let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
@@ -357,7 +473,7 @@ mod tests {
         let f = frame("iopub", "stream", "", json!({"name": "stderr", "text": "oops"}));
         r.handle_text(&f).unwrap();
         let bytes = captured.lock().unwrap();
-        assert_eq!(std::str::from_utf8(&bytes).unwrap(), "\x1b[31moops\x1b[0m");
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), "oops");
     }
 
     #[test]

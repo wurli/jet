@@ -42,6 +42,12 @@ tests/
 `Client` owns the spawned `kcserver` process via a `ChildGuard` — drop the
 client and the server dies with it.
 
+## Understanding kallichore
+
+Kallichore is primarly used as the jupyter kernel supervisor for the
+[Positron](https://github.com/posit-dev/positron) IDE. When behaviour is
+ambiguous, first check the Positron behaviour.
+
 ## Running
 
 ```bash

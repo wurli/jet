@@ -19,7 +19,7 @@ use tokio_tungstenite::tungstenite::Message;
 use jet::cli::Args;
 use jet::jupyter;
 use jet::kallichore::{Channel, Client};
-use jet::render::{warn_if_passthrough_off, Renderer, SharedWriter};
+use jet::render::{parse_event, warn_if_passthrough_off, Event, Renderer, SharedWriter};
 
 enum WaitResult {
     Idle,
@@ -79,21 +79,36 @@ async fn main() -> Result<()> {
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
     let renderer = Renderer::new(render_graphics, idle_tx, writer);
 
-    // Set on REPL exit so the WS reader task can distinguish a clean
-    // shutdown (kcserver killed by Drop → reset without close handshake)
-    // from a real mid-session error worth surfacing to the user.
+    // shutdown: REPL → reader. Set on REPL exit so the WS reader task can
+    // distinguish a clean shutdown (kcserver killed by Drop → reset without
+    // close handshake) from a real mid-session error worth surfacing.
+    // closed: reader → REPL. Set when the websocket ends so the REPL can
+    // exit immediately rather than wait for the user to press a key.
     let shutdown = Arc::new(tokio::sync::Notify::new());
+    let closed = Arc::new(tokio::sync::Notify::new());
     let reader_shutdown = shutdown.clone();
+    let reader_closed = closed.clone();
 
     tokio::spawn(async move {
         let mut stream = ws_stream;
         loop {
             tokio::select! {
-                _ = reader_shutdown.notified() => break,
+                _ = reader_shutdown.notified() => return,
                 msg = stream.next() => match msg {
                     Some(Ok(Message::Text(t))) => {
-                        if let Err(e) = renderer.handle_text(&t) {
+                        let event = match parse_event(&t) {
+                            Ok(e) => e,
+                            Err(e) => {
+                                eprintln!("\x1b[31m[jet] {e}\x1b[0m");
+                                continue;
+                            }
+                        };
+                        let exited = matches!(event, Event::KernelExited);
+                        if let Err(e) = renderer.handle_event(event) {
                             eprintln!("\x1b[31m[jet] {e}\x1b[0m");
+                        }
+                        if exited {
+                            break;
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
@@ -105,6 +120,7 @@ async fn main() -> Result<()> {
                 },
             }
         }
+        reader_closed.notify_one();
     });
 
     // Ask the kernel for its banner/version info, and wait for the reply to be
@@ -121,22 +137,48 @@ async fn main() -> Result<()> {
         }
     }
 
-    let mut rl = rustyline::DefaultEditor::new()?;
+    let mut rl = Some(rustyline::DefaultEditor::new()?);
     println!("jet — connected to session {session_id}. ^D to quit.");
     loop {
-        let line = match rl.readline("> ") {
-            Ok(l) => l,
-            Err(rustyline::error::ReadlineError::Eof)
-            | Err(rustyline::error::ReadlineError::Interrupted) => break,
-            Err(e) => {
-                eprintln!("[jet] readline: {e}");
-                break;
+        // Run rustyline on a blocking thread so we can race it against
+        // `closed`. If the websocket dies (kernel quit, server crash) the
+        // REPL exits immediately instead of waiting for the user to press
+        // a key. The blocking task can't be cancelled — we just leave it
+        // pinned on stdin and drop it when the process exits.
+        let mut prompt_rl = rl.take().expect("editor present at top of loop");
+        let read = tokio::task::spawn_blocking(move || {
+            let result = prompt_rl.readline("> ");
+            (prompt_rl, result)
+        });
+        let line = tokio::select! {
+            _ = closed.notified() => {
+                eprintln!("\x1b[31m[jet] kernel exited\x1b[0m");
+                shutdown.notify_one();
+                // The blocking readline task is parked on stdin.read(); the
+                // tokio runtime's Drop would wait for that thread to finish
+                // (it never will, until the user presses a key). Run drops
+                // we care about explicitly, then exit the process.
+                drop(client);
+                std::process::exit(0);
+            }
+            joined = read => {
+                let (returned_rl, result) = joined?;
+                rl = Some(returned_rl);
+                match result {
+                    Ok(l) => l,
+                    Err(rustyline::error::ReadlineError::Eof)
+                    | Err(rustyline::error::ReadlineError::Interrupted) => break,
+                    Err(e) => {
+                        eprintln!("[jet] readline: {e}");
+                        break;
+                    }
+                }
             }
         };
         if line.trim().is_empty() {
             continue;
         }
-        let _ = rl.add_history_entry(&line);
+        let _ = rl.as_mut().expect("editor returned from blocking task").add_history_entry(&line);
 
         let msg_id = jupyter::new_msg_id();
         let req = jupyter::message(
@@ -160,11 +202,17 @@ async fn main() -> Result<()> {
             WaitResult::Closed => {
                 eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
                 shutdown.notify_one();
-                return Ok(());
+                drop(client);
+                std::process::exit(0);
             }
         }
     }
 
     shutdown.notify_one();
-    Ok(())
+    // ^D is also reached only via the blocking readline thread returning,
+    // so it's actually been joined. The runtime drop is fine here, but we
+    // still process::exit for symmetry and to avoid waiting on the WS
+    // reader's still-pending receive on a possibly-stuck socket.
+    drop(client);
+    std::process::exit(0);
 }

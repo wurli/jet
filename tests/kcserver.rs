@@ -214,3 +214,86 @@ fn propagates_kernel_error() {
         "expected 'boom' in error, got: {err}"
     );
 }
+
+#[test]
+#[serial_test::serial]
+fn jet_exits_on_eof() {
+    if !prereqs_ok() {
+        return;
+    }
+    let kc = locate_kcserver().expect("kcserver located");
+    let bin = env!("CARGO_BIN_EXE_jet");
+
+    let mut child = Command::new(bin)
+        .args(["--kcserver", &kc])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    // Give jet time to come up, then close stdin to simulate ^D.
+    std::thread::sleep(Duration::from_secs(3));
+    drop(child.stdin.take());
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait failed: {e}"),
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    panic!("jet did not exit within 10s after stdin closed");
+}
+
+#[test]
+#[serial_test::serial]
+fn jet_exits_when_kernel_quits() {
+    if !prereqs_ok() {
+        return;
+    }
+    let kc = locate_kcserver().expect("kcserver located");
+    let bin = env!("CARGO_BIN_EXE_jet");
+
+    use std::io::Write;
+    let mut child = Command::new(bin)
+        .args(["--kcserver", &kc])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    // Give jet time to come up, then ask the kernel to exit. We KEEP stdin
+    // open afterwards — closing it would let rustyline return EOF naturally
+    // (the trivial exit path). The bug we're testing is "does jet notice
+    // the websocket dying and exit even while still waiting on stdin?"
+    std::thread::sleep(Duration::from_secs(3));
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    stdin.write_all(b"exit()\n").expect("write to jet stdin");
+    // Hold stdin open by keeping `stdin` in scope until after we've waited.
+
+    // jet should notice the kernel went away and exit on its own. Without
+    // this fix it sits forever in rustyline.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut exited = false;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                exited = true;
+                break;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait failed: {e}"),
+        }
+    }
+    drop(stdin);
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!("jet did not exit within 10s after the kernel quit");
+    }
+}
