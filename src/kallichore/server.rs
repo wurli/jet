@@ -1,5 +1,6 @@
 //! kcserver process lifecycle and connection file.
 
+use std::future::Future;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -8,6 +9,20 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use rand::Rng;
 use serde::Deserialize;
+
+async fn poll_until<F, Fut, T>(deadline: Instant, interval: Duration, mut f: F) -> Option<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Option<T>>,
+{
+    while Instant::now() < deadline {
+        if let Some(v) = f().await {
+            return Some(v);
+        }
+        tokio::time::sleep(interval).await;
+    }
+    None
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ConnectionFile {
@@ -58,26 +73,29 @@ pub async fn spawn_kcserver(bin: &str) -> Result<(ConnectionFile, ChildGuard)> {
     let guard = ChildGuard(child);
 
     let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if conn_path.exists() {
-            // Give the server a moment to finish writing.
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            if let Ok(c) = ConnectionFile::read(&conn_path) {
-                return Ok((c, guard));
-            }
+    let conn = poll_until(deadline, Duration::from_millis(100), || async {
+        if !conn_path.exists() {
+            return None;
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Give the server a moment to finish writing.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        ConnectionFile::read(&conn_path).ok()
+    })
+    .await;
+    match conn {
+        Some(c) => Ok((c, guard)),
+        None => bail!("timed out waiting for kcserver connection file at {conn_path:?}"),
     }
-    bail!("timed out waiting for kcserver connection file at {conn_path:?}");
 }
 
 pub async fn wait_for_status(api: &super::api::Client) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if api.server_status().await.is_ok() {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    match poll_until(deadline, Duration::from_millis(100), || async {
+        api.server_status().await.ok().map(|_| ())
+    })
+    .await
+    {
+        Some(()) => Ok(()),
+        None => bail!("kcserver /status never became ready"),
     }
-    bail!("kcserver /status never became ready");
 }
