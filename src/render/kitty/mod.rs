@@ -45,6 +45,13 @@ pub fn emit_png(b64_png: &str) -> Result<()> {
     // Cell dimensions: env overrides win; otherwise query the terminal once
     // and cache. Falls back to typical 9×18 if the query fails.
     let (queried_w, queried_h) = cell_pixel_size().unwrap_or((9, 18));
+    let env_u32 = |name: &str, default: u32| {
+        std::env::var(name)
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(default)
+    };
     let cell_w = env_u32("JET_CELL_PX_WIDTH", queried_w);
     let cell_h = env_u32("JET_CELL_PX_HEIGHT", queried_h);
 
@@ -115,14 +122,6 @@ fn build_placeholder_grid(id: u32, rows: u32, cols: u32) -> String {
         grid.push_str("\x1b[39m\n");
     }
     grid
-}
-
-pub(crate) fn env_u32(name: &str, default: u32) -> u32 {
-    std::env::var(name)
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .filter(|&v| v > 0)
-        .unwrap_or(default)
 }
 
 /// Extract (width, height) from a PNG IHDR encoded as a base64 prefix.
