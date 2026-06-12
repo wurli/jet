@@ -40,33 +40,9 @@ pub fn message(channel: &str, msg_id: &str, msg_type: &str, content: Value) -> V
     })
 }
 
-/// ISO-8601 UTC timestamp with microsecond precision. Hand-rolled to avoid
-/// pulling in `chrono` for one call site.
+/// ISO-8601 UTC timestamp with microsecond precision (27 chars total).
 pub fn iso8601_now() -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs() as i64;
-    let nanos = now.subsec_nanos();
-    // Days from epoch to civil date — Howard Hinnant's algorithm.
-    let z = secs.div_euclid(86_400) + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    let sod = secs.rem_euclid(86_400) as u64;
-    let h = sod / 3600;
-    let mi = (sod % 3600) / 60;
-    let s = sod % 60;
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}Z",
-        y, m, d, h, mi, s, nanos / 1000
-    )
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
 }
 
 #[cfg(test)]
