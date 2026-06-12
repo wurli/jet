@@ -90,6 +90,18 @@ async fn run_one(code: &str) -> Result<String> {
     );
     sink.send(Message::Text(req.to_string().into())).await?;
 
+    let result = collect_output(&mut stream, &msg_id).await;
+    // Close cleanly so kcserver doesn't log "Connection reset without closing
+    // handshake" — kcserver inherits our stderr.
+    let _ = sink.send(Message::Close(None)).await;
+    let _ = sink.close().await;
+    result
+}
+
+async fn collect_output(
+    stream: &mut futures_util::stream::SplitStream<jet::kallichore::WsStream>,
+    msg_id: &str,
+) -> Result<String> {
     let mut output = String::new();
     let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
