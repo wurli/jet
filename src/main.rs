@@ -805,3 +805,404 @@ const ROW_COL_DIACRITICS: &[u32] = &[
     0x1D189, 0x1D1AA, 0x1D1AB, 0x1D1AC, 0x1D1AD, 0x1D242, 0x1D243, 0x1D244,
 ];
 
+// =============================================================================
+// Tests
+// =============================================================================
+//
+// Layers:
+//   * pure unit tests — always run
+//   * tmux tests — gated on `tmux` being on PATH; otherwise print SKIP
+//   * kcserver tests — gated on JET_KCSERVER (or PATH); spawn a server, drive
+//     a real session against the ipython kernel, assert on outputs
+//
+// Run all:    cargo test
+// Run unit:   cargo test --lib unit
+// With env:   JET_KCSERVER=/path/to/kcserver cargo test
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---------- Pure unit tests ----------
+
+    #[test]
+    fn parse_cell_size_reply_ok() {
+        // Standard ghostty-on-Retina reply: ESC [ 6 ; 36 ; 15 t
+        assert_eq!(parse_cell_size_reply(b"\x1b[6;36;15t"), Some((15, 36)));
+    }
+
+    #[test]
+    fn parse_cell_size_reply_with_garbage_prefix() {
+        // Some terminals echo a stray byte before the CSI; we should still
+        // find the substring.
+        assert_eq!(parse_cell_size_reply(b"x\x1b[6;18;9tjunk"), Some((9, 18)));
+    }
+
+    #[test]
+    fn parse_cell_size_reply_rejects_malformed() {
+        assert_eq!(parse_cell_size_reply(b""), None);
+        assert_eq!(parse_cell_size_reply(b"\x1b[6;36"), None); // no terminator
+        assert_eq!(parse_cell_size_reply(b"\x1b[6;0;9t"), None); // zero
+        assert_eq!(parse_cell_size_reply(b"\x1b[5;36;15t"), None); // wrong code
+    }
+
+    #[test]
+    fn png_dims_extract_width_and_height() {
+        // Build a tiny 7×11 PNG header by hand.
+        let mut png = Vec::new();
+        png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+        png.extend_from_slice(&[0, 0, 0, 13]); // IHDR length
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&7u32.to_be_bytes());
+        png.extend_from_slice(&11u32.to_be_bytes());
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        assert_eq!(png_dims_from_b64_prefix(&b64), Some((7, 11)));
+    }
+
+    #[test]
+    fn png_dims_returns_none_for_non_png() {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(b"not a png at all");
+        assert_eq!(png_dims_from_b64_prefix(&b64), None);
+    }
+
+    #[test]
+    fn png_dims_handles_unpadded_b64() {
+        // ark/R sends base64 without trailing `=`; png_dims should still work.
+        let mut png = Vec::new();
+        png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+        png.extend_from_slice(&[0, 0, 0, 13]);
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&320u32.to_be_bytes());
+        png.extend_from_slice(&240u32.to_be_bytes());
+        let mut b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        while b64.ends_with('=') {
+            b64.pop();
+        }
+        assert_eq!(png_dims_from_b64_prefix(&b64), Some((320, 240)));
+    }
+
+    #[test]
+    fn build_kernel_argv_uses_custom_when_provided() {
+        let custom = vec!["foo".to_string(), "bar".to_string()];
+        assert_eq!(build_kernel_argv(&custom), custom);
+    }
+
+    #[test]
+    fn build_kernel_argv_default_includes_connection_file_placeholder() {
+        let argv = build_kernel_argv(&[]);
+        assert!(argv.iter().any(|a| a == "{connection_file}"));
+        assert!(argv.iter().any(|a| a.contains("ipykernel")));
+    }
+
+    #[test]
+    fn ws_url_swaps_http_for_ws() {
+        let u = ws_url_from_base("http://127.0.0.1:8080", "abc").unwrap();
+        assert_eq!(u.scheme(), "ws");
+        assert_eq!(u.path(), "/sessions/abc/channels");
+        let u = ws_url_from_base("https://example.com:9000", "xyz").unwrap();
+        assert_eq!(u.scheme(), "wss");
+    }
+
+    #[test]
+    fn jupyter_message_has_required_fields() {
+        let m = jupyter_message("shell", "id-1", "execute_request", json!({"code": "1"}));
+        assert_eq!(m["channel"], "shell");
+        assert_eq!(m["header"]["msg_id"], "id-1");
+        assert_eq!(m["header"]["msg_type"], "execute_request");
+        assert_eq!(m["header"]["version"], "5.3");
+        assert_eq!(m["content"]["code"], "1");
+        assert!(m["buffers"].is_array());
+    }
+
+    #[test]
+    fn chrono_like_now_format() {
+        let s = chrono_like_now();
+        // YYYY-MM-DDTHH:MM:SS.uuuuuuZ — 27 chars total
+        assert_eq!(s.len(), 27);
+        assert!(s.ends_with('Z'));
+        assert_eq!(s.chars().nth(4), Some('-'));
+        assert_eq!(s.chars().nth(10), Some('T'));
+    }
+
+    #[test]
+    fn write_passthrough_no_tmux_passes_through_unchanged() {
+        // Ensure TMUX is unset for this test.
+        let prev = std::env::var_os("TMUX");
+        std::env::remove_var("TMUX");
+
+        let mut out = Vec::new();
+        let payload = b"\x1b_Ga=T;abc\x1b\\";
+        write_passthrough(&mut out, payload).unwrap();
+        assert_eq!(out, payload);
+
+        if let Some(v) = prev {
+            std::env::set_var("TMUX", v);
+        }
+    }
+
+    #[test]
+    fn write_passthrough_in_tmux_doubles_escapes() {
+        std::env::set_var("TMUX", "fake");
+
+        let mut out = Vec::new();
+        let payload = b"\x1b_Ga=T;abc\x1b\\";
+        write_passthrough(&mut out, payload).unwrap();
+
+        // Outer envelope.
+        assert!(out.starts_with(b"\x1bPtmux;"));
+        assert!(out.ends_with(b"\x1b\\"));
+        // Every interior ESC should be doubled.
+        let inner = &out[b"\x1bPtmux;".len()..out.len() - b"\x1b\\".len()];
+        let interior_esc = inner.iter().filter(|&&b| b == 0x1b).count();
+        let original_esc = payload.iter().filter(|&&b| b == 0x1b).count();
+        assert_eq!(interior_esc, original_esc * 2);
+
+        std::env::remove_var("TMUX");
+    }
+
+    #[test]
+    fn diacritics_table_has_enough_entries() {
+        // Plots routinely need 50+ rows on Retina; sanity-check we have plenty.
+        assert!(ROW_COL_DIACRITICS.len() >= 256);
+        // No duplicates — every cell index must map to a unique codepoint.
+        let mut seen = std::collections::HashSet::new();
+        for &c in ROW_COL_DIACRITICS {
+            assert!(seen.insert(c), "duplicate diacritic 0x{c:X}");
+        }
+    }
+
+    // ---------- Helpers for gated tests ----------
+
+    fn which(name: &str) -> Option<String> {
+        let out = Command::new("which").arg(name).output().ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+        if s.is_empty() { None } else { Some(s) }
+    }
+
+    fn skip(reason: &str) {
+        eprintln!("SKIP: {reason}");
+    }
+
+    // ---------- tmux integration ----------
+    //
+    // These call the real `tmux` binary. They don't need to be inside a tmux
+    // session — `show-options -gv` works against the user's tmux server (or
+    // returns a default if no server is running).
+
+    #[test]
+    #[serial_test::serial]
+    fn tmux_warning_helper_runs_without_panicking() {
+        if which("tmux").is_none() {
+            skip("tmux not on PATH");
+            return;
+        }
+        // The function prints to stderr; we just confirm it doesn't panic
+        // regardless of the user's current tmux config.
+        warn_if_tmux_passthrough_off();
+    }
+
+    // ---------- kcserver integration ----------
+    //
+    // These start a real kcserver process, create a session backed by the
+    // default kernel (ipython), and exercise the HTTP + websocket stack.
+
+    fn locate_kcserver() -> Option<String> {
+        if let Ok(p) = std::env::var("JET_KCSERVER") {
+            if std::path::Path::new(&p).exists() {
+                return Some(p);
+            }
+        }
+        // Convenience: check the path used in development.
+        for p in ["/tmp/kc/kcserver"] {
+            if std::path::Path::new(p).exists() {
+                return Some(p.to_string());
+            }
+        }
+        which("kcserver")
+    }
+
+    fn ipykernel_available() -> bool {
+        Command::new("python3")
+            .args(["-c", "import ipykernel"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    // Drive a session end-to-end and return whatever printed to stdout from
+    // the iopub handler. Lives in an async runtime constructed inside the
+    // test; nothing else in the test module is async.
+    async fn run_one(code: &str) -> Result<String> {
+        use futures_util::StreamExt;
+        let kc = locate_kcserver().expect("locate_kcserver should succeed before calling");
+
+        let (conn, _server) = spawn_server(&kc).await?;
+        let base = conn
+            .base_path
+            .clone()
+            .or_else(|| conn.port.map(|p| format!("http://127.0.0.1:{p}")))
+            .unwrap();
+        let http = reqwest::Client::builder()
+            .default_headers({
+                let mut h = reqwest::header::HeaderMap::new();
+                h.insert(
+                    reqwest::header::AUTHORIZATION,
+                    format!("Bearer {}", conn.bearer_token).parse().unwrap(),
+                );
+                h
+            })
+            .build()?;
+        wait_for_status(&http, &base).await?;
+
+        let session_id = format!("jet-test-{:x}", rand::thread_rng().gen::<u64>());
+        let argv = build_kernel_argv(&[]);
+        create_session(&http, &base, &session_id, "python", &argv).await?;
+
+        let ws_url = ws_url_from_base(&base, &session_id)?;
+        let mut req = ws_url.into_client_request()?;
+        req.headers_mut().insert(
+            "Authorization",
+            format!("Bearer {}", conn.bearer_token).parse().unwrap(),
+        );
+        let (ws, _) = tokio_tungstenite::connect_async(req).await?;
+        let (mut sink, mut stream) = ws.split();
+
+        start_session(&http, &base, &session_id).await?;
+
+        let msg_id = new_msg_id();
+        let req = jupyter_message(
+            "shell",
+            &msg_id,
+            "execute_request",
+            json!({
+                "code": code,
+                "silent": false,
+                "store_history": true,
+                "user_expressions": {},
+                "allow_stdin": false,
+                "stop_on_error": true,
+            }),
+        );
+        sink.send(Message::Text(req.to_string())).await?;
+
+        let mut output = String::new();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while Instant::now() < deadline {
+            let next = tokio::time::timeout(
+                deadline.saturating_duration_since(Instant::now()),
+                stream.next(),
+            )
+            .await;
+            let Ok(Some(Ok(Message::Text(t)))) = next else {
+                continue;
+            };
+            let v: Value = serde_json::from_str(&t).unwrap_or(Value::Null);
+            let channel = v.get("channel").and_then(|s| s.as_str()).unwrap_or("");
+            let msg_type = v
+                .pointer("/header/msg_type")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            let parent = v
+                .pointer("/parent_header/msg_id")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            if channel != "iopub" || parent != msg_id {
+                continue;
+            }
+            let content = v.get("content").cloned().unwrap_or(Value::Null);
+            match msg_type {
+                "stream" => {
+                    if let Some(t) = content.get("text").and_then(|s| s.as_str()) {
+                        output.push_str(t);
+                    }
+                }
+                "execute_result" | "display_data" => {
+                    if let Some(t) = content
+                        .pointer("/data/text~1plain")
+                        .and_then(|s| s.as_str())
+                    {
+                        output.push_str(t);
+                    }
+                }
+                "error" => {
+                    bail!(
+                        "kernel error: {:?}",
+                        content
+                            .get("evalue")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("?")
+                    );
+                }
+                "status" => {
+                    if content.get("execution_state").and_then(|s| s.as_str()) == Some("idle") {
+                        return Ok(output);
+                    }
+                }
+                _ => {}
+            }
+        }
+        bail!("timed out waiting for execution to complete");
+    }
+
+    fn block_on<F: std::future::Future>(f: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(f)
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn kcserver_executes_simple_expression() {
+        if locate_kcserver().is_none() {
+            skip("kcserver not found (set JET_KCSERVER=/path/to/kcserver)");
+            return;
+        }
+        if !ipykernel_available() {
+            skip("ipykernel not installed (`pip install ipykernel`)");
+            return;
+        }
+        let out = block_on(run_one("2 + 2")).expect("run_one should succeed");
+        assert!(out.contains('4'), "expected '4' in output, got: {out:?}");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn kcserver_captures_stdout() {
+        if locate_kcserver().is_none() {
+            skip("kcserver not found (set JET_KCSERVER=/path/to/kcserver)");
+            return;
+        }
+        if !ipykernel_available() {
+            skip("ipykernel not installed");
+            return;
+        }
+        let out = block_on(run_one("print('hello-from-jet-test')"))
+            .expect("run_one should succeed");
+        assert!(out.contains("hello-from-jet-test"), "got: {out:?}");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn kcserver_propagates_kernel_error() {
+        if locate_kcserver().is_none() {
+            skip("kcserver not found");
+            return;
+        }
+        if !ipykernel_available() {
+            skip("ipykernel not installed");
+            return;
+        }
+        let err = block_on(run_one("raise RuntimeError('boom')")).unwrap_err();
+        assert!(
+            err.to_string().contains("boom"),
+            "expected 'boom' in error, got: {err}"
+        );
+    }
+}
+
