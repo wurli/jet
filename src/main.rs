@@ -19,7 +19,6 @@ use tokio_tungstenite::tungstenite::Message;
 use jet::cli::Args;
 use jet::jupyter;
 use jet::kallichore::Client;
-use jet::kernel;
 use jet::render::{warn_if_passthrough_off, Renderer, SharedWriter};
 
 enum WaitResult {
@@ -58,9 +57,9 @@ async fn main() -> Result<()> {
     };
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
-    let kernel_argv = kernel::build_argv(&args.kernel);
+    let spec = args.kernel_spec();
     client
-        .create_session(&session_id, &args.language, &kernel_argv)
+        .create_session(&session_id, &spec.language, &spec.argv)
         .await?;
 
     // Open the channels websocket BEFORE start so we don't miss startup messages.

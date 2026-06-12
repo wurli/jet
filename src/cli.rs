@@ -2,6 +2,13 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::kernel;
+
+pub struct KernelSpec {
+    pub language: String,
+    pub argv: Vec<String>,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "jet", about = "kallichore-backed REPL with kitty graphics")]
 pub struct Args {
@@ -28,4 +35,13 @@ pub struct Args {
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
     #[arg(long)]
     pub no_graphics: bool,
+}
+
+impl Args {
+    pub fn kernel_spec(&self) -> KernelSpec {
+        KernelSpec {
+            language: self.language.clone(),
+            argv: kernel::build_argv(&self.kernel),
+        }
+    }
 }
