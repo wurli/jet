@@ -13,6 +13,7 @@ use clap::Parser;
 use futures_util::StreamExt;
 use rand::Rng;
 use serde_json::json;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_tungstenite::tungstenite::Message;
 
 use jet::cli::Args;
@@ -20,6 +21,32 @@ use jet::jupyter;
 use jet::kallichore::Client;
 use jet::kernel;
 use jet::render::{warn_if_passthrough_off, Renderer, SharedWriter};
+
+enum WaitResult {
+    Idle,
+    Timeout,
+    Closed,
+}
+
+async fn wait_for_idle(
+    rx: &mut UnboundedReceiver<String>,
+    target: &str,
+    timeout: Duration,
+) -> WaitResult {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return WaitResult::Timeout;
+        }
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(parent)) if parent == target => return WaitResult::Idle,
+            Ok(Some(_)) => continue,
+            Ok(None) => return WaitResult::Closed,
+            Err(_) => return WaitResult::Timeout,
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -77,20 +104,11 @@ async fn main() -> Result<()> {
     let info_id = jupyter::new_msg_id();
     let info_req = jupyter::message("shell", &info_id, "kernel_info_request", json!({}));
     jet::kallichore::send(&mut ws_sink, &info_req).await?;
-    let banner_deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let remaining = banner_deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        match tokio::time::timeout(remaining, idle_rx.recv()).await {
-            Ok(Some(parent)) if parent == info_id => break,
-            Ok(Some(_)) => continue,
-            Ok(None) => {
-                eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
-                return Ok(());
-            }
-            Err(_) => break,
+    match wait_for_idle(&mut idle_rx, &info_id, Duration::from_secs(10)).await {
+        WaitResult::Idle | WaitResult::Timeout => {}
+        WaitResult::Closed => {
+            eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
+            return Ok(());
         }
     }
 
@@ -127,25 +145,12 @@ async fn main() -> Result<()> {
         );
         jet::kallichore::send(&mut ws_sink, &req).await?;
 
-        // Wait for the kernel to report idle for our request, with a timeout.
-        let deadline = Instant::now() + Duration::from_secs(300);
-        loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m");
-                break;
-            }
-            match tokio::time::timeout(remaining, idle_rx.recv()).await {
-                Ok(Some(parent)) if parent == msg_id => break,
-                Ok(Some(_)) => continue,
-                Ok(None) => {
-                    eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
-                    return Ok(());
-                }
-                Err(_) => {
-                    eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m");
-                    break;
-                }
+        match wait_for_idle(&mut idle_rx, &msg_id, Duration::from_secs(300)).await {
+            WaitResult::Idle => {}
+            WaitResult::Timeout => eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m"),
+            WaitResult::Closed => {
+                eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
+                return Ok(());
             }
         }
     }
