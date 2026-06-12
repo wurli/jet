@@ -1,6 +1,6 @@
 //! Session HTTP endpoints + channels websocket upgrade.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use super::api::{self, types};
 use super::WsStream;
@@ -37,18 +37,10 @@ pub async fn create(
     Ok(())
 }
 
-pub async fn start(http: &reqwest::Client, base: &str, session_id: &str) -> Result<()> {
-    let r = http
-        .post(format!("{base}/sessions/{session_id}/start"))
-        .send()
-        .await?;
-    if !r.status().is_success() {
-        bail!(
-            "POST /sessions/{session_id}/start failed: {} — {}",
-            r.status(),
-            r.text().await.unwrap_or_default()
-        );
-    }
+pub async fn start(api: &api::Client, session_id: &str) -> Result<()> {
+    api.start_session(session_id)
+        .await
+        .map_err(|e| anyhow!("POST /sessions/{session_id}/start failed: {e}"))?;
     Ok(())
 }
 

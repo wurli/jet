@@ -20,7 +20,6 @@ pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 pub type WsSink = SplitSink<WsStream, Message>;
 
 pub struct Client {
-    http: reqwest::Client,
     api: api::Client,
     base: String,
     bearer: String,
@@ -57,11 +56,10 @@ impl Client {
         let http = reqwest::Client::builder()
             .default_headers(headers)
             .build()?;
+        let api = api::Client::new_with_client(&base, http);
 
-        wait_for_status(&http, &base).await?;
-        let api = api::Client::new_with_client(&base, http.clone());
+        wait_for_status(&api).await?;
         Ok(Self {
-            http,
             api,
             base,
             bearer: conn.bearer_token,
@@ -85,7 +83,7 @@ impl Client {
 
     /// `POST /sessions/{id}/start` — start the kernel for an existing session.
     pub async fn start_session(&self, session_id: &str) -> Result<()> {
-        session::start(&self.http, &self.base, session_id).await
+        session::start(&self.api, session_id).await
     }
 
     /// Open the channels websocket for a session. The websocket is

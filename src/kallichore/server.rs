@@ -71,16 +71,13 @@ pub async fn spawn_kcserver(bin: &str) -> Result<(ConnectionFile, ChildGuard)> {
     bail!("timed out waiting for kcserver connection file at {conn_path:?}");
 }
 
-pub async fn wait_for_status(http: &reqwest::Client, base: &str) -> Result<()> {
-    let url = format!("{base}/status");
+pub async fn wait_for_status(api: &super::api::Client) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
-        if let Ok(r) = http.get(&url).send().await {
-            if r.status().is_success() {
-                return Ok(());
-            }
+        if api.server_status().await.is_ok() {
+            return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    bail!("kcserver /status never became ready at {url}");
+    bail!("kcserver /status never became ready");
 }
