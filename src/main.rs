@@ -47,9 +47,21 @@ async fn wait_for_idle(
     }
 }
 
+fn init_logger(log_file: Option<&std::path::Path>) {
+    // File logging because the REPL owns stdout/stderr — log lines on the
+    // terminal would corrupt prompts and inline graphics. Controlled with
+    // RUST_LOG (e.g. `RUST_LOG=jet=trace`).
+    let Some(path) = log_file else { return };
+    let Ok(file) = std::fs::File::create(path) else { return };
+    let _ = env_logger::Builder::from_default_env()
+        .target(env_logger::Target::Pipe(Box::new(file)))
+        .try_init();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    init_logger(args.log.as_deref());
 
     let client = match &args.connect {
         Some(path) => Client::connect(path).await?,
@@ -58,6 +70,11 @@ async fn main() -> Result<()> {
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
     let spec = args.kernel_spec();
+    log::info!(
+        "Creating session {session_id} (language={}, argv={:?})",
+        spec.language,
+        spec.argv,
+    );
     client
         .create_session(&session_id, &spec.language, &spec.argv)
         .await?;
@@ -67,6 +84,7 @@ async fn main() -> Result<()> {
     let (ws_sink, ws_stream) = ws.split();
     let mut channel = Channel::new(ws_sink);
 
+    log::info!("Starting session {session_id}");
     client.start_session(&session_id).await?;
 
     let render_graphics = !args.no_graphics;
@@ -96,24 +114,34 @@ async fn main() -> Result<()> {
                 _ = reader_shutdown.notified() => return,
                 msg = stream.next() => match msg {
                     Some(Ok(Message::Text(t))) => {
+                        log::trace!("ws frame: {t}");
                         let event = match parse_event(&t) {
                             Ok(e) => e,
                             Err(e) => {
+                                log::warn!("parse_event failed: {e}");
                                 eprintln!("\x1b[31m[jet] {e}\x1b[0m");
                                 continue;
                             }
                         };
                         let exited = matches!(event, Event::KernelExited);
+                        if exited {
+                            log::info!("kernel exited");
+                        }
                         if let Err(e) = renderer.handle_event(event) {
+                            log::warn!("renderer error: {e}");
                             eprintln!("\x1b[31m[jet] {e}\x1b[0m");
                         }
                         if exited {
                             break;
                         }
                     }
-                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Close(_))) | None => {
+                        log::info!("websocket closed");
+                        break;
+                    }
                     Some(Ok(_)) => {}
                     Some(Err(e)) => {
+                        log::error!("ws error: {e}");
                         eprintln!("\x1b[31m[jet] ws error: {e}\x1b[0m");
                         break;
                     }
@@ -195,7 +223,10 @@ async fn main() -> Result<()> {
 
         match wait_for_idle(&mut idle_rx, &msg_id, Duration::from_secs(300)).await {
             WaitResult::Idle => {}
-            WaitResult::Timeout => eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m"),
+            WaitResult::Timeout => {
+                log::warn!("timeout waiting for kernel idle (msg_id={msg_id})");
+                eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m");
+            }
             WaitResult::Closed => {
                 // Kernel went away mid-request. The reader task either
                 // already printed `[jet] kernel exited` (clean quit() /

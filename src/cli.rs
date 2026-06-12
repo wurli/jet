@@ -35,6 +35,11 @@ pub struct Args {
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
     #[arg(long)]
     pub no_graphics: bool,
+
+    /// File to write logs to. If unset, logging is disabled.
+    /// Log level is controlled with `RUST_LOG` (e.g. `RUST_LOG=jet=trace`).
+    #[arg(long)]
+    pub log: Option<PathBuf>,
 }
 
 impl Args {

@@ -48,6 +48,7 @@ pub async fn open_channels(base: &str, bearer: &str, session_id: &str) -> Result
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
     let url = ws_url(base, session_id)?;
+    log::debug!("opening channels websocket: {url}");
     let mut req = url.as_str().into_client_request()?;
     req.headers_mut()
         .insert("Authorization", format!("Bearer {bearer}").parse()?);

@@ -241,6 +241,7 @@ impl Renderer {
                 match emit_png(&mut *w, b64) {
                     Ok(()) => true,
                     Err(e) => {
+                        log::warn!("kitty render failed: {e}");
                         eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m");
                         false
                     }

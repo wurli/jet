@@ -32,6 +32,7 @@ impl Channel {
 
     pub async fn send(&mut self, msg: &Value) -> Result<()> {
         use futures_util::SinkExt;
+        log::trace!("ws send: {msg}");
         self.sink.send(Message::Text(msg.to_string().into())).await?;
         Ok(())
     }
@@ -56,12 +57,14 @@ pub struct Client {
 impl Client {
     /// Spawn a fresh `kcserver` and connect to it.
     pub async fn spawn(bin: &str) -> Result<Self> {
+        log::info!("Spawning kcserver: {bin}");
         let (conn, server) = spawn_kcserver(bin).await?;
         Self::from_conn(conn, Some(server)).await
     }
 
     /// Connect to an already-running `kcserver` via its connection file.
     pub async fn connect(connection_file: &std::path::Path) -> Result<Self> {
+        log::info!("Connecting to kcserver via {connection_file:?}");
         let conn = ConnectionFile::read(connection_file)?;
         Self::from_conn(conn, None).await
     }
@@ -84,6 +87,7 @@ impl Client {
         let api = api::Client::new_with_client(&base, http);
 
         wait_for_status(&api).await?;
+        log::info!("kcserver ready at {base}");
         Ok(Self {
             api,
             ws_auth: WsAuth {

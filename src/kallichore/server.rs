@@ -61,6 +61,7 @@ pub async fn spawn_kcserver(bin: &str) -> Result<(ConnectionFile, ChildGuard)> {
     // Make sure stale file doesn't trick us.
     let _ = std::fs::remove_file(&conn_path);
 
+    log::debug!("spawning {bin} with connection file {conn_path:?}");
     let child = Command::new(bin)
         .arg("--connection-file")
         .arg(&conn_path)
