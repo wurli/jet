@@ -19,10 +19,17 @@ use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 pub type WsSink = SplitSink<WsStream, Message>;
 
-pub struct Client {
-    api: api::Client,
+/// Bits we need for the WebSocket upgrade — the auto-generated `api::Client`
+/// handles bearer auth for HTTP, but the WS path connects directly via
+/// tungstenite and needs the headers re-applied.
+struct WsAuth {
     base: String,
     bearer: String,
+}
+
+pub struct Client {
+    api: api::Client,
+    ws_auth: WsAuth,
     /// Server we spawned; kept alive (and killed on drop) for the lifetime
     /// of the client. `None` when connecting to an existing server.
     _server: Option<ChildGuard>,
@@ -61,14 +68,16 @@ impl Client {
         wait_for_status(&api).await?;
         Ok(Self {
             api,
-            base,
-            bearer: conn.bearer_token,
+            ws_auth: WsAuth {
+                base,
+                bearer: conn.bearer_token,
+            },
             _server: server,
         })
     }
 
     pub fn base(&self) -> &str {
-        &self.base
+        &self.ws_auth.base
     }
 
     /// `PUT /sessions` — create a new session.
@@ -90,7 +99,7 @@ impl Client {
     /// returned **before** the session is started; this lets the caller
     /// avoid a race where startup messages arrive before they're listening.
     pub async fn open_channels(&self, session_id: &str) -> Result<WsStream> {
-        session::open_channels(&self.base, &self.bearer, session_id).await
+        session::open_channels(&self.ws_auth.base, &self.ws_auth.bearer, session_id).await
     }
 }
 
