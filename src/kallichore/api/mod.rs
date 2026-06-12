@@ -8,10 +8,7 @@
 //! extensions can sit alongside the re-export without touching the
 //! generated file.
 
-// `generated.rs` lives next to this file rather than under an `api/`
-// subdirectory; `#[path]` overrides Rust's default child-module lookup.
 #[allow(clippy::all, dead_code)]
-#[path = "generated.rs"]
 mod generated;
 
 pub use generated::*;
