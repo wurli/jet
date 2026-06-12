@@ -39,7 +39,7 @@ struct IncomingMessage {
     #[serde(default)]
     header: Header,
     #[serde(default)]
-    parent_header: ParentHeader,
+    parent_header: Option<ParentHeader>,
     #[serde(default)]
     content: Value,
 }
@@ -107,10 +107,9 @@ pub fn parse_event(text: &str) -> Result<Event> {
                 .get("execution_state")
                 .and_then(|s| s.as_str())
                 .unwrap_or("");
-            if state == "idle" && !m.parent_header.msg_id.is_empty() {
-                Event::Idle {
-                    parent_id: m.parent_header.msg_id,
-                }
+            let parent_id = m.parent_header.map(|p| p.msg_id).unwrap_or_default();
+            if state == "idle" && !parent_id.is_empty() {
+                Event::Idle { parent_id }
             } else {
                 Event::Other
             }
@@ -323,6 +322,18 @@ mod tests {
     fn parse_unknown_msg_type_is_other() {
         let f = frame("iopub", "comm_msg", "", json!({}));
         assert!(matches!(parse_event(&f).unwrap(), Event::Other));
+    }
+
+    #[test]
+    fn parse_handles_null_parent_header() {
+        let raw = serde_json::json!({
+            "channel": "iopub",
+            "header": {"msg_type": "status"},
+            "parent_header": null,
+            "content": {"execution_state": "starting"},
+        })
+        .to_string();
+        assert!(matches!(parse_event(&raw).unwrap(), Event::Other));
     }
 
     #[test]
