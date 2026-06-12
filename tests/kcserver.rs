@@ -138,10 +138,10 @@ async fn run_one(code: &str) -> Result<String> {
                         .unwrap_or("?")
                 );
             }
-            "status" => {
-                if content.get("execution_state").and_then(|s| s.as_str()) == Some("idle") {
-                    return Ok(output);
-                }
+            "status"
+                if content.get("execution_state").and_then(|s| s.as_str()) == Some("idle") =>
+            {
+                return Ok(output);
             }
             _ => {}
         }

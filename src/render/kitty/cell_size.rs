@@ -67,7 +67,7 @@ fn query() -> Option<(u32, u32)> {
             break;
         }
         filled += n as usize;
-        if buf[..filled].iter().any(|&b| b == b't') {
+        if buf[..filled].contains(&b't') {
             break;
         }
     }

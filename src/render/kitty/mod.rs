@@ -11,8 +11,8 @@
 //!      image will be referenced from text cells, so the terminal does
 //!      not draw it immediately.
 //!   2. Write `rows × cols` of placeholder text. Each cell:
-//!        SGR fg = i  (low 8 bits of image id encoded as 256-color)
-//!        U+10EEEE  + row_diacritic + col_diacritic
+//!      SGR fg = i  (low 8 bits of image id encoded as 256-color)
+//!      U+10EEEE  + row_diacritic + col_diacritic
 
 mod cell_size;
 mod diacritics;
@@ -130,7 +130,7 @@ pub(crate) fn env_u32(name: &str, default: u32) -> u32 {
 /// width: u32 BE, height: u32 BE.
 pub(crate) fn png_dims_from_b64_prefix(b64: &str) -> Option<(u32, u32)> {
     let mut p: String = b64.chars().take(36).collect();
-    while p.len() % 4 != 0 {
+    while !p.len().is_multiple_of(4) {
         p.push('=');
     }
     let bytes = base64::engine::general_purpose::STANDARD.decode(p).ok()?;
