@@ -131,10 +131,7 @@ async fn main() -> Result<()> {
     channel.send(&info_req).await?;
     match wait_for_idle(&mut idle_rx, &info_id, Duration::from_secs(10)).await {
         WaitResult::Idle | WaitResult::Timeout => {}
-        WaitResult::Closed => {
-            eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
-            return Ok(());
-        }
+        WaitResult::Closed => return Ok(()),
     }
 
     let mut rl = Some(rustyline::DefaultEditor::new()?);
@@ -200,7 +197,10 @@ async fn main() -> Result<()> {
             WaitResult::Idle => {}
             WaitResult::Timeout => eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m"),
             WaitResult::Closed => {
-                eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
+                // Kernel went away mid-request. The reader task either
+                // already printed `[jet] kernel exited` (clean quit() /
+                // exit()) or `[jet] ws error: …` (something worse). Exit
+                // silently here either way.
                 shutdown.notify_one();
                 drop(client);
                 std::process::exit(0);
