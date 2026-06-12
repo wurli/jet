@@ -68,9 +68,13 @@ pub fn emit_png(out: &mut dyn IoWrite, b64_png: &str) -> Result<()> {
     // the most-recent transmission for that id.
     let id = (NEXT_IMG_ID.fetch_add(1, Ordering::Relaxed) % 255) + 1;
 
-    let raw = build_transmission(id, payload.as_bytes())?;
-
-    write_passthrough(out, &raw)?;
+    // Wrap each chunk in its own tmux passthrough envelope. tmux drops
+    // DCS sequences that exceed an internal buffer threshold, so a single
+    // envelope around a multi-megabyte transmission can be silently
+    // discarded — large ggplot PNGs hit this regularly.
+    for chunk in build_transmission_chunks(id, payload.as_bytes())? {
+        write_passthrough(out, &chunk)?;
+    }
 
     let grid = build_placeholder_grid(id, rows, cols);
     out.write_all(grid.as_bytes())?;
@@ -78,27 +82,30 @@ pub fn emit_png(out: &mut dyn IoWrite, b64_png: &str) -> Result<()> {
     Ok(())
 }
 
-/// Build the chunked APC transmission for a base64 PNG, ready to be wrapped
-/// (or not) for tmux passthrough.
-fn build_transmission(id: u32, b64: &[u8]) -> std::io::Result<Vec<u8>> {
+/// Build the chunked APC transmission for a base64 PNG. Each returned
+/// element is one complete `\x1b_G…\x1b\\` chunk; transmit each one
+/// separately so tmux passthrough can wrap them individually.
+fn build_transmission_chunks(id: u32, b64: &[u8]) -> std::io::Result<Vec<Vec<u8>>> {
     const CHUNK: usize = 4096;
-    let mut raw = Vec::with_capacity(b64.len() + 128);
+    let mut chunks = Vec::new();
     let mut i = 0;
     let mut first = true;
     while i < b64.len() {
         let end = (i + CHUNK).min(b64.len());
         let more = if end < b64.len() { 1 } else { 0 };
+        let mut buf = Vec::with_capacity(end - i + 32);
         if first {
-            write!(raw, "\x1b_Ga=T,U=1,i={id},f=100,q=2,m={more};")?;
+            write!(buf, "\x1b_Ga=T,U=1,i={id},f=100,q=2,m={more};")?;
             first = false;
         } else {
-            write!(raw, "\x1b_Gm={more};")?;
+            write!(buf, "\x1b_Gm={more};")?;
         }
-        raw.extend_from_slice(&b64[i..end]);
-        raw.extend_from_slice(b"\x1b\\");
+        buf.extend_from_slice(&b64[i..end]);
+        buf.extend_from_slice(b"\x1b\\");
+        chunks.push(buf);
         i = end;
     }
-    Ok(raw)
+    Ok(chunks)
 }
 
 /// Build the placeholder grid — `rows` lines, each `cols` cells wide. Each
@@ -180,15 +187,18 @@ mod tests {
     #[test]
     fn build_transmission_chunks_long_payloads() {
         let payload = vec![b'A'; 10_000];
-        let raw = build_transmission(7, &payload).unwrap();
+        let chunks = build_transmission_chunks(7, &payload).unwrap();
         // Exactly three chunks: 4096 + 4096 + 1808.
-        let chunks = raw.windows(3).filter(|w| w == b"\x1b_G").count();
-        assert_eq!(chunks, 3);
+        assert_eq!(chunks.len(), 3);
         // First chunk has a=T; subsequent chunks have only m=...
-        assert!(raw.starts_with(b"\x1b_Ga=T,U=1,i=7,f=100,q=2,m=1;"));
+        assert!(chunks[0].starts_with(b"\x1b_Ga=T,U=1,i=7,f=100,q=2,m=1;"));
+        assert!(chunks[1].starts_with(b"\x1b_Gm=1;"));
         // Last chunk must have m=0.
-        let last_chunk_start = raw.windows(3).rposition(|w| w == b"\x1b_G").unwrap();
-        assert!(raw[last_chunk_start..].starts_with(b"\x1b_Gm=0;"));
+        assert!(chunks[2].starts_with(b"\x1b_Gm=0;"));
+        // Every chunk ends with the APC terminator.
+        for c in &chunks {
+            assert!(c.ends_with(b"\x1b\\"));
+        }
     }
 
     #[test]
