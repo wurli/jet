@@ -12,12 +12,15 @@ pub use kitty::emit_png;
 pub use tmux::warn_if_passthrough_off;
 
 use std::io::Write;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
+
+pub type SharedWriter = Arc<Mutex<dyn Write + Send>>;
 
 #[derive(Debug)]
 pub enum Event {
@@ -120,22 +123,32 @@ pub fn parse_event(text: &str) -> Result<Event> {
 pub struct Renderer {
     pub render_graphics: bool,
     pub idle_tx: mpsc::UnboundedSender<String>,
+    writer: SharedWriter,
 }
 
 impl Renderer {
-    pub fn new(render_graphics: bool, idle_tx: mpsc::UnboundedSender<String>) -> Self {
+    pub fn new(
+        render_graphics: bool,
+        idle_tx: mpsc::UnboundedSender<String>,
+        writer: SharedWriter,
+    ) -> Self {
         Self {
             render_graphics,
             idle_tx,
+            writer,
         }
     }
 
     pub fn handle_text(&self, text: &str) -> Result<()> {
         match parse_event(text)? {
-            Event::Stream { name, text } => self.write_stream(&name, &text),
-            Event::DisplayData { data } => self.render_data(&data),
-            Event::Error { traceback } => println!("\x1b[31m{traceback}\x1b[0m"),
-            Event::Banner { text } => self.write_banner(&text),
+            Event::Stream { name, text } => self.write_stream(&name, &text)?,
+            Event::DisplayData { data } => self.render_data(&data)?,
+            Event::Error { traceback } => {
+                let mut w = self.writer.lock().unwrap();
+                writeln!(w, "\x1b[31m{traceback}\x1b[0m")?;
+                w.flush()?;
+            }
+            Event::Banner { text } => self.write_banner(&text)?,
             Event::Idle { parent_id } => {
                 let _ = self.idle_tx.send(parent_id);
             }
@@ -144,58 +157,68 @@ impl Renderer {
         Ok(())
     }
 
-    fn write_stream(&self, name: &str, text: &str) {
-        let mut out = std::io::stdout();
-        let _ = if name == "stderr" {
-            write!(out, "\x1b[31m{text}\x1b[0m")
+    fn write_stream(&self, name: &str, text: &str) -> Result<()> {
+        let mut w = self.writer.lock().unwrap();
+        if name == "stderr" {
+            write!(w, "\x1b[31m{text}\x1b[0m")?;
         } else {
-            write!(out, "{text}")
-        };
-        let _ = out.flush();
-    }
-
-    fn write_banner(&self, banner: &str) {
-        if banner.is_empty() {
-            return;
+            write!(w, "{text}")?;
         }
-        let mut out = std::io::stdout();
-        let _ = if banner.ends_with('\n') {
-            write!(out, "{banner}")
-        } else {
-            writeln!(out, "{banner}")
-        };
-        let _ = out.flush();
+        w.flush()?;
+        Ok(())
     }
 
-    fn render_data(&self, data: &Value) {
+    fn write_banner(&self, banner: &str) -> Result<()> {
+        if banner.is_empty() {
+            return Ok(());
+        }
+        let mut w = self.writer.lock().unwrap();
+        if banner.ends_with('\n') {
+            write!(w, "{banner}")?;
+        } else {
+            writeln!(w, "{banner}")?;
+        }
+        w.flush()?;
+        Ok(())
+    }
+
+    fn render_data(&self, data: &Value) -> Result<()> {
         if !data.is_object() {
-            return;
+            return Ok(());
         }
         let png = data.get("image/png").and_then(|s| s.as_str());
         let handled = match (self.render_graphics, png) {
-            (true, Some(b64)) => match emit_png(b64) {
-                Ok(()) => true,
-                Err(e) => {
-                    eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m");
-                    false
+            (true, Some(b64)) => {
+                let mut w = self.writer.lock().unwrap();
+                match emit_png(&mut *w, b64) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m");
+                        false
+                    }
                 }
-            },
+            }
             (false, Some(b64)) => {
                 let len = base64::engine::general_purpose::STANDARD
                     .decode(b64)
                     .map(|b| b.len())
                     .unwrap_or(0);
-                println!("[image/png {len} bytes]");
+                let mut w = self.writer.lock().unwrap();
+                writeln!(w, "[image/png {len} bytes]")?;
+                w.flush()?;
                 true
             }
             (_, None) => false,
         };
         if handled {
-            return;
+            return Ok(());
         }
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
-            println!("{t}");
+            let mut w = self.writer.lock().unwrap();
+            writeln!(w, "{t}")?;
+            w.flush()?;
         }
+        Ok(())
     }
 }
 
@@ -300,5 +323,40 @@ mod tests {
     fn parse_unknown_msg_type_is_other() {
         let f = frame("iopub", "comm_msg", "", json!({}));
         assert!(matches!(parse_event(&f).unwrap(), Event::Other));
+    }
+
+    #[test]
+    fn renderer_writes_stream_to_injected_writer() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer);
+        let f = frame("iopub", "stream", "", json!({"name": "stdout", "text": "hello"}));
+        r.handle_text(&f).unwrap();
+        let bytes = captured.lock().unwrap();
+        assert_eq!(&*bytes, b"hello");
+    }
+
+    #[test]
+    fn renderer_writes_stderr_with_color() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer);
+        let f = frame("iopub", "stream", "", json!({"name": "stderr", "text": "oops"}));
+        r.handle_text(&f).unwrap();
+        let bytes = captured.lock().unwrap();
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), "\x1b[31moops\x1b[0m");
+    }
+
+    #[test]
+    fn renderer_signals_idle() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured;
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer);
+        let f = frame("iopub", "status", "msg-1", json!({"execution_state": "idle"}));
+        r.handle_text(&f).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), "msg-1");
     }
 }

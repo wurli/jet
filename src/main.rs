@@ -5,6 +5,7 @@
 // drives a line-oriented REPL. PNG outputs from the kernel are rendered
 // inline with the kitty graphics protocol.
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -18,7 +19,7 @@ use jet::cli::Args;
 use jet::jupyter;
 use jet::kallichore::Client;
 use jet::kernel;
-use jet::render::{warn_if_passthrough_off, Renderer};
+use jet::render::{warn_if_passthrough_off, Renderer, SharedWriter};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -48,7 +49,8 @@ async fn main() -> Result<()> {
 
     // Channel from the WS reader to the REPL: signals "kernel is idle for msg X".
     let (idle_tx, mut idle_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let renderer = Renderer::new(render_graphics, idle_tx);
+    let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
+    let renderer = Renderer::new(render_graphics, idle_tx, writer);
 
     tokio::spawn(async move {
         let mut stream = ws_stream;

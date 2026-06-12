@@ -35,7 +35,7 @@ pub fn warn_if_passthrough_off() {
 /// Write `raw` to `out`, wrapping in tmux DCS passthrough (`ESC P tmux ; … ESC \\`,
 /// with every interior `ESC` doubled) iff `$TMUX` is set. Tests use it
 /// directly with a `Vec<u8>` and a fake `TMUX` env.
-pub fn write_passthrough<W: Write>(out: &mut W, raw: &[u8]) -> std::io::Result<()> {
+pub fn write_passthrough(out: &mut dyn Write, raw: &[u8]) -> std::io::Result<()> {
     if std::env::var_os("TMUX").is_some() {
         out.write_all(b"\x1bPtmux;")?;
         for &b in raw {

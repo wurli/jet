@@ -31,7 +31,7 @@ use super::tmux::write_passthrough;
 
 static NEXT_IMG_ID: AtomicU32 = AtomicU32::new(1);
 
-pub fn emit_png(b64_png: &str) -> Result<()> {
+pub fn emit_png(out: &mut dyn IoWrite, b64_png: &str) -> Result<()> {
     // Strip whitespace (some kernels insert line breaks) and ensure the
     // base64 is `=`-padded — ark/R omits trailing padding, but kitty's
     // graphics decoder rejects unpadded base64 and silently drops the image.
@@ -70,8 +70,7 @@ pub fn emit_png(b64_png: &str) -> Result<()> {
 
     let raw = build_transmission(id, payload.as_bytes())?;
 
-    let mut out = std::io::stdout().lock();
-    write_passthrough(&mut out, &raw)?;
+    write_passthrough(out, &raw)?;
 
     let grid = build_placeholder_grid(id, rows, cols);
     out.write_all(grid.as_bytes())?;
