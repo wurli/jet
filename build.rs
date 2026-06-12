@@ -1,0 +1,103 @@
+//! Generate the kallichore HTTP client from the vendored OpenAPI spec.
+//!
+//! The spec lives at `vendor/kallichore.json` (see `vendor/SOURCE.md`).
+//! We feed it to `progenitor` and write the generated module to
+//! `$OUT_DIR/kallichore_api.rs`, which `src/kallichore/api.rs` includes.
+
+use std::{env, fs, path::PathBuf};
+
+fn main() {
+    let spec_path = "vendor/kallichore.json";
+    println!("cargo:rerun-if-changed={spec_path}");
+    println!("cargo:rerun-if-changed=build.rs");
+
+    let raw = fs::read_to_string(spec_path)
+        .unwrap_or_else(|e| panic!("reading {spec_path}: {e}"));
+    let mut value: serde_json::Value = serde_json::from_str(&raw)
+        .unwrap_or_else(|e| panic!("parsing {spec_path}: {e}"));
+    fixup_spec(&mut value);
+    let spec: openapiv3::OpenAPI = serde_json::from_value(value)
+        .unwrap_or_else(|e| panic!("validating OpenAPI shape of {spec_path}: {e}"));
+
+    let mut generator = progenitor::Generator::default();
+    let tokens = generator
+        .generate_tokens(&spec)
+        .unwrap_or_else(|e| panic!("progenitor codegen failed: {e}"));
+    let ast = syn::parse2(tokens).expect("progenitor produced invalid Rust");
+    let pretty = prettyplease::unparse(&ast);
+
+    let out = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR not set"))
+        .join("kallichore_api.rs");
+    fs::write(&out, pretty).unwrap_or_else(|e| panic!("writing {out:?}: {e}"));
+}
+
+/// Coerce kallichore's spec into shapes both `openapiv3` and `progenitor` accept.
+///
+/// Three classes of fixups, all applied in-memory so `vendor/kallichore.json`
+/// stays byte-identical to upstream and updates stay a `curl` away:
+///
+/// 1. `"security": ["bearerAuth"]` → `[{"bearerAuth": []}]`.
+///    OpenAPI 3.0 requires *requirement objects*; upstream uses bare
+///    strings. `openapi-generator` (Java) tolerates this; `openapiv3` refuses.
+/// 2. `content: { "application/json": {} }` (every 404 response) →
+///    drop `content` entirely. Progenitor 0.14 panics on a media-type
+///    with no schema. Treating these as schema-less responses matches
+///    what a hand-written client would do.
+/// 3. Strip `responses[4xx|5xx|default]` from every operation. Progenitor
+///    asserts `response_types.len() <= 1` per filter, and kallichore
+///    returns multiple error shapes per operation (`error` + the empty
+///    `UnauthorizedError`, sometimes also `startupError`). The hand-rolled
+///    client never deserialised error bodies anyway — it falls back to
+///    `r.text().await` in `bail!`. Generated code does the same.
+fn fixup_spec(value: &mut serde_json::Value) {
+    use serde_json::Value;
+
+    // Strip non-2xx responses from every operation.
+    if let Some(Value::Object(paths)) = value.get_mut("paths") {
+        for (_, path_item) in paths.iter_mut() {
+            let Value::Object(ops) = path_item else { continue };
+            for method in ["get", "put", "post", "delete", "patch", "options", "head"] {
+                let Some(Value::Object(op)) = ops.get_mut(method) else { continue };
+                let Some(Value::Object(responses)) = op.get_mut("responses") else { continue };
+                responses.retain(|code, _| code.starts_with('2'));
+            }
+        }
+    }
+
+    fn fix(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                if let Some(Value::Array(items)) = map.get_mut("security") {
+                    for item in items.iter_mut() {
+                        if let Value::String(name) = item {
+                            let name = std::mem::take(name);
+                            let mut req = serde_json::Map::new();
+                            req.insert(name, Value::Array(vec![]));
+                            *item = Value::Object(req);
+                        }
+                    }
+                }
+                if let Some(Value::Object(content)) = map.get_mut("content") {
+                    content.retain(|_, mt| match mt {
+                        Value::Object(o) => o.contains_key("schema"),
+                        _ => true,
+                    });
+                    if content.is_empty() {
+                        map.remove("content");
+                    }
+                }
+                for (_, child) in map.iter_mut() {
+                    fix(child);
+                }
+            }
+            Value::Array(items) => {
+                for child in items {
+                    fix(child);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fix(value);
+}

@@ -3,6 +3,7 @@
 //! `Client` owns the kcserver process (when we spawned it), the auth token,
 //! and the base URL. Drop the client and the server dies with it.
 
+pub mod api;
 mod server;
 mod session;
 
@@ -20,6 +21,7 @@ pub type WsSink = SplitSink<WsStream, Message>;
 
 pub struct Client {
     http: reqwest::Client,
+    api: api::Client,
     base: String,
     bearer: String,
     /// Server we spawned; kept alive (and killed on drop) for the lifetime
@@ -57,8 +59,10 @@ impl Client {
             .build()?;
 
         wait_for_status(&http, &base).await?;
+        let api = api::Client::new_with_client(&base, http.clone());
         Ok(Self {
             http,
+            api,
             base,
             bearer: conn.bearer_token,
             _server: server,
@@ -76,7 +80,7 @@ impl Client {
         language: &str,
         argv: &[String],
     ) -> Result<()> {
-        session::create(&self.http, &self.base, session_id, language, argv).await
+        session::create(&self.api, session_id, language, argv).await
     }
 
     /// `POST /sessions/{id}/start` — start the kernel for an existing session.
@@ -95,6 +99,6 @@ impl Client {
 /// Convenience: send a Jupyter message as a tungstenite Text frame.
 pub async fn send(sink: &mut WsSink, msg: &Value) -> Result<()> {
     use futures_util::SinkExt;
-    sink.send(Message::Text(msg.to_string())).await?;
+    sink.send(Message::Text(msg.to_string().into())).await?;
     Ok(())
 }

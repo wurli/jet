@@ -1,0 +1,1450 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "description": "Kallichore is a Jupyter kernel gateway and supervisor",
+    "version": "1.0.0",
+    "title": "Kallichore API",
+    "contact": {
+      "name": "Posit Software, PBC",
+      "url": "https://posit.co",
+      "email": "info@posit.co"
+    }
+  },
+  "paths": {
+    "/sessions": {
+      "get": {
+        "operationId": "list-sessions",
+        "summary": "List active sessions",
+        "responses": {
+          "200": {
+            "description": "List of active sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sessionList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "new-session",
+        "summary": "Create a new session",
+        "security": [
+          "bearerAuth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/newSession"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The session ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "description": "A unique identifier for the session"
+                    }
+                  },
+                  "required": [
+                    "session_id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}": {
+      "get": {
+        "operationId": "get-session",
+        "summary": "Get session details",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/activeSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to get session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete-session",
+        "summary": "Delete session",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session deleted",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to delete session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/start": {
+      "post": {
+        "operationId": "start-session",
+        "summary": "Start a session",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "500": {
+            "description": "Start failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/startupError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/restart": {
+      "post": {
+        "operationId": "restart-session",
+        "summary": "Restart a session",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/restartSession"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Restarted",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "500": {
+            "description": "Restart failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/startupError"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/kill": {
+      "post": {
+        "operationId": "kill-session",
+        "summary": "Force quit session",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Killed",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Kill failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/adopt": {
+      "put": {
+        "operationId": "adopt-session",
+        "summary": "Adopt an existing session",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/connectionInfo"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Adopted",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "500": {
+            "description": "Adoption failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/connection_info": {
+      "get": {
+        "operationId": "connection-info",
+        "summary": "Get Jupyter connection information for the session",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connectionInfo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/interrupt": {
+      "post": {
+        "operationId": "interrupt-session",
+        "summary": "Interrupt session",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Interrupted",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Interrupt failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/channels": {
+      "get": {
+        "operationId": "channels-upgrade",
+        "summary": "Upgrade to a WebSocket or domain socket for channel communication",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upgraded connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "description": "The path to the domain socket or the WebSocket URL for the session"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/execute": {
+      "post": {
+        "operationId": "execute-code",
+        "summary": "Execute code and return results",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/executeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/executeReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {}
+            }
+          },
+          "408": {
+            "description": "Execution timed out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shutdown": {
+      "post": {
+        "operationId": "shutdown-server",
+        "summary": "Shut down all sessions and the server itself",
+        "security": [
+          "bearerAuth"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Shutting down",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Shutdown failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "server-status",
+        "summary": "Get server status and information",
+        "responses": {
+          "200": {
+            "description": "Server status and information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/serverStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/client_heartbeat": {
+      "post": {
+        "operationId": "client-heartbeat",
+        "summary": "Notify the server that a client is connected",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/clientHeartbeat"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Heartbeat received",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/server_configuration": {
+      "get": {
+        "operationId": "get-server-configuration",
+        "summary": "Get the server configuration",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The current server configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/serverConfiguration"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to get configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "set-server-configuration",
+        "summary": "Change the server configuration",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/serverConfiguration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configuration updated",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "envVarActions": {
+        "type": "array",
+        "description": "A list of environment variable actions to perform",
+        "items": {
+          "$ref": "#/components/schemas/varAction"
+        }
+      },
+      "sessionMode": {
+        "type": "string",
+        "description": "The mode in which the session is running",
+        "enum": [
+          "console",
+          "notebook",
+          "background"
+        ]
+      },
+      "varActionType": {
+        "type": "string",
+        "description": "The type of action to perform on the environment variable",
+        "enum": [
+          "replace",
+          "append",
+          "prepend"
+        ]
+      },
+      "varAction": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/varActionType"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the variable to act on"
+          },
+          "value": {
+            "description": "The value to replace, append, or prepend",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "name",
+          "value"
+        ]
+      },
+      "connectionInfo": {
+        "type": "object",
+        "description": "Connection information for an existing session",
+        "properties": {
+          "control_port": {
+            "type": "integer",
+            "description": "The port for control messages"
+          },
+          "shell_port": {
+            "type": "integer",
+            "description": "The port for shell messages"
+          },
+          "stdin_port": {
+            "type": "integer",
+            "description": "The port for stdin messages"
+          },
+          "hb_port": {
+            "type": "integer",
+            "description": "The port for heartbeat messages"
+          },
+          "iopub_port": {
+            "type": "integer",
+            "description": "The port for IOPub messages"
+          },
+          "signature_scheme": {
+            "type": "string",
+            "description": "The signature scheme for messages"
+          },
+          "key": {
+            "type": "string",
+            "description": "The key for messages"
+          },
+          "transport": {
+            "type": "string",
+            "description": "The transport protocol"
+          },
+          "ip": {
+            "type": "string",
+            "description": "The IP address for the connection"
+          }
+        },
+        "required": [
+          "control_port",
+          "hb_port",
+          "iopub_port",
+          "ip",
+          "key",
+          "shell_port",
+          "signature_scheme",
+          "stdin_port",
+          "transport"
+        ]
+      },
+      "startupError": {
+        "type": "object",
+        "properties": {
+          "exit_code": {
+            "type": "integer",
+            "description": "The exit code of the process, if it exited"
+          },
+          "output": {
+            "type": "string",
+            "description": "The output of the process (combined stdout and stderr) emitted during startup, if any"
+          },
+          "error": {
+            "$ref": "#/components/schemas/error"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "startupEnvironment": {
+        "type": "string",
+        "description": "The kernel's startup environment: 'none' for normal startup, 'shell' for a login shell, 'command' for a preflight command, 'script' to run a script. Only relevant on POSIX-like systems.",
+        "enum": [
+          "none",
+          "shell",
+          "command",
+          "script"
+        ]
+      },
+      "status": {
+        "type": "string",
+        "description": "The status of the session",
+        "enum": [
+          "uninitialized",
+          "starting",
+          "ready",
+          "idle",
+          "busy",
+          "offline",
+          "exited"
+        ]
+      },
+      "interrupt_mode": {
+        "type": "string",
+        "description": "The mechansim for interrupting the session",
+        "enum": [
+          "signal",
+          "message"
+        ]
+      },
+      "clientHeartbeat": {
+        "type": "object",
+        "properties": {
+          "process_id": {
+            "type": "integer",
+            "description": "The process ID of the client sending the heartbeat"
+          }
+        }
+      },
+      "newSession": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "A unique identifier for the session"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "A human-readable name for the session"
+          },
+          "language": {
+            "type": "string",
+            "description": "The interpreter language"
+          },
+          "username": {
+            "type": "string",
+            "description": "The username of the user who owns the session"
+          },
+          "input_prompt": {
+            "type": "string",
+            "description": "The text to use to prompt for input"
+          },
+          "continuation_prompt": {
+            "type": "string",
+            "description": "The text to use to prompt for input continuations"
+          },
+          "argv": {
+            "type": "array",
+            "description": "The program and command-line parameters for the session",
+            "items": {
+              "type": "string"
+            }
+          },
+          "session_mode": {
+            "$ref": "#/components/schemas/sessionMode"
+          },
+          "working_directory": {
+            "type": "string",
+            "description": "The working directory in which to start the session."
+          },
+          "notebook_uri": {
+            "type": "string",
+            "description": "For notebook sessions, the URI of the notebook file"
+          },
+          "env": {
+            "$ref": "#/components/schemas/envVarActions"
+          },
+          "connection_timeout": {
+            "type": "integer",
+            "description": "The number of seconds to wait for a connection to the session's ZeroMQ sockets before timing out",
+            "default": 30
+          },
+          "interrupt_mode": {
+            "$ref": "#/components/schemas/interrupt_mode"
+          },
+          "protocol_version": {
+            "type": "string",
+            "description": "The Jupyter protocol version supported by the underlying kernel",
+            "default": "5.3"
+          },
+          "startup_environment": {
+            "$ref": "#/components/schemas/startupEnvironment"
+          },
+          "startup_environment_arg": {
+            "type": "string",
+            "description": "The command or script to run before starting the session"
+          }
+        },
+        "required": [
+          "argv",
+          "continuation_prompt",
+          "display_name",
+          "env",
+          "input_prompt",
+          "interrupt_mode",
+          "language",
+          "session_id",
+          "session_mode",
+          "startup_environment",
+          "username",
+          "working_directory"
+        ]
+      },
+      "restartSession": {
+        "type": "object",
+        "properties": {
+          "working_directory": {
+            "type": "string",
+            "description": "The desired working directory for the session after restart, if different from the session's working directory at startup"
+          },
+          "env": {
+            "$ref": "#/components/schemas/envVarActions"
+          }
+        },
+        "required": []
+      },
+      "execution_queue": {
+        "type": "object",
+        "description": "The execution queue for a session",
+        "properties": {
+          "active": {
+            "type": "object",
+            "description": "The execution request currently being evaluated, if any"
+          },
+          "length": {
+            "type": "integer",
+            "description": "The number of items in the pending queue"
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The queue of pending execution requests"
+          }
+        },
+        "required": [
+          "length",
+          "pending"
+        ]
+      },
+      "executeRequest": {
+        "type": "object",
+        "description": "A request to execute code in a session",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code to execute"
+          },
+          "silent": {
+            "type": "boolean",
+            "description": "If true, signals the kernel to execute quietly: no broadcast on iopub, no execute_result, and the execution_count is not incremented. Defaults to false.",
+            "default": false
+          },
+          "store_history": {
+            "type": "boolean",
+            "description": "If true (default), the code is stored in the kernel's history. Set to false for throwaway executions.",
+            "default": true
+          },
+          "stop_on_error": {
+            "type": "boolean",
+            "description": "If true (default), abort the execution queue on error. If false, queued execute requests will still be processed even if this one fails.",
+            "default": true
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "description": "Maximum number of seconds to wait for execution to complete. If not specified, the request will block indefinitely until execution finishes."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "executeReply": {
+        "type": "object",
+        "description": "The result of executing code in a session",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Whether the execution succeeded or errored",
+            "enum": [
+              "ok",
+              "error"
+            ]
+          },
+          "execution_count": {
+            "type": "integer",
+            "description": "The kernel's execution counter"
+          },
+          "output": {
+            "type": "array",
+            "description": "All output messages produced during execution, in order",
+            "items": {
+              "$ref": "#/components/schemas/executeOutput"
+            }
+          },
+          "data": {
+            "type": "object",
+            "description": "The execution result as a MIME-keyed dictionary (from execute_result), if the execution produced a result",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "error_name": {
+            "type": "string",
+            "description": "The error name, if the execution failed"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "The error message, if the execution failed"
+          },
+          "error_traceback": {
+            "type": "array",
+            "description": "The error traceback, if the execution failed",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "execution_count",
+          "output"
+        ]
+      },
+      "executeOutput": {
+        "type": "object",
+        "description": "A single output message produced during code execution",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "The output message type",
+            "enum": [
+              "stream",
+              "display_data",
+              "error"
+            ]
+          },
+          "stream_name": {
+            "type": "string",
+            "description": "The stream name (stdout or stderr), for stream output"
+          },
+          "text": {
+            "type": "string",
+            "description": "The text content, for stream output"
+          },
+          "data": {
+            "type": "object",
+            "description": "MIME-keyed data, for display_data output",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Metadata dictionary, for display_data output"
+          },
+          "error_name": {
+            "type": "string",
+            "description": "The error name, for error output"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "The error message, for error output"
+          },
+          "error_traceback": {
+            "type": "array",
+            "description": "The error traceback lines, for error output",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "activeSession": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "A unique identifier for the session"
+          },
+          "argv": {
+            "type": "array",
+            "description": "The program and command-line parameters for the session",
+            "items": {
+              "type": "string"
+            }
+          },
+          "process_id": {
+            "type": "integer",
+            "description": "The underlying process ID of the session, if the session is running."
+          },
+          "username": {
+            "type": "string",
+            "description": "The username of the user who owns the session"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "A human-readable name for the session"
+          },
+          "language": {
+            "type": "string",
+            "description": "The interpreter language"
+          },
+          "interrupt_mode": {
+            "$ref": "#/components/schemas/interrupt_mode"
+          },
+          "initial_env": {
+            "type": "object",
+            "description": "The environment variables set when the session was started",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "Whether the session is connected to a client"
+          },
+          "started": {
+            "type": "string",
+            "format": "date-time",
+            "description": "An ISO 8601 timestamp of when the session was started"
+          },
+          "session_mode": {
+            "$ref": "#/components/schemas/sessionMode"
+          },
+          "working_directory": {
+            "type": "string",
+            "description": "The session's current working directory"
+          },
+          "notebook_uri": {
+            "type": "string",
+            "description": "For notebook sessions, the URI of the notebook file"
+          },
+          "input_prompt": {
+            "type": "string",
+            "description": "The text to use to prompt for input"
+          },
+          "continuation_prompt": {
+            "type": "string",
+            "description": "The text to use to prompt for input continuations"
+          },
+          "execution_queue": {
+            "$ref": "#/components/schemas/execution_queue"
+          },
+          "status": {
+            "$ref": "#/components/schemas/status"
+          },
+          "kernel_info": {
+            "type": "object",
+            "description": "The kernel information, as returned by the kernel_info_request message"
+          },
+          "resource_usage": {
+            "$ref": "#/components/schemas/resourceUsage"
+          },
+          "idle_seconds": {
+            "type": "integer",
+            "description": "The number of seconds the session has been idle, or 0 if the session is busy"
+          },
+          "busy_seconds": {
+            "type": "integer",
+            "description": "The number of seconds the session has been busy, or 0 if the session is idle"
+          },
+          "socket_path": {
+            "type": "string",
+            "description": "The path to the Unix domain socket used to send/receive data from the session, if applicable"
+          }
+        },
+        "required": [
+          "argv",
+          "busy_seconds",
+          "connected",
+          "continuation_prompt",
+          "display_name",
+          "execution_queue",
+          "idle_seconds",
+          "kernel_info",
+          "input_prompt",
+          "interrupt_mode",
+          "language",
+          "session_id",
+          "session_mode",
+          "started",
+          "status",
+          "username",
+          "working_directory"
+        ]
+      },
+      "serverStatus": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "integer"
+          },
+          "busy": {
+            "type": "boolean"
+          },
+          "idle_seconds": {
+            "type": "integer",
+            "description": "The number of seconds all sessions have been idle, or 0 if any session is busy"
+          },
+          "busy_seconds": {
+            "type": "integer",
+            "description": "The number of seconds any session has been busy, or 0 if all sessions are idle"
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "description": "The number of seconds the server has been running"
+          },
+          "version": {
+            "type": "string",
+            "description": "The version of the server"
+          },
+          "process_id": {
+            "type": "integer",
+            "description": "The server's operating system process identifier"
+          },
+          "started": {
+            "type": "string",
+            "format": "date-time",
+            "description": "An ISO 8601 timestamp of when the server was started"
+          }
+        },
+        "required": [
+          "active",
+          "busy",
+          "busy_seconds",
+          "idle_seconds",
+          "process_id",
+          "sessions",
+          "started",
+          "uptime_seconds",
+          "version"
+        ]
+      },
+      "resourceUsage": {
+        "type": "object",
+        "properties": {
+          "cpu_percent": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The percentage of CPU used by the kernel process and its child processes"
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The amount of memory used by the kernel process and all of its child processes in bytes"
+          },
+          "thread_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The total number of threads used by the kernel process and its child processes (Linux only)"
+          },
+          "sampling_period_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The sampling period in milliseconds over which the resource usage was measured"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A Unix timestamp in milliseconds indicating when the resource usage was sampled"
+          }
+        },
+        "required": [
+          "cpu_percent",
+          "memory_bytes",
+          "thread_count",
+          "sampling_period_ms",
+          "timestamp"
+        ]
+      },
+      "sessionList": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/activeSession"
+            }
+          }
+        },
+        "required": [
+          "total",
+          "sessions"
+        ]
+      },
+      "serverConfiguration": {
+        "type": "object",
+        "properties": {
+          "idle_shutdown_hours": {
+            "type": "integer",
+            "description": "The number of hours the server will wait before shutting down idle sessions (-1 if idle shutdown is disabled)"
+          },
+          "resource_sample_interval_ms": {
+            "type": "integer",
+            "description": "The interval in milliseconds at which resource usage is sampled. A value of 0 disables resource usage sampling."
+          },
+          "log_level": {
+            "type": "string",
+            "description": "The current log level",
+            "enum": [
+              "trace",
+              "debug",
+              "info",
+              "warn",
+              "error"
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "UnauthorizedError": {
+        "description": "Unauthorized",
+        "content": {}
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

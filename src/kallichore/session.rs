@@ -1,43 +1,39 @@
 //! Session HTTP endpoints + channels websocket upgrade.
 
 use anyhow::{anyhow, bail, Context, Result};
-use serde_json::json;
 
+use super::api::{self, types};
 use super::WsStream;
 
 pub async fn create(
-    http: &reqwest::Client,
-    base: &str,
+    api: &api::Client,
     session_id: &str,
     language: &str,
     argv: &[String],
 ) -> Result<()> {
-    let body = json!({
-        "session_id": session_id,
-        "display_name": "jet",
-        "language": language,
-        "username": whoami::username(),
-        "input_prompt": ">>> ",
-        "continuation_prompt": "... ",
-        "argv": argv,
-        "session_mode": "console",
-        "working_directory": std::env::current_dir()?.to_string_lossy(),
-        "env": [],
-        "interrupt_mode": "signal",
-        "startup_environment": "none",
-    });
-    let r = http
-        .put(format!("{base}/sessions"))
-        .json(&body)
-        .send()
-        .await?;
-    if !r.status().is_success() {
-        bail!(
-            "PUT /sessions failed: {} — {}",
-            r.status(),
-            r.text().await.unwrap_or_default()
-        );
-    }
+    let body = types::NewSession {
+        session_id: session_id.to_string(),
+        display_name: "jet".into(),
+        language: language.to_string(),
+        username: whoami::username(),
+        input_prompt: ">>> ".into(),
+        continuation_prompt: "... ".into(),
+        argv: argv.to_vec(),
+        session_mode: types::SessionMode::Console,
+        working_directory: std::env::current_dir()?.to_string_lossy().into_owned(),
+        env: types::EnvVarActions(vec![]),
+        interrupt_mode: types::InterruptMode::Signal,
+        startup_environment: types::StartupEnvironment::None,
+        // Defaults from the spec; expressed explicitly so we don't depend on
+        // serde defaults firing at the right layer.
+        connection_timeout: 30,
+        protocol_version: "5.3".into(),
+        notebook_uri: None,
+        startup_environment_arg: None,
+    };
+    api.new_session(&body)
+        .await
+        .map_err(|e| anyhow!("PUT /sessions failed: {e}"))?;
     Ok(())
 }
 

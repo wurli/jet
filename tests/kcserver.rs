@@ -88,7 +88,7 @@ async fn run_one(code: &str) -> Result<String> {
             "stop_on_error": true,
         }),
     );
-    sink.send(Message::Text(req.to_string())).await?;
+    sink.send(Message::Text(req.to_string().into())).await?;
 
     let mut output = String::new();
     let deadline = Instant::now() + Duration::from_secs(30);
