@@ -69,6 +69,29 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Ask the kernel for its banner/version info, and wait for the reply to be
+    // fully rendered (kernel goes idle for this request) before drawing the
+    // first prompt — otherwise rustyline races the async banner write.
+    let info_id = jupyter::new_msg_id();
+    let info_req = jupyter::message("shell", &info_id, "kernel_info_request", json!({}));
+    jet::kallichore::send(&mut ws_sink, &info_req).await?;
+    let banner_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let remaining = banner_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, idle_rx.recv()).await {
+            Ok(Some(parent)) if parent == info_id => break,
+            Ok(Some(_)) => continue,
+            Ok(None) => {
+                eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
+                return Ok(());
+            }
+            Err(_) => break,
+        }
+    }
+
     let mut rl = rustyline::DefaultEditor::new()?;
     println!("jet — connected to session {session_id}. ^D to quit.");
     loop {

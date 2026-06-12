@@ -51,6 +51,7 @@ impl Renderer {
                 self.render_data(&content)
             }
             ("iopub", "error") => self.write_error(&content),
+            ("shell", "kernel_info_reply") => self.write_banner(&content),
             ("iopub", "status") => {
                 let state = content
                     .get("execution_state")
@@ -77,6 +78,22 @@ impl Renderer {
         } else {
             let _ = write!(out, "{txt}");
         }
+        let _ = out.flush();
+    }
+
+    fn write_banner(&self, content: &Value) {
+        let Some(banner) = content.get("banner").and_then(|s| s.as_str()) else {
+            return;
+        };
+        if banner.is_empty() {
+            return;
+        }
+        let mut out = std::io::stdout();
+        let _ = if banner.ends_with('\n') {
+            write!(out, "{banner}")
+        } else {
+            writeln!(out, "{banner}")
+        };
         let _ = out.flush();
     }
 
