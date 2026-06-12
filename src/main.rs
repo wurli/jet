@@ -79,21 +79,30 @@ async fn main() -> Result<()> {
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
     let renderer = Renderer::new(render_graphics, idle_tx, writer);
 
+    // Set on REPL exit so the WS reader task can distinguish a clean
+    // shutdown (kcserver killed by Drop → reset without close handshake)
+    // from a real mid-session error worth surfacing to the user.
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let reader_shutdown = shutdown.clone();
+
     tokio::spawn(async move {
         let mut stream = ws_stream;
-        while let Some(msg) = stream.next().await {
-            match msg {
-                Ok(Message::Text(t)) => {
-                    if let Err(e) = renderer.handle_text(&t) {
-                        eprintln!("\x1b[31m[jet] {e}\x1b[0m");
+        loop {
+            tokio::select! {
+                _ = reader_shutdown.notified() => break,
+                msg = stream.next() => match msg {
+                    Some(Ok(Message::Text(t))) => {
+                        if let Err(e) = renderer.handle_text(&t) {
+                            eprintln!("\x1b[31m[jet] {e}\x1b[0m");
+                        }
                     }
-                }
-                Ok(Message::Close(_)) => break,
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("\x1b[31m[jet] ws error: {e}\x1b[0m");
-                    break;
-                }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(e)) => {
+                        eprintln!("\x1b[31m[jet] ws error: {e}\x1b[0m");
+                        break;
+                    }
+                },
             }
         }
     });
@@ -150,10 +159,12 @@ async fn main() -> Result<()> {
             WaitResult::Timeout => eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m"),
             WaitResult::Closed => {
                 eprintln!("\x1b[31m[jet] websocket closed\x1b[0m");
+                shutdown.notify_one();
                 return Ok(());
             }
         }
     }
 
+    shutdown.notify_one();
     Ok(())
 }
