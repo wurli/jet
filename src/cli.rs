@@ -21,15 +21,16 @@ pub struct Args {
     #[arg(long)]
     pub connect: Option<PathBuf>,
 
-    /// Kernel argv. Pass after `--`. Use `{connection_file}` as the
-    /// placeholder kallichore replaces with the generated connection file.
-    /// Default starts an ipython kernel.
+    /// Kernel argv. Pass after `--`. The literal string `{connection_file}`
+    /// is substituted by kallichore with the path to the generated Jupyter
+    /// connection file; if your argv doesn't include it, jet appends
+    /// `-f {connection_file}` for you.
     /// Example: jet --language r -- /path/to/ark --connection_file {connection_file} --session-mode console
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
     pub kernel: Vec<String>,
 
-    /// Language label for the session.
-    #[arg(long, default_value = "python")]
+    /// Language label for the session (e.g. `python`, `r`).
+    #[arg(long)]
     pub language: String,
 
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.

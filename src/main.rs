@@ -1,8 +1,8 @@
 // jet — a kallichore-backed REPL with kitty graphics.
 //
 // Spawns `kcserver` with a connection file, opens a session for a Jupyter
-// kernel (default: ipython), connects to the per-session WebSocket, and
-// drives a line-oriented REPL. PNG outputs from the kernel are rendered
+// kernel given on the command line, connects to the per-session WebSocket,
+// and drives a line-oriented REPL. PNG outputs from the kernel are rendered
 // inline with the kitty graphics protocol.
 
 use std::sync::{Arc, Mutex};

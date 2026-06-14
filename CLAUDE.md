@@ -7,7 +7,8 @@ the terminal using the kitty graphics protocol.
 ## What it does
 
 - Spawns (or connects to) `kcserver` and creates a Jupyter session.
-- Defaults to ipython; pass any kernel argv after `--` (e.g. ark for R).
+- Kernel argv is required: pass it after `--` (e.g. ipykernel for Python,
+  ark for R). `{connection_file}` is auto-appended via `-f` if absent.
 - Reads input with rustyline; sends `execute_request` over the per-session
   websocket.
 - Streams `iopub` output to stdout as it arrives (text, errors, banners, plots).
@@ -51,8 +52,9 @@ ambiguous, first check the Positron behaviour.
 ## Running
 
 ```bash
-# Python (default kernel)
-cargo run -- --kcserver /path/to/kcserver
+# Python (ipykernel)
+cargo run -- --kcserver /path/to/kcserver --language python -- \
+  python3 -m ipykernel_launcher
 
 # R (ark)
 cargo run -- --kcserver /path/to/kcserver --language r -- \
@@ -60,7 +62,8 @@ cargo run -- --kcserver /path/to/kcserver --language r -- \
 ```
 
 `{connection_file}` is the placeholder kallichore substitutes with the kernel's
-connection-file path.
+connection-file path. If your argv doesn't include it (as in the Python
+example above), jet appends `-f {connection_file}` automatically.
 
 ## Tests
 

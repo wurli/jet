@@ -1,37 +1,17 @@
 //! Kernel argv construction.
 
-use std::process::Command;
+const CONNECTION_FILE_PLACEHOLDER: &str = "{connection_file}";
 
-/// Build the argv to launch the kernel. If the user provided custom argv
-/// (via the trailing `--`), use it verbatim. Otherwise default to ipython
-/// with `python3` resolved to an absolute path — kallichore rejects
-/// relative kernel paths.
+/// Pass the user's argv through, appending `-f {connection_file}` if no
+/// argument already contains the placeholder. Kallichore substitutes the
+/// placeholder with the path to the generated connection file at launch.
 pub fn build_argv(custom: &[String]) -> Vec<String> {
-    if !custom.is_empty() {
-        return custom.to_vec();
+    let mut argv = custom.to_vec();
+    if !argv.iter().any(|a| a.contains(CONNECTION_FILE_PLACEHOLDER)) {
+        argv.push("-f".into());
+        argv.push(CONNECTION_FILE_PLACEHOLDER.into());
     }
-    let python = which_python().unwrap_or_else(|| "python3".into());
-    vec![
-        python,
-        "-m".into(),
-        "ipykernel_launcher".into(),
-        "-f".into(),
-        "{connection_file}".into(),
-    ]
-}
-
-fn which_python() -> Option<String> {
-    for name in ["python3", "python"] {
-        if let Ok(out) = Command::new("which").arg(name).output() {
-            if out.status.success() {
-                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !s.is_empty() {
-                    return Some(s);
-                }
-            }
-        }
-    }
-    None
+    argv
 }
 
 #[cfg(test)]
@@ -39,15 +19,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uses_custom_when_provided() {
-        let custom = vec!["foo".to_string(), "bar".to_string()];
+    fn passes_custom_through_when_placeholder_present() {
+        let custom = vec!["ark".into(), "--connection_file".into(), "{connection_file}".into()];
         assert_eq!(build_argv(&custom), custom);
     }
 
     #[test]
-    fn default_includes_connection_file_placeholder() {
-        let argv = build_argv(&[]);
-        assert!(argv.iter().any(|a| a == "{connection_file}"));
-        assert!(argv.iter().any(|a| a.contains("ipykernel")));
+    fn appends_connection_file_when_missing() {
+        let custom = vec!["python3".into(), "-m".into(), "ipykernel_launcher".into()];
+        let argv = build_argv(&custom);
+        assert_eq!(argv.last().unwrap(), "{connection_file}");
+        assert_eq!(argv[argv.len() - 2], "-f");
+    }
+
+    #[test]
+    fn detects_placeholder_inside_a_larger_arg() {
+        let custom = vec!["ark".into(), "--conn={connection_file}".into()];
+        assert_eq!(build_argv(&custom), custom);
     }
 }
