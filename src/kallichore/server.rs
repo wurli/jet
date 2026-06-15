@@ -2,11 +2,11 @@
 
 use std::future::Future;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use rand::Rng;
 use serde::Deserialize;
 
@@ -53,11 +53,17 @@ impl Drop for ChildGuard {
     }
 }
 
-pub async fn spawn_kcserver(bin: &str) -> Result<(ConnectionFile, ChildGuard)> {
-    let conn_path =
-        std::env::temp_dir().join(format!("jet-kc-{:x}.json", rand::thread_rng().gen::<u64>()));
-    // Make sure stale file doesn't trick us.
-    let _ = std::fs::remove_file(&conn_path);
+pub async fn spawn_kcserver(
+    bin: &str,
+    connection_file: Option<PathBuf>,
+) -> Result<(ConnectionFile, ChildGuard)> {
+    let conn_path = connection_file.unwrap_or_else(|| {
+        let path =
+            std::env::temp_dir().join(format!("jet-kc-{:x}.json", rand::thread_rng().gen::<u64>()));
+        // Make sure stale file doesn't trick us.
+        let _ = std::fs::remove_file(&path);
+        path
+    });
 
     log::debug!("spawning {bin} with connection file {conn_path:?}");
     let child = Command::new(bin)

@@ -8,14 +8,16 @@ pub mod api;
 mod server;
 mod session;
 
-pub use server::ConnectionFile;
-use server::{spawn_kcserver, wait_for_status, ChildGuard};
+use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
+pub use server::ConnectionFile;
+use server::{ChildGuard, spawn_kcserver, wait_for_status};
+
+use anyhow::{Result, anyhow};
 use futures_util::stream::SplitSink;
 use serde_json::Value;
 use tokio::net::TcpStream;
-use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
 
 pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 pub type WsSink = SplitSink<WsStream, Message>;
@@ -59,17 +61,35 @@ pub struct Client {
 
 impl Client {
     /// Spawn a fresh `kcserver` and connect to it.
-    pub async fn spawn(bin: &str) -> Result<Self> {
+    pub async fn spawn(bin: &str, connection_file: Option<PathBuf>) -> Result<Self> {
         log::info!("Spawning kcserver: {bin}");
-        let (conn, server) = spawn_kcserver(bin).await?;
+        let (conn, server) = spawn_kcserver(bin, connection_file).await?;
         Self::from_conn(conn, Some(server)).await
     }
 
     /// Connect to an already-running `kcserver` via its connection file.
     pub async fn connect(connection_file: &std::path::Path) -> Result<Self> {
-        log::info!("Connecting to kcserver via {connection_file:?}");
+        log::info!("Connecting to kcserver via existing {connection_file:?}");
         let conn = ConnectionFile::read(connection_file)?;
         Self::from_conn(conn, None).await
+    }
+
+    /// Join a running `kcserver` if possible, otherwise spawn a new one.
+    pub async fn connect_or_spawn(bin: &str, connection_file: &std::path::Path) -> Result<Self> {
+        log::info!("Attempting to connect or spawn a new kcserver with {connection_file:?}");
+        match ConnectionFile::read(connection_file) {
+            Err(e) => log::warn!(
+                "Failed to read connection file {connection_file:?}: {e}, will spawn a new kcserver"
+            ),
+            Ok(conn) => match Self::from_conn(conn, None).await {
+                Err(e) => log::warn!(
+                    "Failed to connect to existing kcserver via {connection_file:?}: {e}, will spawn a new kcserver"
+                ),
+                Ok(client) => return Ok(client),
+            },
+        }
+
+        Self::spawn(bin, Some(connection_file.to_path_buf())).await
     }
 
     async fn from_conn(conn: ConnectionFile, server: Option<ChildGuard>) -> Result<Self> {

@@ -63,7 +63,7 @@ fn ipykernel_available() -> bool {
 async fn run_one(code: &str) -> Result<String> {
     let kc = locate_kcserver().expect("locate_kcserver should succeed before calling");
 
-    let client = Client::spawn(&kc).await?;
+    let client = Client::spawn(&kc, None).await?;
 
     let session_id = format!("jet-test-{:x}", rand::thread_rng().gen::<u64>());
     let argv = kernel::build_argv(&[]);

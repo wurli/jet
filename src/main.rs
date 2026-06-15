@@ -66,8 +66,8 @@ async fn main() -> Result<()> {
     init_logger(args.log.as_deref());
 
     let client = match &args.connect {
-        Some(path) => Client::connect(path).await?,
-        None => Client::spawn(&args.kcserver).await?,
+        Some(path) => Client::connect_or_spawn(&args.kcserver, path).await?,
+        None => Client::spawn(&args.kcserver, None).await?,
     };
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());

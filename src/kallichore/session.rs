@@ -1,9 +1,9 @@
 //! Session HTTP endpoints + channels websocket upgrade.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
-use super::api::{self, types};
 use super::WsStream;
+use super::api::{self, types};
 
 pub async fn create(
     api: &api::Client,
