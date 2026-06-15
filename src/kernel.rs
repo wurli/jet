@@ -20,7 +20,11 @@ mod tests {
 
     #[test]
     fn passes_custom_through_when_placeholder_present() {
-        let custom = vec!["ark".into(), "--connection_file".into(), "{connection_file}".into()];
+        let custom = vec![
+            "ark".into(),
+            "--connection_file".into(),
+            "{connection_file}".into(),
+        ];
         assert_eq!(build_argv(&custom), custom);
     }
 

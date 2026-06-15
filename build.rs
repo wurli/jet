@@ -21,10 +21,9 @@ fn main() {
     println!("cargo:rerun-if-changed={spec_path}");
     println!("cargo:rerun-if-changed=build.rs");
 
-    let raw = fs::read_to_string(spec_path)
-        .unwrap_or_else(|e| panic!("reading {spec_path}: {e}"));
-    let mut value: serde_json::Value = serde_json::from_str(&raw)
-        .unwrap_or_else(|e| panic!("parsing {spec_path}: {e}"));
+    let raw = fs::read_to_string(spec_path).unwrap_or_else(|e| panic!("reading {spec_path}: {e}"));
+    let mut value: serde_json::Value =
+        serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parsing {spec_path}: {e}"));
     fixup_spec(&mut value);
     let spec: openapiv3::OpenAPI = serde_json::from_value(value)
         .unwrap_or_else(|e| panic!("validating OpenAPI shape of {spec_path}: {e}"));
@@ -42,8 +41,7 @@ fn main() {
     let out = Path::new(GENERATED_PATH);
     let current = fs::read_to_string(out).unwrap_or_default();
     if current != new_contents {
-        fs::write(out, &new_contents)
-            .unwrap_or_else(|e| panic!("writing {GENERATED_PATH}: {e}"));
+        fs::write(out, &new_contents).unwrap_or_else(|e| panic!("writing {GENERATED_PATH}: {e}"));
     }
 }
 
@@ -71,10 +69,16 @@ fn fixup_spec(value: &mut serde_json::Value) {
     // Strip non-2xx responses from every operation.
     if let Some(Value::Object(paths)) = value.get_mut("paths") {
         for (_, path_item) in paths.iter_mut() {
-            let Value::Object(ops) = path_item else { continue };
+            let Value::Object(ops) = path_item else {
+                continue;
+            };
             for method in ["get", "put", "post", "delete", "patch", "options", "head"] {
-                let Some(Value::Object(op)) = ops.get_mut(method) else { continue };
-                let Some(Value::Object(responses)) = op.get_mut("responses") else { continue };
+                let Some(Value::Object(op)) = ops.get_mut(method) else {
+                    continue;
+                };
+                let Some(Value::Object(responses)) = op.get_mut("responses") else {
+                    continue;
+                };
                 responses.retain(|code, _| code.starts_with('2'));
             }
         }

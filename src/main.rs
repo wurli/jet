@@ -52,7 +52,9 @@ fn init_logger(log_file: Option<&std::path::Path>) {
     // terminal would corrupt prompts and inline graphics. Controlled with
     // RUST_LOG (e.g. `RUST_LOG=jet=trace`).
     let Some(path) = log_file else { return };
-    let Ok(file) = std::fs::File::create(path) else { return };
+    let Ok(file) = std::fs::File::create(path) else {
+        return;
+    };
     let _ = env_logger::Builder::from_default_env()
         .target(env_logger::Target::Pipe(Box::new(file)))
         .try_init();
@@ -203,7 +205,10 @@ async fn main() -> Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let _ = rl.as_mut().expect("editor returned from blocking task").add_history_entry(&line);
+        let _ = rl
+            .as_mut()
+            .expect("editor returned from blocking task")
+            .add_history_entry(&line);
 
         let msg_id = jupyter::new_msg_id();
         let req = jupyter::message(

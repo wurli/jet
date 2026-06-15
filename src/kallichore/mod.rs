@@ -4,6 +4,7 @@
 //! and the base URL. Drop the client and the server dies with it.
 
 pub mod api;
+
 mod server;
 mod session;
 
@@ -33,7 +34,9 @@ impl Channel {
     pub async fn send(&mut self, msg: &Value) -> Result<()> {
         use futures_util::SinkExt;
         log::trace!("ws send: {msg}");
-        self.sink.send(Message::Text(msg.to_string().into())).await?;
+        self.sink
+            .send(Message::Text(msg.to_string().into()))
+            .await?;
         Ok(())
     }
 }
@@ -124,4 +127,3 @@ impl Client {
         session::open_channels(&self.ws_auth.base, &self.ws_auth.bearer, session_id).await
     }
 }
-

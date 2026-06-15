@@ -54,10 +54,8 @@ impl Drop for ChildGuard {
 }
 
 pub async fn spawn_kcserver(bin: &str) -> Result<(ConnectionFile, ChildGuard)> {
-    let conn_path = std::env::temp_dir().join(format!(
-        "jet-kc-{:x}.json",
-        rand::thread_rng().gen::<u64>()
-    ));
+    let conn_path =
+        std::env::temp_dir().join(format!("jet-kc-{:x}.json", rand::thread_rng().gen::<u64>()));
     // Make sure stale file doesn't trick us.
     let _ = std::fs::remove_file(&conn_path);
 

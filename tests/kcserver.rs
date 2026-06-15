@@ -150,9 +150,7 @@ async fn collect_output(
                         .unwrap_or("?")
                 );
             }
-            "status"
-                if content.get("execution_state").and_then(|s| s.as_str()) == Some("idle") =>
-            {
+            "status" if content.get("execution_state").and_then(|s| s.as_str()) == Some("idle") => {
                 return Ok(output);
             }
             _ => {}
@@ -197,8 +195,7 @@ fn captures_stdout() {
     if !prereqs_ok() {
         return;
     }
-    let out =
-        block_on(run_one("print('hello-from-jet-test')")).expect("run_one should succeed");
+    let out = block_on(run_one("print('hello-from-jet-test')")).expect("run_one should succeed");
     assert!(out.contains("hello-from-jet-test"), "got: {out:?}");
 }
 

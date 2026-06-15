@@ -24,11 +24,22 @@ pub type SharedWriter = Arc<Mutex<dyn Write + Send>>;
 
 #[derive(Debug)]
 pub enum Event {
-    Stream { name: String, text: String },
-    DisplayData { data: Value },
-    Error { traceback: String },
-    Banner { text: String },
-    Idle { parent_id: String },
+    Stream {
+        name: String,
+        text: String,
+    },
+    DisplayData {
+        data: Value,
+    },
+    Error {
+        traceback: String,
+    },
+    Banner {
+        text: String,
+    },
+    Idle {
+        parent_id: String,
+    },
     /// kallichore reported the kernel has exited. The REPL uses this to
     /// shut down immediately rather than wait for the user to press a key.
     KernelExited,
@@ -87,7 +98,11 @@ pub fn parse_event(text: &str) -> Result<Event> {
         if m.exited.is_some() {
             return Ok(Event::KernelExited);
         }
-        if m.status.as_ref().map(|s| s.status == "exited").unwrap_or(false) {
+        if m.status
+            .as_ref()
+            .map(|s| s.status == "exited")
+            .unwrap_or(false)
+        {
             return Ok(Event::KernelExited);
         }
         return Ok(Event::Other);
@@ -128,8 +143,16 @@ pub fn parse_event(text: &str) -> Result<Event> {
                 })
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| {
-                    let ename = m.content.get("ename").and_then(|s| s.as_str()).unwrap_or("");
-                    let evalue = m.content.get("evalue").and_then(|s| s.as_str()).unwrap_or("");
+                    let ename = m
+                        .content
+                        .get("ename")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("");
+                    let evalue = m
+                        .content
+                        .get("evalue")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("");
                     match (ename.is_empty(), evalue.is_empty()) {
                         (false, false) => format!("{ename}: {evalue}"),
                         (true, false) => evalue.to_string(),
@@ -289,7 +312,12 @@ mod tests {
 
     #[test]
     fn parse_stream_event() {
-        let f = frame("iopub", "stream", "", json!({"name": "stdout", "text": "hi"}));
+        let f = frame(
+            "iopub",
+            "stream",
+            "",
+            json!({"name": "stdout", "text": "hi"}),
+        );
         match parse_event(&f).unwrap() {
             Event::Stream { name, text } => {
                 assert_eq!(name, "stdout");
@@ -369,12 +397,7 @@ mod tests {
 
     #[test]
     fn parse_idle_event() {
-        let f = frame(
-            "iopub",
-            "status",
-            "abc",
-            json!({"execution_state": "idle"}),
-        );
+        let f = frame("iopub", "status", "abc", json!({"execution_state": "idle"}));
         match parse_event(&f).unwrap() {
             Event::Idle { parent_id } => assert_eq!(parent_id, "abc"),
             other => panic!("expected Idle, got {other:?}"),
@@ -383,12 +406,7 @@ mod tests {
 
     #[test]
     fn parse_busy_status_is_other() {
-        let f = frame(
-            "iopub",
-            "status",
-            "abc",
-            json!({"execution_state": "busy"}),
-        );
+        let f = frame("iopub", "status", "abc", json!({"execution_state": "busy"}));
         assert!(matches!(parse_event(&f).unwrap(), Event::Other));
     }
 
@@ -458,7 +476,12 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        let f = frame("iopub", "stream", "", json!({"name": "stdout", "text": "hello"}));
+        let f = frame(
+            "iopub",
+            "stream",
+            "",
+            json!({"name": "stdout", "text": "hello"}),
+        );
         r.handle_text(&f).unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(&*bytes, b"hello");
@@ -471,7 +494,12 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        let f = frame("iopub", "stream", "", json!({"name": "stderr", "text": "oops"}));
+        let f = frame(
+            "iopub",
+            "stream",
+            "",
+            json!({"name": "stderr", "text": "oops"}),
+        );
         r.handle_text(&f).unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), "oops");
@@ -483,7 +511,12 @@ mod tests {
         let writer: SharedWriter = captured;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        let f = frame("iopub", "status", "msg-1", json!({"execution_state": "idle"}));
+        let f = frame(
+            "iopub",
+            "status",
+            "msg-1",
+            json!({"execution_state": "idle"}),
+        );
         r.handle_text(&f).unwrap();
         assert_eq!(rx.try_recv().unwrap(), "msg-1");
     }

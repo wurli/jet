@@ -2,9 +2,9 @@
 // To refresh: edit vendor/kallichore.json (or re-run `cargo build`).
 // Do not edit by hand; changes will be overwritten on the next build.
 #[allow(unused_imports)]
-pub use progenitor_client::{ByteStream, ClientInfo, Error, ResponseValue};
-#[allow(unused_imports)]
 use progenitor_client::{encode_path, ClientHooks, OperationInfo, RequestBuilderExt};
+#[allow(unused_imports)]
+pub use progenitor_client::{ByteStream, ClientInfo, Error, ResponseValue};
 /// Types used as operation parameters and responses.
 #[allow(clippy::all)]
 pub mod types {
@@ -14,18 +14,12 @@ pub mod types {
         pub struct ConversionError(::std::borrow::Cow<'static, str>);
         impl ::std::error::Error for ConversionError {}
         impl ::std::fmt::Display for ConversionError {
-            fn fmt(
-                &self,
-                f: &mut ::std::fmt::Formatter<'_>,
-            ) -> Result<(), ::std::fmt::Error> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> Result<(), ::std::fmt::Error> {
                 ::std::fmt::Display::fmt(&self.0, f)
             }
         }
         impl ::std::fmt::Debug for ConversionError {
-            fn fmt(
-                &self,
-                f: &mut ::std::fmt::Formatter<'_>,
-            ) -> Result<(), ::std::fmt::Error> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> Result<(), ::std::fmt::Error> {
                 ::std::fmt::Debug::fmt(&self.0, f)
             }
         }
@@ -181,10 +175,7 @@ pub mod types {
             default,
             skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
         )]
-        pub initial_env: ::std::collections::HashMap<
-            ::std::string::String,
-            ::std::string::String,
-        >,
+        pub initial_env: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
         ///The text to use to prompt for input
         pub input_prompt: ::std::string::String,
         pub interrupt_mode: InterruptMode,
@@ -455,10 +446,7 @@ pub mod types {
             default,
             skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
         )]
-        pub data: ::std::collections::HashMap<
-            ::std::string::String,
-            ::std::string::String,
-        >,
+        pub data: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
         ///The error message, for error output
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error_message: ::std::option::Option<::std::string::String>,
@@ -507,7 +495,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum ExecuteOutputType {
         #[serde(rename = "stream")]
@@ -528,9 +516,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for ExecuteOutputType {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "stream" => Ok(Self::Stream),
                 "display_data" => Ok(Self::DisplayData),
@@ -541,9 +527,7 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for ExecuteOutputType {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
@@ -629,10 +613,7 @@ pub mod types {
             default,
             skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
         )]
-        pub data: ::std::collections::HashMap<
-            ::std::string::String,
-            ::std::string::String,
-        >,
+        pub data: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
         ///The error message, if the execution failed
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error_message: ::std::option::Option<::std::string::String>,
@@ -674,7 +655,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum ExecuteReplyStatus {
         #[serde(rename = "ok")]
@@ -692,9 +673,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for ExecuteReplyStatus {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "ok" => Ok(Self::Ok),
                 "error" => Ok(Self::Error),
@@ -704,9 +683,7 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for ExecuteReplyStatus {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
@@ -822,9 +799,7 @@ pub mod types {
         ///The number of items in the pending queue
         pub length: i64,
         ///The queue of pending execution requests
-        pub pending: ::std::vec::Vec<
-            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-        >,
+        pub pending: ::std::vec::Vec<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
     }
     ///The mechansim for interrupting the session
     ///
@@ -851,7 +826,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum InterruptMode {
         #[serde(rename = "signal")]
@@ -869,9 +844,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for InterruptMode {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "signal" => Ok(Self::Signal),
                 "message" => Ok(Self::Message),
@@ -881,9 +854,7 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for InterruptMode {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
@@ -1225,7 +1196,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum ServerConfigurationLogLevel {
         #[serde(rename = "trace")]
@@ -1252,9 +1223,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for ServerConfigurationLogLevel {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "trace" => Ok(Self::Trace),
                 "debug" => Ok(Self::Debug),
@@ -1267,14 +1236,11 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for ServerConfigurationLogLevel {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
-    impl ::std::convert::TryFrom<&::std::string::String>
-    for ServerConfigurationLogLevel {
+    impl ::std::convert::TryFrom<&::std::string::String> for ServerConfigurationLogLevel {
         type Error = self::error::ConversionError;
         fn try_from(
             value: &::std::string::String,
@@ -1421,7 +1387,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum SessionMode {
         #[serde(rename = "console")]
@@ -1442,9 +1408,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for SessionMode {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "console" => Ok(Self::Console),
                 "notebook" => Ok(Self::Notebook),
@@ -1455,9 +1419,7 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for SessionMode {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
@@ -1504,7 +1466,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum StartupEnvironment {
         #[serde(rename = "none")]
@@ -1528,9 +1490,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for StartupEnvironment {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "none" => Ok(Self::None),
                 "shell" => Ok(Self::Shell),
@@ -1542,9 +1502,7 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for StartupEnvironment {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
@@ -1630,7 +1588,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum Status {
         #[serde(rename = "uninitialized")]
@@ -1663,9 +1621,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for Status {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "uninitialized" => Ok(Self::Uninitialized),
                 "starting" => Ok(Self::Starting),
@@ -1680,9 +1636,7 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for Status {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
@@ -1764,7 +1718,7 @@ pub mod types {
         Hash,
         Ord,
         PartialEq,
-        PartialOrd
+        PartialOrd,
     )]
     pub enum VarActionType {
         #[serde(rename = "replace")]
@@ -1785,9 +1739,7 @@ pub mod types {
     }
     impl ::std::str::FromStr for VarActionType {
         type Err = self::error::ConversionError;
-        fn from_str(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "replace" => Ok(Self::Replace),
                 "append" => Ok(Self::Append),
@@ -1798,9 +1750,7 @@ pub mod types {
     }
     impl ::std::convert::TryFrom<&str> for VarActionType {
         type Error = self::error::ConversionError;
-        fn try_from(
-            value: &str,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
@@ -1857,7 +1807,9 @@ impl Client {
         #[cfg(not(target_arch = "wasm32"))]
         let client = {
             let dur = ::std::time::Duration::from_secs(15u64);
-            reqwest::ClientBuilder::new().connect_timeout(dur).timeout(dur)
+            reqwest::ClientBuilder::new()
+                .connect_timeout(dur)
+                .timeout(dur)
         };
         #[cfg(target_arch = "wasm32")]
         let client = reqwest::ClientBuilder::new();
@@ -1895,20 +1847,19 @@ impl ClientHooks<()> for &Client {}
 impl Client {
     /**Notify the server that a client is connected
 
-Sends a `POST` request to `/client_heartbeat`
+    Sends a `POST` request to `/client_heartbeat`
 
-*/
+    */
     pub async fn client_heartbeat<'a>(
         &'a self,
         body: &'a types::ClientHeartbeat,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!("{}/client_heartbeat", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -1934,19 +1885,18 @@ Sends a `POST` request to `/client_heartbeat`
     }
     /**Get the server configuration
 
-Sends a `GET` request to `/server_configuration`
+    Sends a `GET` request to `/server_configuration`
 
-*/
+    */
     pub async fn get_server_configuration<'a>(
         &'a self,
     ) -> Result<ResponseValue<types::ServerConfiguration>, Error<()>> {
         let url = format!("{}/server_configuration", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -1971,20 +1921,19 @@ Sends a `GET` request to `/server_configuration`
     }
     /**Change the server configuration
 
-Sends a `POST` request to `/server_configuration`
+    Sends a `POST` request to `/server_configuration`
 
-*/
+    */
     pub async fn set_server_configuration<'a>(
         &'a self,
         body: &'a types::ServerConfiguration,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!("{}/server_configuration", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2010,19 +1959,18 @@ Sends a `POST` request to `/server_configuration`
     }
     /**List active sessions
 
-Sends a `GET` request to `/sessions`
+    Sends a `GET` request to `/sessions`
 
-*/
+    */
     pub async fn list_sessions<'a>(
         &'a self,
     ) -> Result<ResponseValue<types::SessionList>, Error<()>> {
         let url = format!("{}/sessions", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2047,20 +1995,19 @@ Sends a `GET` request to `/sessions`
     }
     /**Create a new session
 
-Sends a `PUT` request to `/sessions`
+    Sends a `PUT` request to `/sessions`
 
-*/
+    */
     pub async fn new_session<'a>(
         &'a self,
         body: &'a types::NewSession,
     ) -> Result<ResponseValue<types::NewSessionResponse>, Error<()>> {
         let url = format!("{}/sessions", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2086,22 +2033,23 @@ Sends a `PUT` request to `/sessions`
     }
     /**Get session details
 
-Sends a `GET` request to `/sessions/{session_id}`
+    Sends a `GET` request to `/sessions/{session_id}`
 
-*/
+    */
     pub async fn get_session<'a>(
         &'a self,
         session_id: &'a str,
     ) -> Result<ResponseValue<types::ActiveSession>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}", self.baseurl, encode_path(& session_id.to_string()),
+            "{}/sessions/{}",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2126,22 +2074,23 @@ Sends a `GET` request to `/sessions/{session_id}`
     }
     /**Delete session
 
-Sends a `DELETE` request to `/sessions/{session_id}`
+    Sends a `DELETE` request to `/sessions/{session_id}`
 
-*/
+    */
     pub async fn delete_session<'a>(
         &'a self,
         session_id: &'a str,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}", self.baseurl, encode_path(& session_id.to_string()),
+            "{}/sessions/{}",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2166,23 +2115,24 @@ Sends a `DELETE` request to `/sessions/{session_id}`
     }
     /**Adopt an existing session
 
-Sends a `PUT` request to `/sessions/{session_id}/adopt`
+    Sends a `PUT` request to `/sessions/{session_id}/adopt`
 
-*/
+    */
     pub async fn adopt_session<'a>(
         &'a self,
         session_id: &'a str,
         body: &'a types::ConnectionInfo,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/adopt", self.baseurl, encode_path(& session_id.to_string()),
+            "{}/sessions/{}/adopt",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2208,23 +2158,23 @@ Sends a `PUT` request to `/sessions/{session_id}/adopt`
     }
     /**Upgrade to a WebSocket or domain socket for channel communication
 
-Sends a `GET` request to `/sessions/{session_id}/channels`
+    Sends a `GET` request to `/sessions/{session_id}/channels`
 
-*/
+    */
     pub async fn channels_upgrade<'a>(
         &'a self,
         session_id: &'a str,
     ) -> Result<ResponseValue<::std::string::String>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/channels", self.baseurl, encode_path(& session_id
-            .to_string()),
+            "{}/sessions/{}/channels",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2249,23 +2199,23 @@ Sends a `GET` request to `/sessions/{session_id}/channels`
     }
     /**Get Jupyter connection information for the session
 
-Sends a `GET` request to `/sessions/{session_id}/connection_info`
+    Sends a `GET` request to `/sessions/{session_id}/connection_info`
 
-*/
+    */
     pub async fn connection_info<'a>(
         &'a self,
         session_id: &'a str,
     ) -> Result<ResponseValue<types::ConnectionInfo>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/connection_info", self.baseurl, encode_path(& session_id
-            .to_string()),
+            "{}/sessions/{}/connection_info",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2290,24 +2240,24 @@ Sends a `GET` request to `/sessions/{session_id}/connection_info`
     }
     /**Execute code and return results
 
-Sends a `POST` request to `/sessions/{session_id}/execute`
+    Sends a `POST` request to `/sessions/{session_id}/execute`
 
-*/
+    */
     pub async fn execute_code<'a>(
         &'a self,
         session_id: &'a str,
         body: &'a types::ExecuteRequest,
     ) -> Result<ResponseValue<types::ExecuteReply>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/execute", self.baseurl, encode_path(& session_id
-            .to_string()),
+            "{}/sessions/{}/execute",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2333,23 +2283,23 @@ Sends a `POST` request to `/sessions/{session_id}/execute`
     }
     /**Interrupt session
 
-Sends a `POST` request to `/sessions/{session_id}/interrupt`
+    Sends a `POST` request to `/sessions/{session_id}/interrupt`
 
-*/
+    */
     pub async fn interrupt_session<'a>(
         &'a self,
         session_id: &'a str,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/interrupt", self.baseurl, encode_path(& session_id
-            .to_string()),
+            "{}/sessions/{}/interrupt",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2374,22 +2324,23 @@ Sends a `POST` request to `/sessions/{session_id}/interrupt`
     }
     /**Force quit session
 
-Sends a `POST` request to `/sessions/{session_id}/kill`
+    Sends a `POST` request to `/sessions/{session_id}/kill`
 
-*/
+    */
     pub async fn kill_session<'a>(
         &'a self,
         session_id: &'a str,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/kill", self.baseurl, encode_path(& session_id.to_string()),
+            "{}/sessions/{}/kill",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2414,24 +2365,24 @@ Sends a `POST` request to `/sessions/{session_id}/kill`
     }
     /**Restart a session
 
-Sends a `POST` request to `/sessions/{session_id}/restart`
+    Sends a `POST` request to `/sessions/{session_id}/restart`
 
-*/
+    */
     pub async fn restart_session<'a>(
         &'a self,
         session_id: &'a str,
         body: &'a types::RestartSession,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/restart", self.baseurl, encode_path(& session_id
-            .to_string()),
+            "{}/sessions/{}/restart",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2457,22 +2408,23 @@ Sends a `POST` request to `/sessions/{session_id}/restart`
     }
     /**Start a session
 
-Sends a `POST` request to `/sessions/{session_id}/start`
+    Sends a `POST` request to `/sessions/{session_id}/start`
 
-*/
+    */
     pub async fn start_session<'a>(
         &'a self,
         session_id: &'a str,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!(
-            "{}/sessions/{}/start", self.baseurl, encode_path(& session_id.to_string()),
+            "{}/sessions/{}/start",
+            self.baseurl,
+            encode_path(&session_id.to_string()),
         );
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2497,19 +2449,18 @@ Sends a `POST` request to `/sessions/{session_id}/start`
     }
     /**Shut down all sessions and the server itself
 
-Sends a `POST` request to `/shutdown`
+    Sends a `POST` request to `/shutdown`
 
-*/
+    */
     pub async fn shutdown_server<'a>(
         &'a self,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
         let url = format!("{}/shutdown", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client
@@ -2534,19 +2485,18 @@ Sends a `POST` request to `/shutdown`
     }
     /**Get server status and information
 
-Sends a `GET` request to `/status`
+    Sends a `GET` request to `/status`
 
-*/
+    */
     pub async fn server_status<'a>(
         &'a self,
     ) -> Result<ResponseValue<types::ServerStatus>, Error<()>> {
         let url = format!("{}/status", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-        header_map
-            .append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
-            );
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
         #[allow(unused_mut)]
         let mut request = self
             .client

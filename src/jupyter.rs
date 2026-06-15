@@ -18,7 +18,7 @@ struct JupyterHeader {
     version: String,
 }
 
-/// Build a flat Jupyter message envelope as kallichore expects on the
+/// Build a 'flat' Jupyter message envelope as kallichore expects on the
 /// channels websocket: `{ channel, header, parent_header, metadata, content,
 /// buffers }`.
 pub fn message(channel: &str, msg_id: &str, msg_type: &str, content: Value) -> Value {
@@ -42,7 +42,9 @@ pub fn message(channel: &str, msg_id: &str, msg_type: &str, content: Value) -> V
 
 /// ISO-8601 UTC timestamp with microsecond precision (27 chars total).
 pub fn iso8601_now() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+    chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.6fZ")
+        .to_string()
 }
 
 #[cfg(test)]

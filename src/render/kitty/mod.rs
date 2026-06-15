@@ -62,7 +62,11 @@ pub fn emit_png(out: &mut dyn IoWrite, b64_png: &str) -> Result<()> {
     } else {
         40
     };
-    let rows = if img_h > 0 { (img_h / cell_h).max(1) } else { 10 };
+    let rows = if img_h > 0 {
+        (img_h / cell_h).max(1)
+    } else {
+        10
+    };
 
     // Image ids are 1..=255 (low byte). We wrap; the terminal recognizes
     // the most-recent transmission for that id.
@@ -227,4 +231,3 @@ mod tests {
         }
     }
 }
-
