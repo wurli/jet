@@ -7,7 +7,12 @@
 //! file. The build only writes when output differs from disk, so clean
 //! builds don't dirty the working tree.
 
-use std::{fs, path::Path};
+use std::{
+    fs,
+    io::Write,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 const GENERATED_PATH: &str = "src/kallichore/api/generated.rs";
 const HEADER: &str = "\
@@ -32,8 +37,8 @@ fn main() {
     let tokens = generator
         .generate_tokens(&spec)
         .unwrap_or_else(|e| panic!("progenitor codegen failed: {e}"));
-    let ast = syn::parse2(tokens).expect("progenitor produced invalid Rust");
-    let pretty = prettyplease::unparse(&ast);
+    let unformatted = tokens.to_string();
+    let pretty = rustfmt(&unformatted);
     let new_contents = format!("{HEADER}{pretty}");
 
     // Only write when contents actually change. Writing unconditionally
@@ -43,6 +48,37 @@ fn main() {
     if current != new_contents {
         fs::write(out, &new_contents).unwrap_or_else(|e| panic!("writing {GENERATED_PATH}: {e}"));
     }
+}
+
+/// Format Rust source by shelling out to `rustfmt`. Uses the same toolchain
+/// `cargo build` is running under (via the `RUSTFMT` env var when set, else
+/// `rustfmt` on PATH) so the committed output matches `cargo fmt` locally.
+fn rustfmt(src: &str) -> String {
+    let bin = std::env::var("RUSTFMT").unwrap_or_else(|_| "rustfmt".to_string());
+    let mut child = Command::new(&bin)
+        .args(["--edition", "2021", "--emit", "stdout"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| panic!("spawning {bin}: {e}"));
+    child
+        .stdin
+        .as_mut()
+        .expect("rustfmt stdin")
+        .write_all(src.as_bytes())
+        .expect("writing to rustfmt stdin");
+    let out = child
+        .wait_with_output()
+        .unwrap_or_else(|e| panic!("waiting for rustfmt: {e}"));
+    if !out.status.success() {
+        panic!(
+            "rustfmt failed ({}): {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    String::from_utf8(out.stdout).expect("rustfmt produced non-UTF-8")
 }
 
 /// Coerce kallichore's spec into shapes both `openapiv3` and `progenitor` accept.

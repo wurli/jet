@@ -25,14 +25,13 @@ whoami = "1"
 
 [build-dependencies]
 openapiv3 = "2"
-# prettyplease and progenitor are pinned exactly: their output gets
-# committed to src/kallichore/generated.rs, so any patch release that
-# changes whitespace, identifier names, or codegen would dirty the
-# working tree for everyone on the next `cargo build`.
-prettyplease = "=0.2.37"
+# progenitor is pinned exactly: its output gets committed to
+# src/kallichore/generated.rs, so any patch release that changes
+# identifier names or codegen would dirty the working tree for
+# everyone on the next `cargo build`. Formatting is delegated to
+# rustfmt at build time.
 progenitor = { version = "=0.14.0", default-features = false }
 serde_json = "1"
-syn = "2"
 
 [dev-dependencies]
 serial_test = "3"

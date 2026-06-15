@@ -5,12 +5,12 @@
 use progenitor_client::{encode_path, ClientHooks, OperationInfo, RequestBuilderExt};
 #[allow(unused_imports)]
 pub use progenitor_client::{ByteStream, ClientInfo, Error, ResponseValue};
-/// Types used as operation parameters and responses.
+#[doc = r" Types used as operation parameters and responses."]
 #[allow(clippy::all)]
 pub mod types {
-    /// Error types.
+    #[doc = r" Error types."]
     pub mod error {
-        /// Error from a `TryFrom` or `FromStr` implementation.
+        #[doc = r" Error from a `TryFrom` or `FromStr` implementation."]
         pub struct ConversionError(::std::borrow::Cow<'static, str>);
         impl ::std::error::Error for ConversionError {}
         impl ::std::fmt::Display for ConversionError {
@@ -34,196 +34,196 @@ pub mod types {
             }
         }
     }
-    ///`ActiveSession`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "argv",
-    ///    "busy_seconds",
-    ///    "connected",
-    ///    "continuation_prompt",
-    ///    "display_name",
-    ///    "execution_queue",
-    ///    "idle_seconds",
-    ///    "input_prompt",
-    ///    "interrupt_mode",
-    ///    "kernel_info",
-    ///    "language",
-    ///    "session_id",
-    ///    "session_mode",
-    ///    "started",
-    ///    "status",
-    ///    "username",
-    ///    "working_directory"
-    ///  ],
-    ///  "properties": {
-    ///    "argv": {
-    ///      "description": "The program and command-line parameters for the session",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "busy_seconds": {
-    ///      "description": "The number of seconds the session has been busy, or 0 if the session is idle",
-    ///      "type": "integer"
-    ///    },
-    ///    "connected": {
-    ///      "description": "Whether the session is connected to a client",
-    ///      "type": "boolean"
-    ///    },
-    ///    "continuation_prompt": {
-    ///      "description": "The text to use to prompt for input continuations",
-    ///      "type": "string"
-    ///    },
-    ///    "display_name": {
-    ///      "description": "A human-readable name for the session",
-    ///      "type": "string"
-    ///    },
-    ///    "execution_queue": {
-    ///      "$ref": "#/components/schemas/execution_queue"
-    ///    },
-    ///    "idle_seconds": {
-    ///      "description": "The number of seconds the session has been idle, or 0 if the session is busy",
-    ///      "type": "integer"
-    ///    },
-    ///    "initial_env": {
-    ///      "description": "The environment variables set when the session was started",
-    ///      "type": "object",
-    ///      "additionalProperties": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "input_prompt": {
-    ///      "description": "The text to use to prompt for input",
-    ///      "type": "string"
-    ///    },
-    ///    "interrupt_mode": {
-    ///      "$ref": "#/components/schemas/interrupt_mode"
-    ///    },
-    ///    "kernel_info": {
-    ///      "description": "The kernel information, as returned by the kernel_info_request message",
-    ///      "type": "object"
-    ///    },
-    ///    "language": {
-    ///      "description": "The interpreter language",
-    ///      "type": "string"
-    ///    },
-    ///    "notebook_uri": {
-    ///      "description": "For notebook sessions, the URI of the notebook file",
-    ///      "type": "string"
-    ///    },
-    ///    "process_id": {
-    ///      "description": "The underlying process ID of the session, if the session is running.",
-    ///      "type": "integer"
-    ///    },
-    ///    "resource_usage": {
-    ///      "$ref": "#/components/schemas/resourceUsage"
-    ///    },
-    ///    "session_id": {
-    ///      "description": "A unique identifier for the session",
-    ///      "type": "string"
-    ///    },
-    ///    "session_mode": {
-    ///      "$ref": "#/components/schemas/sessionMode"
-    ///    },
-    ///    "socket_path": {
-    ///      "description": "The path to the Unix domain socket used to send/receive data from the session, if applicable",
-    ///      "type": "string"
-    ///    },
-    ///    "started": {
-    ///      "description": "An ISO 8601 timestamp of when the session was started",
-    ///      "type": "string",
-    ///      "format": "date-time"
-    ///    },
-    ///    "status": {
-    ///      "$ref": "#/components/schemas/status"
-    ///    },
-    ///    "username": {
-    ///      "description": "The username of the user who owns the session",
-    ///      "type": "string"
-    ///    },
-    ///    "working_directory": {
-    ///      "description": "The session's current working directory",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`ActiveSession`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"argv\","]
+    #[doc = "    \"busy_seconds\","]
+    #[doc = "    \"connected\","]
+    #[doc = "    \"continuation_prompt\","]
+    #[doc = "    \"display_name\","]
+    #[doc = "    \"execution_queue\","]
+    #[doc = "    \"idle_seconds\","]
+    #[doc = "    \"input_prompt\","]
+    #[doc = "    \"interrupt_mode\","]
+    #[doc = "    \"kernel_info\","]
+    #[doc = "    \"language\","]
+    #[doc = "    \"session_id\","]
+    #[doc = "    \"session_mode\","]
+    #[doc = "    \"started\","]
+    #[doc = "    \"status\","]
+    #[doc = "    \"username\","]
+    #[doc = "    \"working_directory\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"argv\": {"]
+    #[doc = "      \"description\": \"The program and command-line parameters for the session\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"busy_seconds\": {"]
+    #[doc = "      \"description\": \"The number of seconds the session has been busy, or 0 if the session is idle\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"connected\": {"]
+    #[doc = "      \"description\": \"Whether the session is connected to a client\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"continuation_prompt\": {"]
+    #[doc = "      \"description\": \"The text to use to prompt for input continuations\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"display_name\": {"]
+    #[doc = "      \"description\": \"A human-readable name for the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"execution_queue\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/execution_queue\""]
+    #[doc = "    },"]
+    #[doc = "    \"idle_seconds\": {"]
+    #[doc = "      \"description\": \"The number of seconds the session has been idle, or 0 if the session is busy\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"initial_env\": {"]
+    #[doc = "      \"description\": \"The environment variables set when the session was started\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"input_prompt\": {"]
+    #[doc = "      \"description\": \"The text to use to prompt for input\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"interrupt_mode\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/interrupt_mode\""]
+    #[doc = "    },"]
+    #[doc = "    \"kernel_info\": {"]
+    #[doc = "      \"description\": \"The kernel information, as returned by the kernel_info_request message\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    },"]
+    #[doc = "    \"language\": {"]
+    #[doc = "      \"description\": \"The interpreter language\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"notebook_uri\": {"]
+    #[doc = "      \"description\": \"For notebook sessions, the URI of the notebook file\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"process_id\": {"]
+    #[doc = "      \"description\": \"The underlying process ID of the session, if the session is running.\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"resource_usage\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/resourceUsage\""]
+    #[doc = "    },"]
+    #[doc = "    \"session_id\": {"]
+    #[doc = "      \"description\": \"A unique identifier for the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"session_mode\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/sessionMode\""]
+    #[doc = "    },"]
+    #[doc = "    \"socket_path\": {"]
+    #[doc = "      \"description\": \"The path to the Unix domain socket used to send/receive data from the session, if applicable\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"started\": {"]
+    #[doc = "      \"description\": \"An ISO 8601 timestamp of when the session was started\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/status\""]
+    #[doc = "    },"]
+    #[doc = "    \"username\": {"]
+    #[doc = "      \"description\": \"The username of the user who owns the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"working_directory\": {"]
+    #[doc = "      \"description\": \"The session's current working directory\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ActiveSession {
-        ///The program and command-line parameters for the session
+        #[doc = "The program and command-line parameters for the session"]
         pub argv: ::std::vec::Vec<::std::string::String>,
-        ///The number of seconds the session has been busy, or 0 if the session is idle
+        #[doc = "The number of seconds the session has been busy, or 0 if the session is idle"]
         pub busy_seconds: i64,
-        ///Whether the session is connected to a client
+        #[doc = "Whether the session is connected to a client"]
         pub connected: bool,
-        ///The text to use to prompt for input continuations
+        #[doc = "The text to use to prompt for input continuations"]
         pub continuation_prompt: ::std::string::String,
-        ///A human-readable name for the session
+        #[doc = "A human-readable name for the session"]
         pub display_name: ::std::string::String,
         pub execution_queue: ExecutionQueue,
-        ///The number of seconds the session has been idle, or 0 if the session is busy
+        #[doc = "The number of seconds the session has been idle, or 0 if the session is busy"]
         pub idle_seconds: i64,
-        ///The environment variables set when the session was started
+        #[doc = "The environment variables set when the session was started"]
         #[serde(
             default,
             skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
         )]
         pub initial_env: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-        ///The text to use to prompt for input
+        #[doc = "The text to use to prompt for input"]
         pub input_prompt: ::std::string::String,
         pub interrupt_mode: InterruptMode,
-        ///The kernel information, as returned by the kernel_info_request message
+        #[doc = "The kernel information, as returned by the kernel_info_request message"]
         pub kernel_info: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-        ///The interpreter language
+        #[doc = "The interpreter language"]
         pub language: ::std::string::String,
-        ///For notebook sessions, the URI of the notebook file
+        #[doc = "For notebook sessions, the URI of the notebook file"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub notebook_uri: ::std::option::Option<::std::string::String>,
-        ///The underlying process ID of the session, if the session is running.
+        #[doc = "The underlying process ID of the session, if the session is running."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub process_id: ::std::option::Option<i64>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub resource_usage: ::std::option::Option<ResourceUsage>,
-        ///A unique identifier for the session
+        #[doc = "A unique identifier for the session"]
         pub session_id: ::std::string::String,
         pub session_mode: SessionMode,
-        ///The path to the Unix domain socket used to send/receive data from the session, if applicable
+        #[doc = "The path to the Unix domain socket used to send/receive data from the session, if applicable"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub socket_path: ::std::option::Option<::std::string::String>,
-        ///An ISO 8601 timestamp of when the session was started
+        #[doc = "An ISO 8601 timestamp of when the session was started"]
         pub started: ::chrono::DateTime<::chrono::offset::Utc>,
         pub status: Status,
-        ///The username of the user who owns the session
+        #[doc = "The username of the user who owns the session"]
         pub username: ::std::string::String,
-        ///The session's current working directory
+        #[doc = "The session's current working directory"]
         pub working_directory: ::std::string::String,
     }
-    ///`ClientHeartbeat`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "properties": {
-    ///    "process_id": {
-    ///      "description": "The process ID of the client sending the heartbeat",
-    ///      "type": "integer"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`ClientHeartbeat`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"process_id\": {"]
+    #[doc = "      \"description\": \"The process ID of the client sending the heartbeat\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ClientHeartbeat {
-        ///The process ID of the client sending the heartbeat
+        #[doc = "The process ID of the client sending the heartbeat"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub process_id: ::std::option::Option<i64>,
     }
@@ -234,102 +234,102 @@ pub mod types {
             }
         }
     }
-    ///Connection information for an existing session
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Connection information for an existing session",
-    ///  "type": "object",
-    ///  "required": [
-    ///    "control_port",
-    ///    "hb_port",
-    ///    "iopub_port",
-    ///    "ip",
-    ///    "key",
-    ///    "shell_port",
-    ///    "signature_scheme",
-    ///    "stdin_port",
-    ///    "transport"
-    ///  ],
-    ///  "properties": {
-    ///    "control_port": {
-    ///      "description": "The port for control messages",
-    ///      "type": "integer"
-    ///    },
-    ///    "hb_port": {
-    ///      "description": "The port for heartbeat messages",
-    ///      "type": "integer"
-    ///    },
-    ///    "iopub_port": {
-    ///      "description": "The port for IOPub messages",
-    ///      "type": "integer"
-    ///    },
-    ///    "ip": {
-    ///      "description": "The IP address for the connection",
-    ///      "type": "string"
-    ///    },
-    ///    "key": {
-    ///      "description": "The key for messages",
-    ///      "type": "string"
-    ///    },
-    ///    "shell_port": {
-    ///      "description": "The port for shell messages",
-    ///      "type": "integer"
-    ///    },
-    ///    "signature_scheme": {
-    ///      "description": "The signature scheme for messages",
-    ///      "type": "string"
-    ///    },
-    ///    "stdin_port": {
-    ///      "description": "The port for stdin messages",
-    ///      "type": "integer"
-    ///    },
-    ///    "transport": {
-    ///      "description": "The transport protocol",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "Connection information for an existing session"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Connection information for an existing session\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"control_port\","]
+    #[doc = "    \"hb_port\","]
+    #[doc = "    \"iopub_port\","]
+    #[doc = "    \"ip\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"shell_port\","]
+    #[doc = "    \"signature_scheme\","]
+    #[doc = "    \"stdin_port\","]
+    #[doc = "    \"transport\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"control_port\": {"]
+    #[doc = "      \"description\": \"The port for control messages\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"hb_port\": {"]
+    #[doc = "      \"description\": \"The port for heartbeat messages\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"iopub_port\": {"]
+    #[doc = "      \"description\": \"The port for IOPub messages\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"ip\": {"]
+    #[doc = "      \"description\": \"The IP address for the connection\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"description\": \"The key for messages\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"shell_port\": {"]
+    #[doc = "      \"description\": \"The port for shell messages\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"signature_scheme\": {"]
+    #[doc = "      \"description\": \"The signature scheme for messages\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"stdin_port\": {"]
+    #[doc = "      \"description\": \"The port for stdin messages\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"transport\": {"]
+    #[doc = "      \"description\": \"The transport protocol\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ConnectionInfo {
-        ///The port for control messages
+        #[doc = "The port for control messages"]
         pub control_port: i64,
-        ///The port for heartbeat messages
+        #[doc = "The port for heartbeat messages"]
         pub hb_port: i64,
-        ///The port for IOPub messages
+        #[doc = "The port for IOPub messages"]
         pub iopub_port: i64,
-        ///The IP address for the connection
+        #[doc = "The IP address for the connection"]
         pub ip: ::std::string::String,
-        ///The key for messages
+        #[doc = "The key for messages"]
         pub key: ::std::string::String,
-        ///The port for shell messages
+        #[doc = "The port for shell messages"]
         pub shell_port: i64,
-        ///The signature scheme for messages
+        #[doc = "The signature scheme for messages"]
         pub signature_scheme: ::std::string::String,
-        ///The port for stdin messages
+        #[doc = "The port for stdin messages"]
         pub stdin_port: i64,
-        ///The transport protocol
+        #[doc = "The transport protocol"]
         pub transport: ::std::string::String,
     }
-    ///A list of environment variable actions to perform
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "A list of environment variable actions to perform",
-    ///  "type": "array",
-    ///  "items": {
-    ///    "$ref": "#/components/schemas/varAction"
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "A list of environment variable actions to perform"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A list of environment variable actions to perform\","]
+    #[doc = "  \"type\": \"array\","]
+    #[doc = "  \"items\": {"]
+    #[doc = "    \"$ref\": \"#/components/schemas/varAction\""]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     #[serde(transparent)]
     pub struct EnvVarActions(pub ::std::vec::Vec<VarAction>);
     impl ::std::ops::Deref for EnvVarActions {
@@ -348,146 +348,146 @@ pub mod types {
             Self(value)
         }
     }
-    ///`Error`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "code",
-    ///    "message"
-    ///  ],
-    ///  "properties": {
-    ///    "code": {
-    ///      "type": "string"
-    ///    },
-    ///    "details": {
-    ///      "type": "string"
-    ///    },
-    ///    "message": {
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`Error`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"code\","]
+    #[doc = "    \"message\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"details\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"message\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct Error {
         pub code: ::std::string::String,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub details: ::std::option::Option<::std::string::String>,
         pub message: ::std::string::String,
     }
-    ///A single output message produced during code execution
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "A single output message produced during code execution",
-    ///  "type": "object",
-    ///  "required": [
-    ///    "type"
-    ///  ],
-    ///  "properties": {
-    ///    "data": {
-    ///      "description": "MIME-keyed data, for display_data output",
-    ///      "type": "object",
-    ///      "additionalProperties": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "error_message": {
-    ///      "description": "The error message, for error output",
-    ///      "type": "string"
-    ///    },
-    ///    "error_name": {
-    ///      "description": "The error name, for error output",
-    ///      "type": "string"
-    ///    },
-    ///    "error_traceback": {
-    ///      "description": "The error traceback lines, for error output",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "metadata": {
-    ///      "description": "Metadata dictionary, for display_data output",
-    ///      "type": "object"
-    ///    },
-    ///    "stream_name": {
-    ///      "description": "The stream name (stdout or stderr), for stream output",
-    ///      "type": "string"
-    ///    },
-    ///    "text": {
-    ///      "description": "The text content, for stream output",
-    ///      "type": "string"
-    ///    },
-    ///    "type": {
-    ///      "description": "The output message type",
-    ///      "type": "string",
-    ///      "enum": [
-    ///        "stream",
-    ///        "display_data",
-    ///        "error"
-    ///      ]
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "A single output message produced during code execution"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A single output message produced during code execution\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"type\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"data\": {"]
+    #[doc = "      \"description\": \"MIME-keyed data, for display_data output\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"error_message\": {"]
+    #[doc = "      \"description\": \"The error message, for error output\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"error_name\": {"]
+    #[doc = "      \"description\": \"The error name, for error output\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"error_traceback\": {"]
+    #[doc = "      \"description\": \"The error traceback lines, for error output\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"metadata\": {"]
+    #[doc = "      \"description\": \"Metadata dictionary, for display_data output\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    },"]
+    #[doc = "    \"stream_name\": {"]
+    #[doc = "      \"description\": \"The stream name (stdout or stderr), for stream output\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"text\": {"]
+    #[doc = "      \"description\": \"The text content, for stream output\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"type\": {"]
+    #[doc = "      \"description\": \"The output message type\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"stream\","]
+    #[doc = "        \"display_data\","]
+    #[doc = "        \"error\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ExecuteOutput {
-        ///MIME-keyed data, for display_data output
+        #[doc = "MIME-keyed data, for display_data output"]
         #[serde(
             default,
             skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
         )]
         pub data: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-        ///The error message, for error output
+        #[doc = "The error message, for error output"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error_message: ::std::option::Option<::std::string::String>,
-        ///The error name, for error output
+        #[doc = "The error name, for error output"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error_name: ::std::option::Option<::std::string::String>,
-        ///The error traceback lines, for error output
+        #[doc = "The error traceback lines, for error output"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub error_traceback: ::std::vec::Vec<::std::string::String>,
-        ///Metadata dictionary, for display_data output
+        #[doc = "Metadata dictionary, for display_data output"]
         #[serde(default, skip_serializing_if = "::serde_json::Map::is_empty")]
         pub metadata: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-        ///The stream name (stdout or stderr), for stream output
+        #[doc = "The stream name (stdout or stderr), for stream output"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stream_name: ::std::option::Option<::std::string::String>,
-        ///The text content, for stream output
+        #[doc = "The text content, for stream output"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub text: ::std::option::Option<::std::string::String>,
-        ///The output message type
+        #[doc = "The output message type"]
         #[serde(rename = "type")]
         pub type_: ExecuteOutputType,
     }
-    ///The output message type
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The output message type",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "stream",
-    ///    "display_data",
-    ///    "error"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "The output message type"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The output message type\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"stream\","]
+    #[doc = "    \"display_data\","]
+    #[doc = "    \"error\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -547,107 +547,107 @@ pub mod types {
             value.parse()
         }
     }
-    ///The result of executing code in a session
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The result of executing code in a session",
-    ///  "type": "object",
-    ///  "required": [
-    ///    "execution_count",
-    ///    "output",
-    ///    "status"
-    ///  ],
-    ///  "properties": {
-    ///    "data": {
-    ///      "description": "The execution result as a MIME-keyed dictionary (from execute_result), if the execution produced a result",
-    ///      "type": "object",
-    ///      "additionalProperties": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "error_message": {
-    ///      "description": "The error message, if the execution failed",
-    ///      "type": "string"
-    ///    },
-    ///    "error_name": {
-    ///      "description": "The error name, if the execution failed",
-    ///      "type": "string"
-    ///    },
-    ///    "error_traceback": {
-    ///      "description": "The error traceback, if the execution failed",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "execution_count": {
-    ///      "description": "The kernel's execution counter",
-    ///      "type": "integer"
-    ///    },
-    ///    "output": {
-    ///      "description": "All output messages produced during execution, in order",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "$ref": "#/components/schemas/executeOutput"
-    ///      }
-    ///    },
-    ///    "status": {
-    ///      "description": "Whether the execution succeeded or errored",
-    ///      "type": "string",
-    ///      "enum": [
-    ///        "ok",
-    ///        "error"
-    ///      ]
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "The result of executing code in a session"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The result of executing code in a session\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"execution_count\","]
+    #[doc = "    \"output\","]
+    #[doc = "    \"status\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"data\": {"]
+    #[doc = "      \"description\": \"The execution result as a MIME-keyed dictionary (from execute_result), if the execution produced a result\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"error_message\": {"]
+    #[doc = "      \"description\": \"The error message, if the execution failed\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"error_name\": {"]
+    #[doc = "      \"description\": \"The error name, if the execution failed\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"error_traceback\": {"]
+    #[doc = "      \"description\": \"The error traceback, if the execution failed\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"execution_count\": {"]
+    #[doc = "      \"description\": \"The kernel's execution counter\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"output\": {"]
+    #[doc = "      \"description\": \"All output messages produced during execution, in order\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/executeOutput\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"description\": \"Whether the execution succeeded or errored\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"ok\","]
+    #[doc = "        \"error\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ExecuteReply {
-        ///The execution result as a MIME-keyed dictionary (from execute_result), if the execution produced a result
+        #[doc = "The execution result as a MIME-keyed dictionary (from execute_result), if the execution produced a result"]
         #[serde(
             default,
             skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
         )]
         pub data: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-        ///The error message, if the execution failed
+        #[doc = "The error message, if the execution failed"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error_message: ::std::option::Option<::std::string::String>,
-        ///The error name, if the execution failed
+        #[doc = "The error name, if the execution failed"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error_name: ::std::option::Option<::std::string::String>,
-        ///The error traceback, if the execution failed
+        #[doc = "The error traceback, if the execution failed"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub error_traceback: ::std::vec::Vec<::std::string::String>,
-        ///The kernel's execution counter
+        #[doc = "The kernel's execution counter"]
         pub execution_count: i64,
-        ///All output messages produced during execution, in order
+        #[doc = "All output messages produced during execution, in order"]
         pub output: ::std::vec::Vec<ExecuteOutput>,
-        ///Whether the execution succeeded or errored
+        #[doc = "Whether the execution succeeded or errored"]
         pub status: ExecuteReplyStatus,
     }
-    ///Whether the execution succeeded or errored
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Whether the execution succeeded or errored",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "ok",
-    ///    "error"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "Whether the execution succeeded or errored"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether the execution succeeded or errored\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"ok\","]
+    #[doc = "    \"error\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -703,122 +703,122 @@ pub mod types {
             value.parse()
         }
     }
-    ///A request to execute code in a session
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "A request to execute code in a session",
-    ///  "type": "object",
-    ///  "required": [
-    ///    "code"
-    ///  ],
-    ///  "properties": {
-    ///    "code": {
-    ///      "description": "The code to execute",
-    ///      "type": "string"
-    ///    },
-    ///    "silent": {
-    ///      "description": "If true, signals the kernel to execute quietly: no broadcast on iopub, no execute_result, and the execution_count is not incremented. Defaults to false.",
-    ///      "default": false,
-    ///      "type": "boolean"
-    ///    },
-    ///    "stop_on_error": {
-    ///      "description": "If true (default), abort the execution queue on error. If false, queued execute requests will still be processed even if this one fails.",
-    ///      "default": true,
-    ///      "type": "boolean"
-    ///    },
-    ///    "store_history": {
-    ///      "description": "If true (default), the code is stored in the kernel's history. Set to false for throwaway executions.",
-    ///      "default": true,
-    ///      "type": "boolean"
-    ///    },
-    ///    "timeout_seconds": {
-    ///      "description": "Maximum number of seconds to wait for execution to complete. If not specified, the request will block indefinitely until execution finishes.",
-    ///      "type": "integer"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "A request to execute code in a session"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A request to execute code in a session\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"code\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"description\": \"The code to execute\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"silent\": {"]
+    #[doc = "      \"description\": \"If true, signals the kernel to execute quietly: no broadcast on iopub, no execute_result, and the execution_count is not incremented. Defaults to false.\","]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"stop_on_error\": {"]
+    #[doc = "      \"description\": \"If true (default), abort the execution queue on error. If false, queued execute requests will still be processed even if this one fails.\","]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"store_history\": {"]
+    #[doc = "      \"description\": \"If true (default), the code is stored in the kernel's history. Set to false for throwaway executions.\","]
+    #[doc = "      \"default\": true,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"timeout_seconds\": {"]
+    #[doc = "      \"description\": \"Maximum number of seconds to wait for execution to complete. If not specified, the request will block indefinitely until execution finishes.\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ExecuteRequest {
-        ///The code to execute
+        #[doc = "The code to execute"]
         pub code: ::std::string::String,
-        ///If true, signals the kernel to execute quietly: no broadcast on iopub, no execute_result, and the execution_count is not incremented. Defaults to false.
+        #[doc = "If true, signals the kernel to execute quietly: no broadcast on iopub, no execute_result, and the execution_count is not incremented. Defaults to false."]
         #[serde(default)]
         pub silent: bool,
-        ///If true (default), abort the execution queue on error. If false, queued execute requests will still be processed even if this one fails.
+        #[doc = "If true (default), abort the execution queue on error. If false, queued execute requests will still be processed even if this one fails."]
         #[serde(default = "defaults::default_bool::<true>")]
         pub stop_on_error: bool,
-        ///If true (default), the code is stored in the kernel's history. Set to false for throwaway executions.
+        #[doc = "If true (default), the code is stored in the kernel's history. Set to false for throwaway executions."]
         #[serde(default = "defaults::default_bool::<true>")]
         pub store_history: bool,
-        ///Maximum number of seconds to wait for execution to complete. If not specified, the request will block indefinitely until execution finishes.
+        #[doc = "Maximum number of seconds to wait for execution to complete. If not specified, the request will block indefinitely until execution finishes."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub timeout_seconds: ::std::option::Option<i64>,
     }
-    ///The execution queue for a session
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The execution queue for a session",
-    ///  "type": "object",
-    ///  "required": [
-    ///    "length",
-    ///    "pending"
-    ///  ],
-    ///  "properties": {
-    ///    "active": {
-    ///      "description": "The execution request currently being evaluated, if any",
-    ///      "type": "object"
-    ///    },
-    ///    "length": {
-    ///      "description": "The number of items in the pending queue",
-    ///      "type": "integer"
-    ///    },
-    ///    "pending": {
-    ///      "description": "The queue of pending execution requests",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "object"
-    ///      }
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "The execution queue for a session"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The execution queue for a session\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"length\","]
+    #[doc = "    \"pending\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"active\": {"]
+    #[doc = "      \"description\": \"The execution request currently being evaluated, if any\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    },"]
+    #[doc = "    \"length\": {"]
+    #[doc = "      \"description\": \"The number of items in the pending queue\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"pending\": {"]
+    #[doc = "      \"description\": \"The queue of pending execution requests\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"object\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ExecutionQueue {
-        ///The execution request currently being evaluated, if any
+        #[doc = "The execution request currently being evaluated, if any"]
         #[serde(default, skip_serializing_if = "::serde_json::Map::is_empty")]
         pub active: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-        ///The number of items in the pending queue
+        #[doc = "The number of items in the pending queue"]
         pub length: i64,
-        ///The queue of pending execution requests
+        #[doc = "The queue of pending execution requests"]
         pub pending: ::std::vec::Vec<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
     }
-    ///The mechansim for interrupting the session
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The mechansim for interrupting the session",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "signal",
-    ///    "message"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "The mechansim for interrupting the session"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The mechansim for interrupting the session\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"signal\","]
+    #[doc = "    \"message\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -874,237 +874,237 @@ pub mod types {
             value.parse()
         }
     }
-    ///`NewSession`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "argv",
-    ///    "continuation_prompt",
-    ///    "display_name",
-    ///    "env",
-    ///    "input_prompt",
-    ///    "interrupt_mode",
-    ///    "language",
-    ///    "session_id",
-    ///    "session_mode",
-    ///    "startup_environment",
-    ///    "username",
-    ///    "working_directory"
-    ///  ],
-    ///  "properties": {
-    ///    "argv": {
-    ///      "description": "The program and command-line parameters for the session",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "connection_timeout": {
-    ///      "description": "The number of seconds to wait for a connection to the session's ZeroMQ sockets before timing out",
-    ///      "default": 30,
-    ///      "type": "integer"
-    ///    },
-    ///    "continuation_prompt": {
-    ///      "description": "The text to use to prompt for input continuations",
-    ///      "type": "string"
-    ///    },
-    ///    "display_name": {
-    ///      "description": "A human-readable name for the session",
-    ///      "type": "string"
-    ///    },
-    ///    "env": {
-    ///      "$ref": "#/components/schemas/envVarActions"
-    ///    },
-    ///    "input_prompt": {
-    ///      "description": "The text to use to prompt for input",
-    ///      "type": "string"
-    ///    },
-    ///    "interrupt_mode": {
-    ///      "$ref": "#/components/schemas/interrupt_mode"
-    ///    },
-    ///    "language": {
-    ///      "description": "The interpreter language",
-    ///      "type": "string"
-    ///    },
-    ///    "notebook_uri": {
-    ///      "description": "For notebook sessions, the URI of the notebook file",
-    ///      "type": "string"
-    ///    },
-    ///    "protocol_version": {
-    ///      "description": "The Jupyter protocol version supported by the underlying kernel",
-    ///      "default": "5.3",
-    ///      "type": "string"
-    ///    },
-    ///    "session_id": {
-    ///      "description": "A unique identifier for the session",
-    ///      "type": "string"
-    ///    },
-    ///    "session_mode": {
-    ///      "$ref": "#/components/schemas/sessionMode"
-    ///    },
-    ///    "startup_environment": {
-    ///      "$ref": "#/components/schemas/startupEnvironment"
-    ///    },
-    ///    "startup_environment_arg": {
-    ///      "description": "The command or script to run before starting the session",
-    ///      "type": "string"
-    ///    },
-    ///    "username": {
-    ///      "description": "The username of the user who owns the session",
-    ///      "type": "string"
-    ///    },
-    ///    "working_directory": {
-    ///      "description": "The working directory in which to start the session.",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`NewSession`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"argv\","]
+    #[doc = "    \"continuation_prompt\","]
+    #[doc = "    \"display_name\","]
+    #[doc = "    \"env\","]
+    #[doc = "    \"input_prompt\","]
+    #[doc = "    \"interrupt_mode\","]
+    #[doc = "    \"language\","]
+    #[doc = "    \"session_id\","]
+    #[doc = "    \"session_mode\","]
+    #[doc = "    \"startup_environment\","]
+    #[doc = "    \"username\","]
+    #[doc = "    \"working_directory\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"argv\": {"]
+    #[doc = "      \"description\": \"The program and command-line parameters for the session\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"connection_timeout\": {"]
+    #[doc = "      \"description\": \"The number of seconds to wait for a connection to the session's ZeroMQ sockets before timing out\","]
+    #[doc = "      \"default\": 30,"]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"continuation_prompt\": {"]
+    #[doc = "      \"description\": \"The text to use to prompt for input continuations\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"display_name\": {"]
+    #[doc = "      \"description\": \"A human-readable name for the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"env\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/envVarActions\""]
+    #[doc = "    },"]
+    #[doc = "    \"input_prompt\": {"]
+    #[doc = "      \"description\": \"The text to use to prompt for input\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"interrupt_mode\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/interrupt_mode\""]
+    #[doc = "    },"]
+    #[doc = "    \"language\": {"]
+    #[doc = "      \"description\": \"The interpreter language\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"notebook_uri\": {"]
+    #[doc = "      \"description\": \"For notebook sessions, the URI of the notebook file\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"protocol_version\": {"]
+    #[doc = "      \"description\": \"The Jupyter protocol version supported by the underlying kernel\","]
+    #[doc = "      \"default\": \"5.3\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"session_id\": {"]
+    #[doc = "      \"description\": \"A unique identifier for the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"session_mode\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/sessionMode\""]
+    #[doc = "    },"]
+    #[doc = "    \"startup_environment\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/startupEnvironment\""]
+    #[doc = "    },"]
+    #[doc = "    \"startup_environment_arg\": {"]
+    #[doc = "      \"description\": \"The command or script to run before starting the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"username\": {"]
+    #[doc = "      \"description\": \"The username of the user who owns the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"working_directory\": {"]
+    #[doc = "      \"description\": \"The working directory in which to start the session.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct NewSession {
-        ///The program and command-line parameters for the session
+        #[doc = "The program and command-line parameters for the session"]
         pub argv: ::std::vec::Vec<::std::string::String>,
-        ///The number of seconds to wait for a connection to the session's ZeroMQ sockets before timing out
+        #[doc = "The number of seconds to wait for a connection to the session's ZeroMQ sockets before timing out"]
         #[serde(default = "defaults::default_u64::<i64, 30>")]
         pub connection_timeout: i64,
-        ///The text to use to prompt for input continuations
+        #[doc = "The text to use to prompt for input continuations"]
         pub continuation_prompt: ::std::string::String,
-        ///A human-readable name for the session
+        #[doc = "A human-readable name for the session"]
         pub display_name: ::std::string::String,
         pub env: EnvVarActions,
-        ///The text to use to prompt for input
+        #[doc = "The text to use to prompt for input"]
         pub input_prompt: ::std::string::String,
         pub interrupt_mode: InterruptMode,
-        ///The interpreter language
+        #[doc = "The interpreter language"]
         pub language: ::std::string::String,
-        ///For notebook sessions, the URI of the notebook file
+        #[doc = "For notebook sessions, the URI of the notebook file"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub notebook_uri: ::std::option::Option<::std::string::String>,
-        ///The Jupyter protocol version supported by the underlying kernel
+        #[doc = "The Jupyter protocol version supported by the underlying kernel"]
         #[serde(default = "defaults::new_session_protocol_version")]
         pub protocol_version: ::std::string::String,
-        ///A unique identifier for the session
+        #[doc = "A unique identifier for the session"]
         pub session_id: ::std::string::String,
         pub session_mode: SessionMode,
         pub startup_environment: StartupEnvironment,
-        ///The command or script to run before starting the session
+        #[doc = "The command or script to run before starting the session"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub startup_environment_arg: ::std::option::Option<::std::string::String>,
-        ///The username of the user who owns the session
+        #[doc = "The username of the user who owns the session"]
         pub username: ::std::string::String,
-        ///The working directory in which to start the session.
+        #[doc = "The working directory in which to start the session."]
         pub working_directory: ::std::string::String,
     }
-    ///`NewSessionResponse`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "session_id"
-    ///  ],
-    ///  "properties": {
-    ///    "session_id": {
-    ///      "description": "A unique identifier for the session",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`NewSessionResponse`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"session_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"session_id\": {"]
+    #[doc = "      \"description\": \"A unique identifier for the session\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct NewSessionResponse {
-        ///A unique identifier for the session
+        #[doc = "A unique identifier for the session"]
         pub session_id: ::std::string::String,
     }
-    ///`ResourceUsage`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "cpu_percent",
-    ///    "memory_bytes",
-    ///    "sampling_period_ms",
-    ///    "thread_count",
-    ///    "timestamp"
-    ///  ],
-    ///  "properties": {
-    ///    "cpu_percent": {
-    ///      "description": "The percentage of CPU used by the kernel process and its child processes",
-    ///      "type": "integer",
-    ///      "format": "int64"
-    ///    },
-    ///    "memory_bytes": {
-    ///      "description": "The amount of memory used by the kernel process and all of its child processes in bytes",
-    ///      "type": "integer",
-    ///      "format": "int64"
-    ///    },
-    ///    "sampling_period_ms": {
-    ///      "description": "The sampling period in milliseconds over which the resource usage was measured",
-    ///      "type": "integer",
-    ///      "format": "int64"
-    ///    },
-    ///    "thread_count": {
-    ///      "description": "The total number of threads used by the kernel process and its child processes (Linux only)",
-    ///      "type": "integer",
-    ///      "format": "int64"
-    ///    },
-    ///    "timestamp": {
-    ///      "description": "A Unix timestamp in milliseconds indicating when the resource usage was sampled",
-    ///      "type": "integer",
-    ///      "format": "int64"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`ResourceUsage`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cpu_percent\","]
+    #[doc = "    \"memory_bytes\","]
+    #[doc = "    \"sampling_period_ms\","]
+    #[doc = "    \"thread_count\","]
+    #[doc = "    \"timestamp\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cpu_percent\": {"]
+    #[doc = "      \"description\": \"The percentage of CPU used by the kernel process and its child processes\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"memory_bytes\": {"]
+    #[doc = "      \"description\": \"The amount of memory used by the kernel process and all of its child processes in bytes\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"sampling_period_ms\": {"]
+    #[doc = "      \"description\": \"The sampling period in milliseconds over which the resource usage was measured\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"thread_count\": {"]
+    #[doc = "      \"description\": \"The total number of threads used by the kernel process and its child processes (Linux only)\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"timestamp\": {"]
+    #[doc = "      \"description\": \"A Unix timestamp in milliseconds indicating when the resource usage was sampled\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ResourceUsage {
-        ///The percentage of CPU used by the kernel process and its child processes
+        #[doc = "The percentage of CPU used by the kernel process and its child processes"]
         pub cpu_percent: i64,
-        ///The amount of memory used by the kernel process and all of its child processes in bytes
+        #[doc = "The amount of memory used by the kernel process and all of its child processes in bytes"]
         pub memory_bytes: i64,
-        ///The sampling period in milliseconds over which the resource usage was measured
+        #[doc = "The sampling period in milliseconds over which the resource usage was measured"]
         pub sampling_period_ms: i64,
-        ///The total number of threads used by the kernel process and its child processes (Linux only)
+        #[doc = "The total number of threads used by the kernel process and its child processes (Linux only)"]
         pub thread_count: i64,
-        ///A Unix timestamp in milliseconds indicating when the resource usage was sampled
+        #[doc = "A Unix timestamp in milliseconds indicating when the resource usage was sampled"]
         pub timestamp: i64,
     }
-    ///`RestartSession`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "properties": {
-    ///    "env": {
-    ///      "$ref": "#/components/schemas/envVarActions"
-    ///    },
-    ///    "working_directory": {
-    ///      "description": "The desired working directory for the session after restart, if different from the session's working directory at startup",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`RestartSession`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"env\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/envVarActions\""]
+    #[doc = "    },"]
+    #[doc = "    \"working_directory\": {"]
+    #[doc = "      \"description\": \"The desired working directory for the session after restart, if different from the session's working directory at startup\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct RestartSession {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub env: ::std::option::Option<EnvVarActions>,
-        ///The desired working directory for the session after restart, if different from the session's working directory at startup
+        #[doc = "The desired working directory for the session after restart, if different from the session's working directory at startup"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub working_directory: ::std::option::Option<::std::string::String>,
     }
@@ -1116,46 +1116,46 @@ pub mod types {
             }
         }
     }
-    ///`ServerConfiguration`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "properties": {
-    ///    "idle_shutdown_hours": {
-    ///      "description": "The number of hours the server will wait before shutting down idle sessions (-1 if idle shutdown is disabled)",
-    ///      "type": "integer"
-    ///    },
-    ///    "log_level": {
-    ///      "description": "The current log level",
-    ///      "type": "string",
-    ///      "enum": [
-    ///        "trace",
-    ///        "debug",
-    ///        "info",
-    ///        "warn",
-    ///        "error"
-    ///      ]
-    ///    },
-    ///    "resource_sample_interval_ms": {
-    ///      "description": "The interval in milliseconds at which resource usage is sampled. A value of 0 disables resource usage sampling.",
-    ///      "type": "integer"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`ServerConfiguration`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"idle_shutdown_hours\": {"]
+    #[doc = "      \"description\": \"The number of hours the server will wait before shutting down idle sessions (-1 if idle shutdown is disabled)\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"log_level\": {"]
+    #[doc = "      \"description\": \"The current log level\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"trace\","]
+    #[doc = "        \"debug\","]
+    #[doc = "        \"info\","]
+    #[doc = "        \"warn\","]
+    #[doc = "        \"error\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"resource_sample_interval_ms\": {"]
+    #[doc = "      \"description\": \"The interval in milliseconds at which resource usage is sampled. A value of 0 disables resource usage sampling.\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ServerConfiguration {
-        ///The number of hours the server will wait before shutting down idle sessions (-1 if idle shutdown is disabled)
+        #[doc = "The number of hours the server will wait before shutting down idle sessions (-1 if idle shutdown is disabled)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub idle_shutdown_hours: ::std::option::Option<i64>,
-        ///The current log level
+        #[doc = "The current log level"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub log_level: ::std::option::Option<ServerConfigurationLogLevel>,
-        ///The interval in milliseconds at which resource usage is sampled. A value of 0 disables resource usage sampling.
+        #[doc = "The interval in milliseconds at which resource usage is sampled. A value of 0 disables resource usage sampling."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub resource_sample_interval_ms: ::std::option::Option<i64>,
     }
@@ -1168,27 +1168,27 @@ pub mod types {
             }
         }
     }
-    ///The current log level
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The current log level",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "trace",
-    ///    "debug",
-    ///    "info",
-    ///    "warn",
-    ///    "error"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "The current log level"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The current log level\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"trace\","]
+    #[doc = "    \"debug\","]
+    #[doc = "    \"info\","]
+    #[doc = "    \"warn\","]
+    #[doc = "    \"error\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -1256,130 +1256,130 @@ pub mod types {
             value.parse()
         }
     }
-    ///`ServerStatus`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "active",
-    ///    "busy",
-    ///    "busy_seconds",
-    ///    "idle_seconds",
-    ///    "process_id",
-    ///    "sessions",
-    ///    "started",
-    ///    "uptime_seconds",
-    ///    "version"
-    ///  ],
-    ///  "properties": {
-    ///    "active": {
-    ///      "type": "integer"
-    ///    },
-    ///    "busy": {
-    ///      "type": "boolean"
-    ///    },
-    ///    "busy_seconds": {
-    ///      "description": "The number of seconds any session has been busy, or 0 if all sessions are idle",
-    ///      "type": "integer"
-    ///    },
-    ///    "idle_seconds": {
-    ///      "description": "The number of seconds all sessions have been idle, or 0 if any session is busy",
-    ///      "type": "integer"
-    ///    },
-    ///    "process_id": {
-    ///      "description": "The server's operating system process identifier",
-    ///      "type": "integer"
-    ///    },
-    ///    "sessions": {
-    ///      "type": "integer"
-    ///    },
-    ///    "started": {
-    ///      "description": "An ISO 8601 timestamp of when the server was started",
-    ///      "type": "string",
-    ///      "format": "date-time"
-    ///    },
-    ///    "uptime_seconds": {
-    ///      "description": "The number of seconds the server has been running",
-    ///      "type": "integer"
-    ///    },
-    ///    "version": {
-    ///      "description": "The version of the server",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`ServerStatus`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"active\","]
+    #[doc = "    \"busy\","]
+    #[doc = "    \"busy_seconds\","]
+    #[doc = "    \"idle_seconds\","]
+    #[doc = "    \"process_id\","]
+    #[doc = "    \"sessions\","]
+    #[doc = "    \"started\","]
+    #[doc = "    \"uptime_seconds\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"active\": {"]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"busy\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"busy_seconds\": {"]
+    #[doc = "      \"description\": \"The number of seconds any session has been busy, or 0 if all sessions are idle\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"idle_seconds\": {"]
+    #[doc = "      \"description\": \"The number of seconds all sessions have been idle, or 0 if any session is busy\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"process_id\": {"]
+    #[doc = "      \"description\": \"The server's operating system process identifier\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"sessions\": {"]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"started\": {"]
+    #[doc = "      \"description\": \"An ISO 8601 timestamp of when the server was started\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"uptime_seconds\": {"]
+    #[doc = "      \"description\": \"The number of seconds the server has been running\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"The version of the server\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct ServerStatus {
         pub active: i64,
         pub busy: bool,
-        ///The number of seconds any session has been busy, or 0 if all sessions are idle
+        #[doc = "The number of seconds any session has been busy, or 0 if all sessions are idle"]
         pub busy_seconds: i64,
-        ///The number of seconds all sessions have been idle, or 0 if any session is busy
+        #[doc = "The number of seconds all sessions have been idle, or 0 if any session is busy"]
         pub idle_seconds: i64,
-        ///The server's operating system process identifier
+        #[doc = "The server's operating system process identifier"]
         pub process_id: i64,
         pub sessions: i64,
-        ///An ISO 8601 timestamp of when the server was started
+        #[doc = "An ISO 8601 timestamp of when the server was started"]
         pub started: ::chrono::DateTime<::chrono::offset::Utc>,
-        ///The number of seconds the server has been running
+        #[doc = "The number of seconds the server has been running"]
         pub uptime_seconds: i64,
-        ///The version of the server
+        #[doc = "The version of the server"]
         pub version: ::std::string::String,
     }
-    ///`SessionList`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "sessions",
-    ///    "total"
-    ///  ],
-    ///  "properties": {
-    ///    "sessions": {
-    ///      "type": "array",
-    ///      "items": {
-    ///        "$ref": "#/components/schemas/activeSession"
-    ///      }
-    ///    },
-    ///    "total": {
-    ///      "type": "integer"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`SessionList`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"sessions\","]
+    #[doc = "    \"total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"sessions\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/activeSession\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"total\": {"]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct SessionList {
         pub sessions: ::std::vec::Vec<ActiveSession>,
         pub total: i64,
     }
-    ///The mode in which the session is running
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The mode in which the session is running",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "console",
-    ///    "notebook",
-    ///    "background"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "The mode in which the session is running"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The mode in which the session is running\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"console\","]
+    #[doc = "    \"notebook\","]
+    #[doc = "    \"background\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -1439,26 +1439,26 @@ pub mod types {
             value.parse()
         }
     }
-    ///The kernel's startup environment: 'none' for normal startup, 'shell' for a login shell, 'command' for a preflight command, 'script' to run a script. Only relevant on POSIX-like systems.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The kernel's startup environment: 'none' for normal startup, 'shell' for a login shell, 'command' for a preflight command, 'script' to run a script. Only relevant on POSIX-like systems.",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "none",
-    ///    "shell",
-    ///    "command",
-    ///    "script"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "The kernel's startup environment: 'none' for normal startup, 'shell' for a login shell, 'command' for a preflight command, 'script' to run a script. Only relevant on POSIX-like systems."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The kernel's startup environment: 'none' for normal startup, 'shell' for a login shell, 'command' for a preflight command, 'script' to run a script. Only relevant on POSIX-like systems.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"none\","]
+    #[doc = "    \"shell\","]
+    #[doc = "    \"command\","]
+    #[doc = "    \"script\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -1522,65 +1522,65 @@ pub mod types {
             value.parse()
         }
     }
-    ///`StartupError`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "error"
-    ///  ],
-    ///  "properties": {
-    ///    "error": {
-    ///      "$ref": "#/components/schemas/error"
-    ///    },
-    ///    "exit_code": {
-    ///      "description": "The exit code of the process, if it exited",
-    ///      "type": "integer"
-    ///    },
-    ///    "output": {
-    ///      "description": "The output of the process (combined stdout and stderr) emitted during startup, if any",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`StartupError`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"error\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/error\""]
+    #[doc = "    },"]
+    #[doc = "    \"exit_code\": {"]
+    #[doc = "      \"description\": \"The exit code of the process, if it exited\","]
+    #[doc = "      \"type\": \"integer\""]
+    #[doc = "    },"]
+    #[doc = "    \"output\": {"]
+    #[doc = "      \"description\": \"The output of the process (combined stdout and stderr) emitted during startup, if any\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct StartupError {
         pub error: Error,
-        ///The exit code of the process, if it exited
+        #[doc = "The exit code of the process, if it exited"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub exit_code: ::std::option::Option<i64>,
-        ///The output of the process (combined stdout and stderr) emitted during startup, if any
+        #[doc = "The output of the process (combined stdout and stderr) emitted during startup, if any"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub output: ::std::option::Option<::std::string::String>,
     }
-    ///The status of the session
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The status of the session",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "uninitialized",
-    ///    "starting",
-    ///    "ready",
-    ///    "idle",
-    ///    "busy",
-    ///    "offline",
-    ///    "exited"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "The status of the session"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The status of the session\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"uninitialized\","]
+    #[doc = "    \"starting\","]
+    #[doc = "    \"ready\","]
+    #[doc = "    \"idle\","]
+    #[doc = "    \"busy\","]
+    #[doc = "    \"offline\","]
+    #[doc = "    \"exited\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -1656,61 +1656,61 @@ pub mod types {
             value.parse()
         }
     }
-    ///`VarAction`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "action",
-    ///    "name",
-    ///    "value"
-    ///  ],
-    ///  "properties": {
-    ///    "action": {
-    ///      "$ref": "#/components/schemas/varActionType"
-    ///    },
-    ///    "name": {
-    ///      "description": "The name of the variable to act on",
-    ///      "type": "string"
-    ///    },
-    ///    "value": {
-    ///      "description": "The value to replace, append, or prepend",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[doc = "`VarAction`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"action\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"action\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/varActionType\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"The name of the variable to act on\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The value to replace, append, or prepend\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
     pub struct VarAction {
         pub action: VarActionType,
-        ///The name of the variable to act on
+        #[doc = "The name of the variable to act on"]
         pub name: ::std::string::String,
-        ///The value to replace, append, or prepend
+        #[doc = "The value to replace, append, or prepend"]
         pub value: ::std::string::String,
     }
-    ///The type of action to perform on the environment variable
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The type of action to perform on the environment variable",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "replace",
-    ///    "append",
-    ///    "prepend"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
+    #[doc = "The type of action to perform on the environment variable"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The type of action to perform on the environment variable\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"replace\","]
+    #[doc = "    \"append\","]
+    #[doc = "    \"prepend\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
     #[derive(
-        ::serde::Deserialize,
-        ::serde::Serialize,
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
         Clone,
         Copy,
         Debug,
@@ -1770,7 +1770,7 @@ pub mod types {
             value.parse()
         }
     }
-    /// Generation of default values for serde.
+    #[doc = r" Generation of default values for serde."]
     pub mod defaults {
         pub(super) fn default_bool<const V: bool>() -> bool {
             V
@@ -1788,21 +1788,17 @@ pub mod types {
     }
 }
 #[derive(Clone, Debug)]
-/**Client for Kallichore API
-
-Kallichore is a Jupyter kernel gateway and supervisor
-
-Version: 1.0.0*/
+#[doc = "Client for Kallichore API\n\nKallichore is a Jupyter kernel gateway and supervisor\n\nVersion: 1.0.0"]
 pub struct Client {
     pub(crate) baseurl: String,
     pub(crate) client: reqwest::Client,
 }
 impl Client {
-    /// Create a new client.
-    ///
-    /// `baseurl` is the base URL provided to the internal
-    /// `reqwest::Client`, and should include a scheme and hostname,
-    /// as well as port and a path stem if applicable.
+    #[doc = r" Create a new client."]
+    #[doc = r""]
+    #[doc = r" `baseurl` is the base URL provided to the internal"]
+    #[doc = r" `reqwest::Client`, and should include a scheme and hostname,"]
+    #[doc = r" as well as port and a path stem if applicable."]
     pub fn new(baseurl: &str) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         let client = {
@@ -1815,12 +1811,12 @@ impl Client {
         let client = reqwest::ClientBuilder::new();
         Self::new_with_client(baseurl, client.build().unwrap())
     }
-    /// Construct a new client with an existing `reqwest::Client`,
-    /// allowing more control over its configuration.
-    ///
-    /// `baseurl` is the base URL provided to the internal
-    /// `reqwest::Client`, and should include a scheme and hostname,
-    /// as well as port and a path stem if applicable.
+    #[doc = r" Construct a new client with an existing `reqwest::Client`,"]
+    #[doc = r" allowing more control over its configuration."]
+    #[doc = r""]
+    #[doc = r" `baseurl` is the base URL provided to the internal"]
+    #[doc = r" `reqwest::Client`, and should include a scheme and hostname,"]
+    #[doc = r" as well as port and a path stem if applicable."]
     pub fn new_with_client(baseurl: &str, client: reqwest::Client) -> Self {
         Self {
             baseurl: baseurl.to_string(),
@@ -1845,11 +1841,7 @@ impl ClientInfo<()> for Client {
 impl ClientHooks<()> for &Client {}
 #[allow(clippy::all)]
 impl Client {
-    /**Notify the server that a client is connected
-
-    Sends a `POST` request to `/client_heartbeat`
-
-    */
+    #[doc = "Notify the server that a client is connected\n\nSends a `POST` request to `/client_heartbeat`\n\n"]
     pub async fn client_heartbeat<'a>(
         &'a self,
         body: &'a types::ClientHeartbeat,
@@ -1883,11 +1875,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Get the server configuration
-
-    Sends a `GET` request to `/server_configuration`
-
-    */
+    #[doc = "Get the server configuration\n\nSends a `GET` request to `/server_configuration`\n\n"]
     pub async fn get_server_configuration<'a>(
         &'a self,
     ) -> Result<ResponseValue<types::ServerConfiguration>, Error<()>> {
@@ -1919,11 +1907,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Change the server configuration
-
-    Sends a `POST` request to `/server_configuration`
-
-    */
+    #[doc = "Change the server configuration\n\nSends a `POST` request to `/server_configuration`\n\n"]
     pub async fn set_server_configuration<'a>(
         &'a self,
         body: &'a types::ServerConfiguration,
@@ -1957,11 +1941,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**List active sessions
-
-    Sends a `GET` request to `/sessions`
-
-    */
+    #[doc = "List active sessions\n\nSends a `GET` request to `/sessions`\n\n"]
     pub async fn list_sessions<'a>(
         &'a self,
     ) -> Result<ResponseValue<types::SessionList>, Error<()>> {
@@ -1993,11 +1973,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Create a new session
-
-    Sends a `PUT` request to `/sessions`
-
-    */
+    #[doc = "Create a new session\n\nSends a `PUT` request to `/sessions`\n\n"]
     pub async fn new_session<'a>(
         &'a self,
         body: &'a types::NewSession,
@@ -2031,11 +2007,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Get session details
-
-    Sends a `GET` request to `/sessions/{session_id}`
-
-    */
+    #[doc = "Get session details\n\nSends a `GET` request to `/sessions/{session_id}`\n\n"]
     pub async fn get_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -2072,11 +2044,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Delete session
-
-    Sends a `DELETE` request to `/sessions/{session_id}`
-
-    */
+    #[doc = "Delete session\n\nSends a `DELETE` request to `/sessions/{session_id}`\n\n"]
     pub async fn delete_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -2113,11 +2081,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Adopt an existing session
-
-    Sends a `PUT` request to `/sessions/{session_id}/adopt`
-
-    */
+    #[doc = "Adopt an existing session\n\nSends a `PUT` request to `/sessions/{session_id}/adopt`\n\n"]
     pub async fn adopt_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -2156,11 +2120,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Upgrade to a WebSocket or domain socket for channel communication
-
-    Sends a `GET` request to `/sessions/{session_id}/channels`
-
-    */
+    #[doc = "Upgrade to a WebSocket or domain socket for channel communication\n\nSends a `GET` request to `/sessions/{session_id}/channels`\n\n"]
     pub async fn channels_upgrade<'a>(
         &'a self,
         session_id: &'a str,
@@ -2197,11 +2157,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Get Jupyter connection information for the session
-
-    Sends a `GET` request to `/sessions/{session_id}/connection_info`
-
-    */
+    #[doc = "Get Jupyter connection information for the session\n\nSends a `GET` request to `/sessions/{session_id}/connection_info`\n\n"]
     pub async fn connection_info<'a>(
         &'a self,
         session_id: &'a str,
@@ -2238,11 +2194,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Execute code and return results
-
-    Sends a `POST` request to `/sessions/{session_id}/execute`
-
-    */
+    #[doc = "Execute code and return results\n\nSends a `POST` request to `/sessions/{session_id}/execute`\n\n"]
     pub async fn execute_code<'a>(
         &'a self,
         session_id: &'a str,
@@ -2281,11 +2233,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Interrupt session
-
-    Sends a `POST` request to `/sessions/{session_id}/interrupt`
-
-    */
+    #[doc = "Interrupt session\n\nSends a `POST` request to `/sessions/{session_id}/interrupt`\n\n"]
     pub async fn interrupt_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -2322,11 +2270,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Force quit session
-
-    Sends a `POST` request to `/sessions/{session_id}/kill`
-
-    */
+    #[doc = "Force quit session\n\nSends a `POST` request to `/sessions/{session_id}/kill`\n\n"]
     pub async fn kill_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -2363,11 +2307,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Restart a session
-
-    Sends a `POST` request to `/sessions/{session_id}/restart`
-
-    */
+    #[doc = "Restart a session\n\nSends a `POST` request to `/sessions/{session_id}/restart`\n\n"]
     pub async fn restart_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -2406,11 +2346,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Start a session
-
-    Sends a `POST` request to `/sessions/{session_id}/start`
-
-    */
+    #[doc = "Start a session\n\nSends a `POST` request to `/sessions/{session_id}/start`\n\n"]
     pub async fn start_session<'a>(
         &'a self,
         session_id: &'a str,
@@ -2447,11 +2383,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Shut down all sessions and the server itself
-
-    Sends a `POST` request to `/shutdown`
-
-    */
+    #[doc = "Shut down all sessions and the server itself\n\nSends a `POST` request to `/shutdown`\n\n"]
     pub async fn shutdown_server<'a>(
         &'a self,
     ) -> Result<ResponseValue<::serde_json::Value>, Error<()>> {
@@ -2483,11 +2415,7 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /**Get server status and information
-
-    Sends a `GET` request to `/status`
-
-    */
+    #[doc = "Get server status and information\n\nSends a `GET` request to `/status`\n\n"]
     pub async fn server_status<'a>(
         &'a self,
     ) -> Result<ResponseValue<types::ServerStatus>, Error<()>> {
@@ -2520,7 +2448,7 @@ impl Client {
         }
     }
 }
-/// Items consumers will typically use such as the Client.
+#[doc = r" Items consumers will typically use such as the Client."]
 pub mod prelude {
     #[allow(unused_imports)]
     pub use super::Client;
