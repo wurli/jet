@@ -10,7 +10,7 @@ const STYLES: Styles = Styles::styled()
     .placeholder(AnsiColor::Cyan.on_default());
 
 #[derive(Parser, Debug)]
-#[command(name = "jet", about = "kallichore-backed REPL with kitty graphics", styles = STYLES)]
+#[command(name = "jet", about = "A Jupyter Kernel REPL Driver", styles = STYLES)]
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,
