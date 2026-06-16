@@ -37,10 +37,7 @@ enum WaitResult {
 /// only run the watcher while we know rustyline is NOT reading from stdin
 /// (so we never race rustyline for input bytes). The thread is woken
 /// promptly via a self-pipe when `f` returns.
-async fn with_stdin_intr_watcher<Fut, T>(
-    on_intr: impl Fn() + Send + Sync + 'static,
-    f: Fut,
-) -> T
+async fn with_stdin_intr_watcher<Fut, T>(on_intr: impl Fn() + Send + Sync + 'static, f: Fut) -> T
 where
     Fut: std::future::Future<Output = T>,
 {
@@ -119,7 +116,6 @@ fn nix_pipe() -> std::io::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
         ))
     }
 }
-
 
 async fn wait_for_idle(
     rx: &mut UnboundedReceiver<String>,
@@ -209,9 +205,7 @@ async fn stop_session(client: &Client, session_id: &str) -> Result<()> {
         match request_graceful_shutdown(client, session_id).await {
             Ok(()) => {}
             Err(e) => {
-                log::warn!(
-                    "graceful shutdown of {session_id} failed: {e}; falling back to kill"
-                );
+                log::warn!("graceful shutdown of {session_id} failed: {e}; falling back to kill");
                 client.kill_session(session_id).await?;
             }
         }
@@ -416,12 +410,9 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     //    a ^C.
     // Eagerly register the SIGINT handler so we don't race the user's first
     // ^C against tokio's lazy registration in ctrl_c().
-    let mut sigint = tokio::signal::unix::signal(
-        tokio::signal::unix::SignalKind::interrupt(),
-    )?;
+    let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
     let mut rl = Some(rustyline::DefaultEditor::new()?);
-    println!("jet — connected to session {session_id}. ^D to quit.");
     loop {
         // Run rustyline on a blocking thread so we can race it against
         // `closed`. If the websocket dies (kernel quit, server crash) the
