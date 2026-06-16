@@ -7,8 +7,9 @@ the terminal using the kitty graphics protocol.
 ## What it does
 
 - Spawns (or connects to) `kcserver` and creates a Jupyter session.
-- Kernel argv is required: pass it after `--` (e.g. ipykernel for Python,
-  ark for R). `{connection_file}` is auto-appended via `-f` if absent.
+- Kernel is identified by a path to a Jupyter `kernel.json` kernelspec
+  (e.g. `~/Library/Jupyter/kernels/ark/kernel.json`). `argv` and `language`
+  come from the spec; `{connection_file}` is auto-appended via `-f` if absent.
 - Reads input with rustyline; sends `execute_request` over the per-session
   websocket.
 - Streams `iopub` output to stdout as it arrives (text, errors, banners, plots).
@@ -53,17 +54,17 @@ ambiguous, first check the Positron behaviour.
 
 ```bash
 # Python (ipykernel)
-cargo run -- connect --kcserver /path/to/kcserver --language python -- \
-  python3 -m ipykernel_launcher
+cargo run -- connect --kcserver /path/to/kcserver \
+  ~/Library/Jupyter/kernels/python3/kernel.json
 
 # R (ark)
-cargo run -- connect --kcserver /path/to/kcserver --language r -- \
-  /path/to/ark --connection_file '{connection_file}' --session-mode console
+cargo run -- connect --kcserver /path/to/kcserver \
+  ~/Library/Jupyter/kernels/ark/kernel.json
 ```
 
 `{connection_file}` is the placeholder kallichore substitutes with the kernel's
-connection-file path. If your argv doesn't include it (as in the Python
-example above), jet appends `-f {connection_file}` automatically.
+connection-file path. If the spec's `argv` doesn't include it, jet appends
+`-f {connection_file}` automatically.
 
 ## Tests
 

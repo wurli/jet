@@ -10,7 +10,17 @@ pub async fn create(
     session_id: &str,
     language: &str,
     argv: &[String],
+    env: &std::collections::HashMap<String, String>,
+    interrupt_mode: types::InterruptMode,
 ) -> Result<()> {
+    let env_actions = env
+        .iter()
+        .map(|(name, value)| types::VarAction {
+            action: types::VarActionType::Replace,
+            name: name.clone(),
+            value: value.clone(),
+        })
+        .collect();
     let body = types::NewSession {
         session_id: session_id.to_string(),
         display_name: "jet".into(),
@@ -21,8 +31,8 @@ pub async fn create(
         argv: argv.to_vec(),
         session_mode: types::SessionMode::Console,
         working_directory: std::env::current_dir()?.to_string_lossy().into_owned(),
-        env: types::EnvVarActions(vec![]),
-        interrupt_mode: types::InterruptMode::Signal,
+        env: types::EnvVarActions(env_actions),
+        interrupt_mode,
         startup_environment: types::StartupEnvironment::None,
         // Defaults from the spec; expressed explicitly so we don't depend on
         // serde defaults firing at the right layer.

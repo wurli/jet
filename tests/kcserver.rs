@@ -67,7 +67,15 @@ async fn run_one(code: &str) -> Result<String> {
 
     let session_id = format!("jet-test-{:x}", rand::thread_rng().gen::<u64>());
     let argv = kernel::build_argv(&[]);
-    client.create_session(&session_id, "python", &argv).await?;
+    client
+        .create_session(
+            &session_id,
+            "python",
+            &argv,
+            &std::collections::HashMap::new(),
+            jet::kallichore::api::types::InterruptMode::Signal,
+        )
+        .await?;
 
     let ws = client.open_channels(&session_id).await?;
     let (mut sink, mut stream) = ws.split();

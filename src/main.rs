@@ -113,14 +113,20 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     }
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
-    let spec = args.kernel_spec();
+    let spec = args.load_kernel_spec()?;
     log::info!(
         "Creating session {session_id} (language={}, argv={:?})",
         spec.language,
         spec.argv,
     );
     client
-        .create_session(&session_id, &spec.language, &spec.argv)
+        .create_session(
+            &session_id,
+            &spec.language,
+            &spec.argv,
+            &spec.env,
+            spec.interrupt_mode,
+        )
         .await?;
 
     // Open the channels websocket BEFORE start so we don't miss startup messages.

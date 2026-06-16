@@ -143,8 +143,10 @@ impl Client {
         session_id: &str,
         language: &str,
         argv: &[String],
+        env: &std::collections::HashMap<String, String>,
+        interrupt_mode: api::types::InterruptMode,
     ) -> Result<()> {
-        session::create(&self.api, session_id, language, argv).await
+        session::create(&self.api, session_id, language, argv, env, interrupt_mode).await
     }
 
     /// `POST /sessions/{id}/start` — start the kernel for an existing session.
