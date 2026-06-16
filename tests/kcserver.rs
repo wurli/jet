@@ -62,7 +62,7 @@ fn ipykernel_available() -> bool {
 async fn run_one(code: &str) -> Result<String> {
     let kc = locate_kcserver().expect("locate_kcserver should succeed before calling");
 
-    let client = Client::spawn(&kc, None).await?;
+    let client = Client::spawn(&kc, None, false).await?;
 
     let session_id = format!("jet-test-{:x}", rand::thread_rng().gen::<u64>());
     let python = which("python3").ok_or_else(|| anyhow::anyhow!("python3 not on PATH"))?;
@@ -296,7 +296,7 @@ fn kill_session_terminates_running_kernel() {
     }
     block_on(async {
         let kc = locate_kcserver().expect("kcserver");
-        let client = Client::spawn(&kc, None).await.expect("spawn client");
+        let client = Client::spawn(&kc, None, false).await.expect("spawn client");
         let (session_id, _ws) = create_python_session(&client)
             .await
             .expect("create session");
@@ -330,7 +330,7 @@ fn delete_session_rejects_running_then_succeeds_after_kill() {
     }
     block_on(async {
         let kc = locate_kcserver().expect("kcserver");
-        let client = Client::spawn(&kc, None).await.expect("spawn client");
+        let client = Client::spawn(&kc, None, false).await.expect("spawn client");
         let (session_id, _ws) = create_python_session(&client)
             .await
             .expect("create session");
@@ -384,7 +384,7 @@ fn shutdown_server_stops_the_kcserver() {
         // Spawn but DETACH so the ChildGuard's Drop doesn't kill the process
         // out from under shutdown_server — we want the request itself to be
         // what stops the server.
-        let mut client = Client::spawn(&kc, None).await.expect("spawn client");
+        let mut client = Client::spawn(&kc, None, false).await.expect("spawn client");
         client.detach_server();
 
         client.shutdown_server().await.expect("shutdown_server");

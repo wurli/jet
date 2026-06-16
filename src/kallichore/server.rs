@@ -75,6 +75,7 @@ impl Drop for ChildGuard {
 pub async fn spawn_kcserver(
     bin: &str,
     connection_file: Option<PathBuf>,
+    persist: bool,
 ) -> Result<(ConnectionFile, ChildGuard)> {
     let conn_path = connection_file.unwrap_or_else(|| {
         let path =
@@ -84,6 +85,17 @@ pub async fn spawn_kcserver(
         path
     });
 
+    // When kcserver may outlive jet (`--persist`), we must inherit our
+    // stderr fd directly: a piped stderr would close on jet's exit and any
+    // later kcserver output (e.g. its zeromq panic on shutdown) would be
+    // lost. When jet owns the lifetime, pipe + prefix each line with
+    // `[kcserver]` so the source is clear in mixed output.
+    let stderr_setting = if persist {
+        Stdio::inherit()
+    } else {
+        Stdio::piped()
+    };
+
     log::debug!("spawning {bin} with connection file {conn_path:?}");
     let mut child = Command::new(bin)
         .arg("--connection-file")
@@ -91,12 +103,10 @@ pub async fn spawn_kcserver(
         .arg("--transport")
         .arg("tcp")
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(stderr_setting)
         .spawn()
         .with_context(|| format!("failed to spawn {bin}"))?;
 
-    // Forward kcserver stderr to ours, prefixing each line so it's clear
-    // those lines come from the subprocess.
     if let Some(stderr) = child.stderr.take() {
         std::thread::spawn(move || {
             let reader = BufReader::new(stderr);
@@ -105,6 +115,10 @@ pub async fn spawn_kcserver(
                 let mut h = stderr_out.lock();
                 let _ = writeln!(h, "[kcserver] {line}");
             }
+            // Reaching here means kcserver closed its stderr — usually
+            // because the process exited. If jet is still running, log this
+            // so a silent kcserver death is at least visible in jet's logs.
+            log::warn!("[kcserver] stderr closed (likely process exit)");
         });
     }
 

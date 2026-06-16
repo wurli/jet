@@ -151,8 +151,8 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     init_logger(args.log.as_deref());
 
     let mut client = match &args.kc.kcfile {
-        Some(path) => Client::connect_or_spawn(&args.kc.kcserver, path).await?,
-        None => Client::spawn(&args.kc.kcserver, None).await?,
+        Some(path) => Client::connect_or_spawn(&args.kc.kcserver, path, args.persist).await?,
+        None => Client::spawn(&args.kc.kcserver, None, args.persist).await?,
     };
     if args.persist {
         client.detach_server();

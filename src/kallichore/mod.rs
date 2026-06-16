@@ -60,10 +60,16 @@ pub struct Client {
 }
 
 impl Client {
-    /// Spawn a fresh `kcserver` and connect to it.
-    pub async fn spawn(bin: &str, connection_file: Option<PathBuf>) -> Result<Self> {
+    /// Spawn a fresh `kcserver` and connect to it. `persist` is a hint that
+    /// the caller intends to leave the server running past jet's exit; it
+    /// affects how we hook up the server's stderr.
+    pub async fn spawn(
+        bin: &str,
+        connection_file: Option<PathBuf>,
+        persist: bool,
+    ) -> Result<Self> {
         log::info!("Spawning kcserver: {bin}");
-        let (conn, server) = spawn_kcserver(bin, connection_file).await?;
+        let (conn, server) = spawn_kcserver(bin, connection_file, persist).await?;
         let (api, ws_auth) = Self::build_api(conn)?;
         wait_for_status(&api, Duration::from_secs(3)).await?;
         log::info!("kcserver ready at {}", ws_auth.base);
@@ -89,7 +95,12 @@ impl Client {
     }
 
     /// Join a running `kcserver` if possible, otherwise spawn a new one.
-    pub async fn connect_or_spawn(bin: &str, connection_file: &std::path::Path) -> Result<Self> {
+    /// `persist` is forwarded to `spawn` if a new server is started.
+    pub async fn connect_or_spawn(
+        bin: &str,
+        connection_file: &std::path::Path,
+        persist: bool,
+    ) -> Result<Self> {
         log::info!("Attempting to connect or spawn a new kcserver with {connection_file:?}");
         match Self::connect(connection_file).await {
             Err(e) => log::warn!(
@@ -98,7 +109,7 @@ impl Client {
             Ok(client) => return Ok(client),
         }
 
-        Self::spawn(bin, Some(connection_file.to_path_buf())).await
+        Self::spawn(bin, Some(connection_file.to_path_buf()), persist).await
     }
 
     fn build_api(conn: ConnectionFile) -> Result<(api::Client, WsAuth)> {
