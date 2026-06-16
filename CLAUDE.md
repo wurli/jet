@@ -53,11 +53,11 @@ ambiguous, first check the Positron behaviour.
 
 ```bash
 # Python (ipykernel)
-cargo run -- --kcserver /path/to/kcserver --language python -- \
+cargo run -- connect --kcserver /path/to/kcserver --language python -- \
   python3 -m ipykernel_launcher
 
 # R (ark)
-cargo run -- --kcserver /path/to/kcserver --language r -- \
+cargo run -- connect --kcserver /path/to/kcserver --language r -- \
   /path/to/ark --connection_file '{connection_file}' --session-mode console
 ```
 

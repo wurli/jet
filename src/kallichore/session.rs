@@ -44,6 +44,14 @@ pub async fn start(api: &api::Client, session_id: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn list(api: &api::Client) -> Result<Vec<types::ActiveSession>> {
+    let resp = api
+        .list_sessions()
+        .await
+        .map_err(|e| anyhow!("GET /sessions failed: {e}"))?;
+    Ok(resp.into_inner().sessions)
+}
+
 pub async fn open_channels(base: &str, bearer: &str, session_id: &str) -> Result<WsStream> {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 

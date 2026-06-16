@@ -10,6 +10,7 @@ mod session;
 
 use std::{path::PathBuf, time::Duration};
 
+pub use api::types::ActiveSession;
 pub use server::ConnectionFile;
 use server::{ChildGuard, probe_status, spawn_kcserver, wait_for_status};
 
@@ -149,6 +150,11 @@ impl Client {
     /// `POST /sessions/{id}/start` — start the kernel for an existing session.
     pub async fn start_session(&self, session_id: &str) -> Result<()> {
         session::start(&self.api, session_id).await
+    }
+
+    /// `GET /sessions` — list active sessions on the server.
+    pub async fn list_sessions(&self) -> Result<Vec<ActiveSession>> {
+        session::list(&self.api).await
     }
 
     /// Open the channels websocket for a session. The websocket is

@@ -16,10 +16,10 @@ use serde_json::json;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_tungstenite::tungstenite::Message;
 
-use jet::cli::Args;
+use jet::cli::{Args, Command, ConnectArgs, ListSessionsArgs};
 use jet::jupyter;
 use jet::kallichore::{Channel, Client};
-use jet::render::{parse_event, warn_if_passthrough_off, Event, Renderer, SharedWriter};
+use jet::render::{Event, Renderer, SharedWriter, parse_event, warn_if_passthrough_off};
 
 enum WaitResult {
     Idle,
@@ -63,11 +63,50 @@ fn init_logger(log_file: Option<&std::path::Path>) {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    match args.command {
+        Command::Connect(c) => run_connect(c).await,
+        Command::ListSessions(c) => run_list_sessions(c).await,
+    }
+}
+
+async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
+    let client = match &args.kc.kcfile {
+        Some(path) => Client::connect(path).await?,
+        None => {
+            anyhow::bail!("--kcfile is required to identify the kcserver");
+        }
+    };
+    let sessions = client.list_sessions().await?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&sessions)?);
+        return Ok(());
+    }
+    if sessions.is_empty() {
+        println!("(no active sessions)");
+        return Ok(());
+    }
+    for s in sessions {
+        println!(
+            "{}  {}  {:<8}  {:<8}  pid={:<6}  pwd={}",
+            s.started.format("%Y-%m-%d %H:%M:%S"),
+            s.session_id,
+            s.language.to_string(),
+            s.status.to_string(),
+            s.process_id
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".into()),
+            s.working_directory,
+        );
+    }
+    Ok(())
+}
+
+async fn run_connect(args: ConnectArgs) -> Result<()> {
     init_logger(args.log.as_deref());
 
-    let mut client = match &args.connect {
-        Some(path) => Client::connect_or_spawn(&args.kcserver, path).await?,
-        None => Client::spawn(&args.kcserver, None).await?,
+    let mut client = match &args.kc.kcfile {
+        Some(path) => Client::connect_or_spawn(&args.kc.kcserver, path).await?,
+        None => Client::spawn(&args.kc.kcserver, None).await?,
     };
     if args.persist {
         client.detach_server();

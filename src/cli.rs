@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use clap::Parser;
 use clap::builder::styling::{AnsiColor, Styles};
+use clap::{Parser, Subcommand};
 
 use crate::kernel;
 
@@ -19,14 +19,46 @@ pub struct KernelSpec {
 #[derive(Parser, Debug)]
 #[command(name = "jet", about = "kallichore-backed REPL with kitty graphics", styles = STYLES)]
 pub struct Args {
-    /// Path to the kcserver binary.
-    #[arg(long, default_value = "kcserver")]
-    pub kcserver: String,
+    #[command(subcommand)]
+    pub command: Command,
+}
 
-    /// Connect to an existing kcserver at this connection-file path, or
-    /// spawn a new one there if none is running.
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Open a REPL connected to a Jupyter kernel.
+    Connect(ConnectArgs),
+
+    /// List active sessions on a kcserver.
+    ListSessions(ListSessionsArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct ListSessionsArgs {
+    #[command(flatten)]
+    pub kc: KcArgs,
+
+    /// Emit sessions as a JSON array instead of a table.
     #[arg(long)]
-    pub connect: Option<PathBuf>,
+    pub json: bool,
+}
+
+#[derive(Parser, Debug)]
+#[command(next_help_heading = "Kallichore")]
+pub struct KcArgs {
+    /// Connect to an existing kcserver using this connection file, or spawn
+    /// a new one there if none is running.
+    #[arg(long)]
+    pub kcfile: Option<PathBuf>,
+
+    /// Path to the kcserver binary.
+    #[arg(long, env = "JET_KCSERVER", default_value = "kcserver")]
+    pub kcserver: String,
+}
+
+#[derive(Parser, Debug)]
+pub struct ConnectArgs {
+    #[command(flatten)]
+    pub kc: KcArgs,
 
     /// Leave any kcserver this process spawned running after jet exits, so
     /// later invocations can reconnect to the same kernel.
@@ -37,7 +69,7 @@ pub struct Args {
     /// is substituted by kallichore with the path to the generated Jupyter
     /// connection file; if your argv doesn't include it, jet appends
     /// `-f {connection_file}` for you.
-    /// Example: jet --language r -- /path/to/ark --connection_file {connection_file} --session-mode console
+    /// Example: jet connect --language r -- /path/to/ark --connection_file {connection_file} --session-mode console
     #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
     pub kernel: Vec<String>,
 
@@ -55,7 +87,7 @@ pub struct Args {
     pub log: Option<PathBuf>,
 }
 
-impl Args {
+impl ConnectArgs {
     pub fn kernel_spec(&self) -> KernelSpec {
         KernelSpec {
             language: self.language.clone(),
