@@ -34,12 +34,12 @@ pub enum Command {
 
 #[derive(Parser, Debug)]
 pub struct ListSessionsArgs {
-    #[command(flatten)]
-    pub kc: KcArgs,
-
-    /// Emit sessions as a JSON array instead of a table.
+    /// Emit sessions as a JSON array instead of a table. Includes more detail.
     #[arg(long)]
     pub json: bool,
+
+    #[command(flatten)]
+    pub kc: KcArgs,
 }
 
 #[derive(Parser, Debug)]
@@ -57,9 +57,6 @@ pub struct KcArgs {
 
 #[derive(Parser, Debug)]
 pub struct ConnectArgs {
-    #[command(flatten)]
-    pub kc: KcArgs,
-
     /// Leave any kcserver this process spawned running after jet exits, so
     /// later invocations can reconnect to the same kernel.
     #[arg(long)]
@@ -85,6 +82,9 @@ pub struct ConnectArgs {
     /// Log level is controlled with `RUST_LOG` (e.g. `RUST_LOG=jet=trace`).
     #[arg(long)]
     pub log: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub kc: KcArgs,
 }
 
 impl ConnectArgs {
