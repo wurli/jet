@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::builder::styling::{AnsiColor, Styles};
 use clap::{Parser, Subcommand};
 
-use crate::kernel::{self, KernelSpec};
+use crate::kernel::KernelSpec;
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().bold())
@@ -80,8 +80,6 @@ pub struct ConnectArgs {
 
 impl ConnectArgs {
     pub fn load_kernel_spec(&self) -> anyhow::Result<KernelSpec> {
-        let mut spec = KernelSpec::load(&self.kernelspec)?;
-        spec.argv = kernel::build_argv(&spec.argv);
-        Ok(spec)
+        KernelSpec::load(&self.kernelspec)
     }
 }

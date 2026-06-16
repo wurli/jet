@@ -8,8 +8,10 @@ the terminal using the kitty graphics protocol.
 
 - Spawns (or connects to) `kcserver` and creates a Jupyter session.
 - Kernel is identified by a path to a Jupyter `kernel.json` kernelspec
-  (e.g. `~/Library/Jupyter/kernels/ark/kernel.json`). `argv` and `language`
-  come from the spec; `{connection_file}` is auto-appended via `-f` if absent.
+  (e.g. `~/Library/Jupyter/kernels/ark/kernel.json`). `argv`, `language`,
+  `env`, and `interrupt_mode` come from the spec. The Jupyter spec requires
+  `argv` to contain a `{connection_file}` placeholder; we forward it to
+  kallichore as-is and rely on the spec being well-formed.
 - Reads input with rustyline; sends `execute_request` over the per-session
   websocket.
 - Streams `iopub` output to stdout as it arrives (text, errors, banners, plots).
@@ -62,9 +64,9 @@ cargo run -- connect --kcserver /path/to/kcserver \
   ~/Library/Jupyter/kernels/ark/kernel.json
 ```
 
-`{connection_file}` is the placeholder kallichore substitutes with the kernel's
-connection-file path. If the spec's `argv` doesn't include it, jet appends
-`-f {connection_file}` automatically.
+`{connection_file}` is the placeholder kallichore substitutes with the path
+to the generated Jupyter connection file. The kernelspec's `argv` is expected
+to contain it (the Jupyter spec requires this).
 
 ## Tests
 

@@ -15,7 +15,6 @@ use tokio_tungstenite::tungstenite::Message;
 
 use jet::jupyter;
 use jet::kallichore::Client;
-use jet::kernel;
 
 fn which(name: &str) -> Option<String> {
     let out = Command::new("which").arg(name).output().ok()?;
@@ -66,7 +65,7 @@ async fn run_one(code: &str) -> Result<String> {
     let client = Client::spawn(&kc, None).await?;
 
     let session_id = format!("jet-test-{:x}", rand::thread_rng().gen::<u64>());
-    let argv = kernel::build_argv(&[]);
+    let argv = vec!["-f".into(), "{connection_file}".into()];
     client
         .create_session(
             &session_id,

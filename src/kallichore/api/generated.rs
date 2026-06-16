@@ -2,9 +2,9 @@
 // To refresh: edit vendor/kallichore.json (or re-run `cargo build`).
 // Do not edit by hand; changes will be overwritten on the next build.
 #[allow(unused_imports)]
-pub use progenitor_client::{ByteStream, ClientInfo, Error, ResponseValue};
+use progenitor_client::{encode_path, ClientHooks, OperationInfo, RequestBuilderExt};
 #[allow(unused_imports)]
-use progenitor_client::{ClientHooks, OperationInfo, RequestBuilderExt, encode_path};
+pub use progenitor_client::{ByteStream, ClientInfo, Error, ResponseValue};
 #[doc = r" Types used as operation parameters and responses."]
 #[allow(clippy::all)]
 pub mod types {
