@@ -65,7 +65,14 @@ async fn run_one(code: &str) -> Result<String> {
     let client = Client::spawn(&kc, None).await?;
 
     let session_id = format!("jet-test-{:x}", rand::thread_rng().gen::<u64>());
-    let argv = vec!["-f".into(), "{connection_file}".into()];
+    let python = which("python3").ok_or_else(|| anyhow::anyhow!("python3 not on PATH"))?;
+    let argv = vec![
+        python,
+        "-m".into(),
+        "ipykernel_launcher".into(),
+        "-f".into(),
+        "{connection_file}".into(),
+    ];
     client
         .create_session(
             &session_id,
@@ -218,6 +225,182 @@ fn propagates_kernel_error() {
         err.to_string().contains("boom"),
         "expected 'boom' in error, got: {err}"
     );
+}
+
+/// Create + start a Python session on the given client and return its id
+/// along with the channels websocket. The ws must be kept alive — kallichore
+/// tears the kernel down when its channels client disconnects.
+async fn create_python_session(client: &Client) -> Result<(String, jet::kallichore::WsStream)> {
+    let session_id = format!("jet-test-{:x}", rand::thread_rng().gen::<u64>());
+    let python = which("python3").ok_or_else(|| anyhow::anyhow!("python3 not on PATH"))?;
+    let argv = vec![
+        python,
+        "-m".into(),
+        "ipykernel_launcher".into(),
+        "-f".into(),
+        "{connection_file}".into(),
+    ];
+    client
+        .create_session(
+            &session_id,
+            "jet",
+            "python",
+            &argv,
+            &std::collections::HashMap::new(),
+            jet::kallichore::api::types::InterruptMode::Signal,
+        )
+        .await?;
+    let ws = client.open_channels(&session_id).await?;
+    client.start_session(&session_id).await?;
+
+    // kallichore stays in `Starting` until the first message exchange with
+    // the kernel. Send a kernel_info_request so the session advances to Idle.
+    let (mut sink, stream) = ws.split();
+    let info_id = jupyter::new_msg_id();
+    let req = jupyter::message("shell", &info_id, "kernel_info_request", json!({}));
+    sink.send(Message::Text(req.to_string().into())).await?;
+    let ws = sink.reunite(stream).expect("reunite");
+    Ok((session_id, ws))
+}
+
+/// Wait until `predicate` is true for the listed session, polling
+/// `list_sessions()`. Returns the matching ActiveSession.
+async fn wait_for_status(
+    client: &Client,
+    session_id: &str,
+    predicate: impl Fn(&jet::kallichore::ActiveSession) -> bool,
+) -> Result<jet::kallichore::ActiveSession> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut last_status = None;
+    while Instant::now() < deadline {
+        let sessions = client.list_sessions().await?;
+        if let Some(s) = sessions.into_iter().find(|s| s.session_id == session_id) {
+            last_status = Some(format!("{:?}", s.status));
+            if predicate(&s) {
+                return Ok(s);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    bail!(
+        "timed out waiting for session {session_id} to match predicate (last status: {:?})",
+        last_status
+    );
+}
+
+#[test]
+#[serial_test::serial]
+fn kill_session_terminates_running_kernel() {
+    if !prereqs_ok() {
+        return;
+    }
+    block_on(async {
+        let kc = locate_kcserver().expect("kcserver");
+        let client = Client::spawn(&kc, None).await.expect("spawn client");
+        let (session_id, _ws) = create_python_session(&client)
+            .await
+            .expect("create session");
+
+        // Wait until the kernel is actually up.
+        use jet::kallichore::api::types::Status;
+        wait_for_status(&client, &session_id, |s| {
+            matches!(s.status, Status::Idle | Status::Ready | Status::Busy)
+        })
+        .await
+        .expect("session reached running state");
+
+        client
+            .kill_session(&session_id)
+            .await
+            .expect("kill_session");
+
+        wait_for_status(&client, &session_id, |s| {
+            matches!(s.status, Status::Exited)
+        })
+        .await
+        .expect("session reached Exited");
+    });
+}
+
+#[test]
+#[serial_test::serial]
+fn delete_session_rejects_running_then_succeeds_after_kill() {
+    if !prereqs_ok() {
+        return;
+    }
+    block_on(async {
+        let kc = locate_kcserver().expect("kcserver");
+        let client = Client::spawn(&kc, None).await.expect("spawn client");
+        let (session_id, _ws) = create_python_session(&client)
+            .await
+            .expect("create session");
+
+        use jet::kallichore::api::types::Status;
+        wait_for_status(&client, &session_id, |s| {
+            matches!(s.status, Status::Idle | Status::Ready | Status::Busy)
+        })
+        .await
+        .expect("running");
+
+        // Pre-condition for the assertion in `jet stop`: kallichore refuses
+        // DELETE while the kernel is alive.
+        let err = client
+            .delete_session(&session_id)
+            .await
+            .expect_err("delete on running session should fail");
+        assert!(
+            err.to_string().contains("400") || err.to_string().to_lowercase().contains("running"),
+            "expected 400/running in error, got: {err}"
+        );
+
+        client.kill_session(&session_id).await.expect("kill");
+        wait_for_status(&client, &session_id, |s| {
+            matches!(s.status, Status::Exited)
+        })
+        .await
+        .expect("exited");
+
+        client
+            .delete_session(&session_id)
+            .await
+            .expect("delete on exited session");
+
+        let remaining = client.list_sessions().await.expect("list");
+        assert!(
+            !remaining.iter().any(|s| s.session_id == session_id),
+            "session still present after delete"
+        );
+    });
+}
+
+#[test]
+#[serial_test::serial]
+fn shutdown_server_stops_the_kcserver() {
+    if !prereqs_ok() {
+        return;
+    }
+    block_on(async {
+        let kc = locate_kcserver().expect("kcserver");
+        // Spawn but DETACH so the ChildGuard's Drop doesn't kill the process
+        // out from under shutdown_server — we want the request itself to be
+        // what stops the server.
+        let mut client = Client::spawn(&kc, None).await.expect("spawn client");
+        client.detach_server();
+
+        client.shutdown_server().await.expect("shutdown_server");
+
+        // After /shutdown returns, subsequent HTTP calls must fail.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut down = false;
+        while Instant::now() < deadline {
+            if client.list_sessions().await.is_err() {
+                down = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(down, "kcserver still serving requests after /shutdown");
+    });
 }
 
 #[test]

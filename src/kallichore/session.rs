@@ -55,6 +55,27 @@ pub async fn start(api: &api::Client, session_id: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn kill(api: &api::Client, session_id: &str) -> Result<()> {
+    api.kill_session(session_id)
+        .await
+        .map_err(|e| anyhow!("POST /sessions/{session_id}/kill failed: {e}"))?;
+    Ok(())
+}
+
+pub async fn delete(api: &api::Client, session_id: &str) -> Result<()> {
+    api.delete_session(session_id)
+        .await
+        .map_err(|e| anyhow!("DELETE /sessions/{session_id} failed: {e}"))?;
+    Ok(())
+}
+
+pub async fn shutdown_server(api: &api::Client) -> Result<()> {
+    api.shutdown_server()
+        .await
+        .map_err(|e| anyhow!("POST /shutdown failed: {e}"))?;
+    Ok(())
+}
+
 pub async fn list(api: &api::Client) -> Result<Vec<types::ActiveSession>> {
     let resp = api
         .list_sessions()

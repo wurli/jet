@@ -16,7 +16,7 @@ use serde_json::json;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_tungstenite::tungstenite::Message;
 
-use jet::cli::{Args, Command, ConnectArgs, ListSessionsArgs};
+use jet::cli::{Args, Command, ConnectArgs, ListSessionsArgs, StopArgs};
 use jet::jupyter;
 use jet::kallichore::{Channel, Client};
 use jet::render::{Event, Renderer, SharedWriter, parse_event, warn_if_passthrough_off};
@@ -66,7 +66,53 @@ async fn main() -> Result<()> {
     match args.command {
         Command::Connect(c) => run_connect(c).await,
         Command::ListSessions(c) => run_list_sessions(c).await,
+        Command::Stop(c) => run_stop(c).await,
     }
+}
+
+async fn run_stop(args: StopArgs) -> Result<()> {
+    let client = match &args.kc.kcfile {
+        Some(path) => Client::connect(path).await?,
+        None => anyhow::bail!("--kcfile is required to identify the kcserver"),
+    };
+
+    use jet::kallichore::api::types::Status;
+    let alive = |s: Status| {
+        matches!(
+            s,
+            Status::Starting | Status::Ready | Status::Idle | Status::Busy
+        )
+    };
+
+    if let Some(session_id) = &args.session {
+        let sessions = client.list_sessions().await?;
+        let s = sessions
+            .iter()
+            .find(|s| &s.session_id == session_id)
+            .ok_or_else(|| anyhow::anyhow!("no session with id {session_id}"))?;
+        if alive(s.status) {
+            client.kill_session(session_id).await?;
+        } else {
+            client.delete_session(session_id).await?;
+        }
+        println!("stopped session {session_id}");
+        return Ok(());
+    }
+
+    let sessions = client.list_sessions().await?;
+    for s in &sessions {
+        let result = if alive(s.status) {
+            client.kill_session(&s.session_id).await
+        } else {
+            client.delete_session(&s.session_id).await
+        };
+        if let Err(e) = result {
+            eprintln!("warning: stopping {} failed: {e}", s.session_id);
+        }
+    }
+    client.shutdown_server().await?;
+    println!("stopped {} session(s) and kcserver", sessions.len());
+    Ok(())
 }
 
 async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {

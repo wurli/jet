@@ -164,6 +164,21 @@ impl Client {
         session::list(&self.api).await
     }
 
+    /// `POST /sessions/{id}/kill` — forcefully terminate the kernel.
+    pub async fn kill_session(&self, session_id: &str) -> Result<()> {
+        session::kill(&self.api, session_id).await
+    }
+
+    /// `DELETE /sessions/{id}` — remove the session record from the server.
+    pub async fn delete_session(&self, session_id: &str) -> Result<()> {
+        session::delete(&self.api, session_id).await
+    }
+
+    /// `POST /shutdown` — ask the kcserver to exit.
+    pub async fn shutdown_server(&self) -> Result<()> {
+        session::shutdown_server(&self.api).await
+    }
+
     /// Open the channels websocket for a session. The websocket is
     /// returned **before** the session is started; this lets the caller
     /// avoid a race where startup messages arrive before they're listening.

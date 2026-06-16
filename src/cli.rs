@@ -23,6 +23,9 @@ pub enum Command {
 
     /// List active sessions on a kcserver.
     ListSessions(ListSessionsArgs),
+
+    /// Stop a session, or stop all sessions and shut down the kcserver.
+    Stop(StopArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -30,6 +33,17 @@ pub struct ListSessionsArgs {
     /// Emit sessions as a JSON array instead of a table. Includes more detail.
     #[arg(long)]
     pub json: bool,
+
+    #[command(flatten)]
+    pub kc: KcArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct StopArgs {
+    /// Session ID to stop. If omitted, all sessions are killed and the
+    /// kcserver itself is shut down.
+    #[arg(long)]
+    pub session: Option<String>,
 
     #[command(flatten)]
     pub kc: KcArgs,
