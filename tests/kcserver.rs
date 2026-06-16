@@ -744,3 +744,160 @@ fn jet_exits_when_kernel_quits() {
         panic!("jet did not exit within 10s after the kernel quit");
     }
 }
+
+/// Locate a Python kernelspec, generating a temporary one if needed.
+/// jet requires a kernel.json on disk (its argv comes from there).
+fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
+    let user = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join("Library/Jupyter/kernels/python3/kernel.json");
+    if user.exists() {
+        return Ok(user);
+    }
+    // Fall back to a generated kernelspec under the OS tempdir so the
+    // test works in CI without a pre-installed kernel.
+    let python = which("python3").ok_or_else(|| anyhow::anyhow!("python3 not on PATH"))?;
+    let dir = std::env::temp_dir().join(format!(
+        "jet-test-kernelspec-{:x}",
+        rand::thread_rng().gen::<u64>()
+    ));
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("kernel.json");
+    let spec = json!({
+        "argv": [python, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
+        "display_name": "Python (jet test)",
+        "language": "python",
+        "interrupt_mode": "signal",
+    });
+    std::fs::write(&path, serde_json::to_vec_pretty(&spec)?)?;
+    Ok(path)
+}
+
+#[test]
+#[serial_test::serial]
+fn input_request_prompts_user_and_replies() {
+    if !prereqs_ok() {
+        return;
+    }
+    let kc = locate_kcserver().expect("kcserver");
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("SKIP: could not prepare python kernelspec: {e}");
+            return;
+        }
+    };
+
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+    use std::io::{Read, Write};
+
+    let pty = native_pty_system();
+    let pair = pty
+        .openpty(PtySize {
+            rows: 40,
+            cols: 120,
+            ..Default::default()
+        })
+        .expect("openpty");
+
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let mut cmd = CommandBuilder::new(bin);
+    cmd.args([
+        "connect",
+        "--kcserver",
+        &kc,
+        kernel_json.to_str().unwrap(),
+    ]);
+    cmd.cwd(std::env::current_dir().expect("cwd"));
+    let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
+    drop(pair.slave);
+
+    let mut reader = pair.master.try_clone_reader().expect("clone reader");
+    let mut writer = pair.master.take_writer().expect("take writer");
+
+    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let output_clone = output.clone();
+    let reader_handle = std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
+                    output_clone.lock().unwrap().push_str(&s);
+                }
+            }
+        }
+    });
+
+    // Wait for the first prompt so we know the banner has been drawn.
+    let banner_deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < banner_deadline {
+        if output.lock().unwrap().contains("> ") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Use a unique marker for the input prompt so we can sync on the
+    // kernel asking for input rather than on the REPL prompt itself.
+    // Send the code as a single ipython cell using its `%paste`-free
+    // multiline form: a semicolon-joined statement. Avoids interleaving
+    // a second readline at the REPL level with the input_request.
+    let code = "v = input('ASK> '); print('GOT:' + v)\n";
+    writer.write_all(code.as_bytes()).expect("write code");
+    writer.flush().expect("flush");
+
+    // Wait for the kernel's input prompt to appear via the input_request
+    // path (jet writes req.prompt to the tty before reading our reply).
+    let prompt_deadline = Instant::now() + Duration::from_secs(15);
+    let mut saw_prompt = false;
+    while Instant::now() < prompt_deadline {
+        if output.lock().unwrap().contains("ASK> ") {
+            saw_prompt = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    if !saw_prompt {
+        let _ = writer.write_all(&[0x04]); // ^D to release jet
+        let _ = writer.flush();
+        drop(writer);
+        let _ = child.wait();
+        drop(pair.master);
+        let _ = reader_handle.join();
+        panic!(
+            "did not see input prompt 'ASK> ' within 15s; output:\n{}",
+            output.lock().unwrap()
+        );
+    }
+
+    // Send the reply — jet should forward this as input_reply on the
+    // stdin channel and the kernel should resume execution.
+    writer.write_all(b"hello-jet\n").expect("write reply");
+    writer.flush().expect("flush reply");
+
+    // Expect the kernel to print "GOT:hello-jet" and return to a prompt.
+    let done_deadline = Instant::now() + Duration::from_secs(15);
+    let mut got_value = false;
+    while Instant::now() < done_deadline {
+        if output.lock().unwrap().contains("GOT:hello-jet") {
+            got_value = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    let _ = writer.write_all(&[0x04]); // ^D
+    let _ = writer.flush();
+    drop(writer);
+    let _ = child.wait();
+    drop(pair.master);
+    let _ = reader_handle.join();
+
+    let final_out = output.lock().unwrap().clone();
+    assert!(
+        got_value,
+        "kernel did not echo input value back; output:\n{final_out}"
+    );
+}

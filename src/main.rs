@@ -20,12 +20,16 @@ use tokio_tungstenite::tungstenite::Message;
 use jet::cli::{Args, Command, ConnectArgs, ListSessionsArgs, StopArgs};
 use jet::jupyter;
 use jet::kallichore::{Channel, Client};
-use jet::render::{Event, Renderer, SharedWriter, parse_event, warn_if_passthrough_off};
+use jet::render::{Event, InputRequest, Renderer, SharedWriter, parse_event, warn_if_passthrough_off};
 
 enum WaitResult {
     Idle,
     Timeout,
     Closed,
+    /// Kernel asked us for stdin input. The REPL must prompt the user
+    /// (after dropping the stdin interrupt watcher), send `input_reply`
+    /// on the `stdin` channel, then resume waiting for idle.
+    Input(InputRequest),
 }
 
 /// Run a stdin-byte watcher for the lifetime of `f`. rustyline keeps the
@@ -118,7 +122,8 @@ fn nix_pipe() -> std::io::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
 }
 
 async fn wait_for_idle(
-    rx: &mut UnboundedReceiver<String>,
+    idle_rx: &mut UnboundedReceiver<String>,
+    input_rx: &mut UnboundedReceiver<InputRequest>,
     target: &str,
     timeout: Duration,
 ) -> WaitResult {
@@ -128,11 +133,17 @@ async fn wait_for_idle(
         if remaining.is_zero() {
             return WaitResult::Timeout;
         }
-        match tokio::time::timeout(remaining, rx.recv()).await {
-            Ok(Some(parent)) if parent == target => return WaitResult::Idle,
-            Ok(Some(_)) => continue,
-            Ok(None) => return WaitResult::Closed,
-            Err(_) => return WaitResult::Timeout,
+        tokio::select! {
+            _ = tokio::time::sleep(remaining) => return WaitResult::Timeout,
+            r = idle_rx.recv() => match r {
+                Some(parent) if parent == target => return WaitResult::Idle,
+                Some(_) => continue,
+                None => return WaitResult::Closed,
+            },
+            r = input_rx.recv() => match r {
+                Some(req) => return WaitResult::Input(req),
+                None => return WaitResult::Closed,
+            },
         }
     }
 }
@@ -331,8 +342,10 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     // Channel from the WS reader to the REPL: signals "kernel is idle for msg X".
     let (idle_tx, mut idle_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    // Channel from the WS reader to the REPL: kernel asked for stdin input.
+    let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel::<InputRequest>();
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
-    let renderer = Renderer::new(render_graphics, idle_tx, writer);
+    let renderer = Renderer::new(render_graphics, idle_tx, writer).with_input_tx(input_tx);
 
     // shutdown: REPL → reader. Set on REPL exit so the WS reader task can
     // distinguish a clean shutdown (kcserver killed by Drop → reset without
@@ -394,9 +407,11 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     let info_id = jupyter::new_msg_id();
     let info_req = jupyter::message("shell", &info_id, "kernel_info_request", json!({}));
     channel.send(&info_req).await?;
-    match wait_for_idle(&mut idle_rx, &info_id, Duration::from_secs(10)).await {
+    match wait_for_idle(&mut idle_rx, &mut input_rx, &info_id, Duration::from_secs(10)).await {
         WaitResult::Idle | WaitResult::Timeout => {}
         WaitResult::Closed => return Ok(()),
+        // kernel_info_request never triggers input — drop any spurious request.
+        WaitResult::Input(_) => {}
     }
 
     // We watch for ^C in two ways:
@@ -470,53 +485,103 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
                 "silent": false,
                 "store_history": true,
                 "user_expressions": {},
-                "allow_stdin": false,
+                "allow_stdin": true,
                 "stop_on_error": true,
             }),
         );
         channel.send(&req).await?;
 
-        // Race wait-for-idle against ^C: rustyline leaves the tty in raw
-        // mode between calls (ISIG off), so we re-enable ISIG for the
-        // duration of the request — that lets the tty driver translate ^C
-        // into SIGINT, which tokio's signal handler observes. We then
-        // forward via interrupt_session(); the kernel's reply flows through
-        // the existing renderer/idle channel.
-        // Channel used by the stdin watcher to signal "user pressed ^C".
-        let (intr_tx, mut intr_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-        let interrupted = with_stdin_intr_watcher(
-            move || {
-                let _ = intr_tx.send(());
-            },
-            async {
-                loop {
-                    tokio::select! {
-                        r = wait_for_idle(&mut idle_rx, &msg_id, Duration::from_secs(300)) => return r,
-                        // Either path means the user pressed ^C: as a real
-                        // SIGINT (ISIG cooked-mode tty path) or as a `\x03`
-                        // byte on stdin (rustyline keeps the tty in raw
-                        // mode between calls). Forward to the kernel via
-                        // interrupt_session(); the tty driver already echoes
-                        // `^C` for cooked-mode signals, so we don't print
-                        // our own marker. Whether the kernel actually halts
-                        // is up to it.
-                        _ = intr_rx.recv() => {
-                            if let Err(e) = client.interrupt_session(&session_id).await {
-                                eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+        // Wait for the kernel to go idle, possibly serving any number of
+        // `input_request` calls along the way. Each iteration:
+        //   1. Run the stdin watcher + wait_for_idle. The watcher claims
+        //      stdin so it can catch ^C bytes (rustyline leaves the tty in
+        //      raw mode, so the kernel doesn't translate ^C to SIGINT).
+        //   2. If the kernel asks for input, drop the watcher (frees stdin
+        //      for rustyline), prompt the user, send `input_reply` on the
+        //      `stdin` channel, and loop back to step 1.
+        let outcome = loop {
+            let (intr_tx, mut intr_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+            let r = with_stdin_intr_watcher(
+                move || {
+                    let _ = intr_tx.send(());
+                },
+                async {
+                    loop {
+                        tokio::select! {
+                            r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id, Duration::from_secs(300)) => return r,
+                            // Either path means the user pressed ^C: as a real
+                            // SIGINT (ISIG cooked-mode tty path) or as a `\x03`
+                            // byte on stdin (rustyline keeps the tty in raw
+                            // mode between calls). Forward to the kernel via
+                            // interrupt_session(); the tty driver already echoes
+                            // `^C` for cooked-mode signals, so we don't print
+                            // our own marker. Whether the kernel actually halts
+                            // is up to it.
+                            _ = intr_rx.recv() => {
+                                if let Err(e) = client.interrupt_session(&session_id).await {
+                                    eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+                                }
                             }
-                        }
-                        _ = sigint.recv() => {
-                            if let Err(e) = client.interrupt_session(&session_id).await {
-                                eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+                            _ = sigint.recv() => {
+                                if let Err(e) = client.interrupt_session(&session_id).await {
+                                    eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+                                }
                             }
                         }
                     }
+                },
+            )
+            .await;
+
+            match r {
+                WaitResult::Input(req) => {
+                    // Watcher has been dropped; stdin is free for rustyline.
+                    let prompt = if req.prompt.is_empty() {
+                        "".to_string()
+                    } else {
+                        req.prompt.clone()
+                    };
+                    let mut prompt_rl = rl.take().expect("editor present at input prompt");
+                    let read = tokio::task::spawn_blocking(move || {
+                        let line = if req.password {
+                            prompt_rl.readline_with_initial(&prompt, ("", ""))
+                        } else {
+                            prompt_rl.readline(&prompt)
+                        };
+                        (prompt_rl, line)
+                    });
+                    let (returned_rl, line_result) = read.await?;
+                    rl = Some(returned_rl);
+                    let value = match line_result {
+                        Ok(s) => s,
+                        Err(rustyline::error::ReadlineError::Eof)
+                        | Err(rustyline::error::ReadlineError::Interrupted) => {
+                            // No input available: reply empty and let the
+                            // kernel decide what to do (R returns NULL,
+                            // Python raises EOFError).
+                            String::new()
+                        }
+                        Err(e) => {
+                            eprintln!("[jet] readline (input_request): {e}");
+                            String::new()
+                        }
+                    };
+                    let reply = jupyter::message(
+                        "stdin",
+                        &jupyter::new_msg_id(),
+                        "input_reply",
+                        json!({ "value": value }),
+                    );
+                    channel.send(&reply).await?;
+                    continue;
                 }
-            },
-        )
-        .await;
-        match interrupted {
+                other => break other,
+            }
+        };
+
+        match outcome {
             WaitResult::Idle => {}
+            WaitResult::Input(_) => unreachable!("handled above"),
             WaitResult::Timeout => {
                 log::warn!("timeout waiting for kernel idle (msg_id={msg_id})");
                 eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m");

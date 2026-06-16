@@ -40,6 +40,14 @@ pub enum Event {
     Idle {
         parent_id: String,
     },
+    /// Kernel asked for stdin via the `stdin` channel (e.g. R `readline()`
+    /// or Python `input()`). The REPL prompts the user and replies with
+    /// `input_reply` carrying the same parent_id.
+    InputRequest {
+        prompt: String,
+        password: bool,
+        parent_id: String,
+    },
     /// kallichore reported the kernel has exited. The REPL uses this to
     /// shut down immediately rather than wait for the user to press a key.
     KernelExited,
@@ -171,6 +179,25 @@ pub fn parse_event(text: &str) -> Result<Event> {
                 .to_string();
             Event::Banner { text }
         }
+        ("stdin", "input_request") => {
+            let prompt = m
+                .content
+                .get("prompt")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            let password = m
+                .content
+                .get("password")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(false);
+            let parent_id = m.parent_header.map(|p| p.msg_id).unwrap_or_default();
+            Event::InputRequest {
+                prompt,
+                password,
+                parent_id,
+            }
+        }
         ("iopub", "status") => {
             let state = m
                 .content
@@ -189,9 +216,18 @@ pub fn parse_event(text: &str) -> Result<Event> {
     Ok(event)
 }
 
+/// Forwarded by the renderer when the kernel sends `input_request`. The
+/// REPL drives the actual prompt + reply because rustyline owns stdin.
+pub struct InputRequest {
+    pub prompt: String,
+    pub password: bool,
+    pub parent_id: String,
+}
+
 pub struct Renderer {
     pub render_graphics: bool,
     pub idle_tx: mpsc::UnboundedSender<String>,
+    pub input_tx: Option<mpsc::UnboundedSender<InputRequest>>,
     writer: SharedWriter,
 }
 
@@ -204,8 +240,14 @@ impl Renderer {
         Self {
             render_graphics,
             idle_tx,
+            input_tx: None,
             writer,
         }
+    }
+
+    pub fn with_input_tx(mut self, tx: mpsc::UnboundedSender<InputRequest>) -> Self {
+        self.input_tx = Some(tx);
+        self
     }
 
     pub fn handle_text(&self, text: &str) -> Result<()> {
@@ -226,6 +268,19 @@ impl Renderer {
             Event::Banner { text } => self.write_banner(&text)?,
             Event::Idle { parent_id } => {
                 let _ = self.idle_tx.send(parent_id);
+            }
+            Event::InputRequest {
+                prompt,
+                password,
+                parent_id,
+            } => {
+                if let Some(tx) = &self.input_tx {
+                    let _ = tx.send(InputRequest {
+                        prompt,
+                        password,
+                        parent_id,
+                    });
+                }
             }
             Event::KernelExited | Event::Other => {}
         }
@@ -420,6 +475,28 @@ mod tests {
     fn parse_unknown_msg_type_is_other() {
         let f = frame("iopub", "comm_msg", "", json!({}));
         assert!(matches!(parse_event(&f).unwrap(), Event::Other));
+    }
+
+    #[test]
+    fn parse_input_request_event() {
+        let f = frame(
+            "stdin",
+            "input_request",
+            "exec-1",
+            json!({"prompt": "enter something: ", "password": false}),
+        );
+        match parse_event(&f).unwrap() {
+            Event::InputRequest {
+                prompt,
+                password,
+                parent_id,
+            } => {
+                assert_eq!(prompt, "enter something: ");
+                assert!(!password);
+                assert_eq!(parent_id, "exec-1");
+            }
+            other => panic!("expected InputRequest, got {other:?}"),
+        }
     }
 
     #[test]
