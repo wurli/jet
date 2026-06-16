@@ -11,8 +11,7 @@ mod session;
 use std::{path::PathBuf, time::Duration};
 
 pub use api::types::ActiveSession;
-pub use server::ConnectionFile;
-use server::{ChildGuard, probe_status, spawn_kcserver, wait_for_status};
+use server::{ChildGuard, ConnectionFile, probe_status, spawn_kcserver, wait_for_status};
 
 use anyhow::{Result, anyhow};
 use futures_util::stream::SplitSink;
@@ -125,10 +124,6 @@ impl Client {
         Ok((api, ws_auth))
     }
 
-    pub fn base(&self) -> &str {
-        &self.ws_auth.base
-    }
-
     /// If this client spawned the `kcserver`, leave it running on drop.
     /// No-op for clients that connected to an existing server.
     pub fn detach_server(&mut self) {
@@ -141,12 +136,22 @@ impl Client {
     pub async fn create_session(
         &self,
         session_id: &str,
+        display_name: &str,
         language: &str,
         argv: &[String],
         env: &std::collections::HashMap<String, String>,
         interrupt_mode: api::types::InterruptMode,
     ) -> Result<()> {
-        session::create(&self.api, session_id, language, argv, env, interrupt_mode).await
+        session::create(
+            &self.api,
+            session_id,
+            display_name,
+            language,
+            argv,
+            env,
+            interrupt_mode,
+        )
+        .await
     }
 
     /// `POST /sessions/{id}/start` — start the kernel for an existing session.

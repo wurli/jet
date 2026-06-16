@@ -41,7 +41,7 @@ pub fn message(channel: &str, msg_id: &str, msg_type: &str, content: Value) -> V
 }
 
 /// ISO-8601 UTC timestamp with microsecond precision (27 chars total).
-pub fn iso8601_now() -> String {
+fn iso8601_now() -> String {
     chrono::Utc::now()
         .format("%Y-%m-%dT%H:%M:%S%.6fZ")
         .to_string()

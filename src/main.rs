@@ -113,15 +113,17 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     }
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
-    let spec = args.load_kernel_spec()?;
+    let spec = jet::kernel::KernelSpec::load(&args.kernelspec)?;
     log::info!(
         "Creating session {session_id} (language={}, argv={:?})",
         spec.language,
         spec.argv,
     );
+    let display_name = spec.display_name.as_deref().unwrap_or("jet");
     client
         .create_session(
             &session_id,
+            display_name,
             &spec.language,
             &spec.argv,
             &spec.env,

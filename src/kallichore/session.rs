@@ -8,6 +8,7 @@ use super::api::{self, types};
 pub async fn create(
     api: &api::Client,
     session_id: &str,
+    display_name: &str,
     language: &str,
     argv: &[String],
     env: &std::collections::HashMap<String, String>,
@@ -23,7 +24,7 @@ pub async fn create(
         .collect();
     let body = types::NewSession {
         session_id: session_id.to_string(),
-        display_name: "jet".into(),
+        display_name: display_name.to_string(),
         language: language.to_string(),
         username: whoami::username(),
         input_prompt: ">>> ".into(),

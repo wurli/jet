@@ -69,6 +69,7 @@ async fn run_one(code: &str) -> Result<String> {
     client
         .create_session(
             &session_id,
+            "jet",
             "python",
             &argv,
             &std::collections::HashMap::new(),
