@@ -65,10 +65,13 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     init_logger(args.log.as_deref());
 
-    let client = match &args.connect {
+    let mut client = match &args.connect {
         Some(path) => Client::connect_or_spawn(&args.kcserver, path).await?,
         None => Client::spawn(&args.kcserver, None).await?,
     };
+    if args.persist {
+        client.detach_server();
+    }
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
     let spec = args.kernel_spec();

@@ -128,6 +128,14 @@ impl Client {
         &self.ws_auth.base
     }
 
+    /// If this client spawned the `kcserver`, leave it running on drop.
+    /// No-op for clients that connected to an existing server.
+    pub fn detach_server(&mut self) {
+        if let Some(server) = self._server.as_mut() {
+            server.detach();
+        }
+    }
+
     /// `PUT /sessions` — create a new session.
     pub async fn create_session(
         &self,

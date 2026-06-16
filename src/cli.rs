@@ -16,10 +16,15 @@ pub struct Args {
     #[arg(long, default_value = "kcserver")]
     pub kcserver: String,
 
-    /// Connect to an already-running kcserver instead of spawning one.
-    /// Pass the path to its connection file.
+    /// Connect to an existing kcserver at this connection-file path, or
+    /// spawn a new one there if none is running.
     #[arg(long)]
     pub connect: Option<PathBuf>,
+
+    /// Leave any kcserver this process spawned running after jet exits, so
+    /// later invocations can reconnect to the same kernel.
+    #[arg(long)]
+    pub persist: bool,
 
     /// Kernel argv. Pass after `--`. The literal string `{connection_file}`
     /// is substituted by kallichore with the path to the generated Jupyter

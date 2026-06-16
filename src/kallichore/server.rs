@@ -43,13 +43,32 @@ impl ConnectionFile {
     }
 }
 
-/// RAII wrapper that kills the spawned kcserver on drop.
-pub struct ChildGuard(std::process::Child);
+/// RAII wrapper that kills the spawned kcserver on drop, unless detached.
+pub struct ChildGuard {
+    child: std::process::Child,
+    detached: bool,
+}
+
+impl ChildGuard {
+    pub fn new(child: std::process::Child) -> Self {
+        Self {
+            child,
+            detached: false,
+        }
+    }
+
+    /// Leave the child running when this guard is dropped.
+    pub fn detach(&mut self) {
+        self.detached = true;
+    }
+}
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        if !self.detached {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
     }
 }
 
@@ -75,7 +94,7 @@ pub async fn spawn_kcserver(
         .stderr(Stdio::inherit())
         .spawn()
         .with_context(|| format!("failed to spawn {bin}"))?;
-    let guard = ChildGuard(child);
+    let guard = ChildGuard::new(child);
 
     let deadline = Instant::now() + Duration::from_secs(10);
     let conn = poll_until(deadline, Duration::from_millis(100), || async {
