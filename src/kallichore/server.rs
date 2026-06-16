@@ -1,7 +1,7 @@
 //! kcserver process lifecycle and connection file.
 
 use std::future::Future;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -85,15 +85,29 @@ pub async fn spawn_kcserver(
     });
 
     log::debug!("spawning {bin} with connection file {conn_path:?}");
-    let child = Command::new(bin)
+    let mut child = Command::new(bin)
         .arg("--connection-file")
         .arg(&conn_path)
         .arg("--transport")
         .arg("tcp")
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("failed to spawn {bin}"))?;
+
+    // Forward kcserver stderr to ours, prefixing each line so it's clear
+    // those lines come from the subprocess.
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            let stderr_out = std::io::stderr();
+            for line in reader.lines().map_while(|r| r.ok()) {
+                let mut h = stderr_out.lock();
+                let _ = writeln!(h, "[kcserver] {line}");
+            }
+        });
+    }
+
     let guard = ChildGuard::new(child);
 
     let deadline = Instant::now() + Duration::from_secs(10);
