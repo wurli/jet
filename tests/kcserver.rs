@@ -627,48 +627,34 @@ fn ctrl_c_interrupts_running_kernel_in_repl() {
     }
     let kc = locate_kcserver().expect("kcserver");
 
-    // Use a temp kernelspec pointing at ipykernel — same machinery the
-    // existing tests use, but routed through the jet binary.
-    let python = which("python3").expect("python3");
-    let dir = std::env::temp_dir().join(format!("jet-it-{:x}", rand::thread_rng().gen::<u64>()));
-    std::fs::create_dir_all(&dir).expect("mkdir");
-    let kernel_json = dir.join("kernel.json");
-    std::fs::write(
-        &kernel_json,
-        format!(
-            r#"{{
-                "argv": ["{python}", "-m", "ipykernel_launcher", "-f", "{{connection_file}}"],
-                "display_name": "jet-it",
-                "language": "python"
-            }}"#,
-        ),
-    )
-    .expect("write kernel.json");
+    // Use ark (the R kernel) here, not ipykernel. ipykernel installs its
+    // own SIGINT handler that converts SIGINT into KeyboardInterrupt and
+    // keeps running, which masks the bug we're testing: if ^C from the
+    // tty reaches the kernel's process group, the kernel should NOT die.
+    // ark just exits on SIGINT, so it surfaces the bug clearly.
+    let ark_kernel = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join("Library/Jupyter/kernels/ark/kernel.json");
+    if !ark_kernel.exists() {
+        eprintln!("SKIP: ark kernelspec not found at {ark_kernel:?}");
+        return;
+    }
 
     let out = drive_jet_with_interrupt(
-        "import time; time.sleep(30)\n",
+        "Sys.sleep(30)\n",
         &kc,
-        &kernel_json,
+        &ark_kernel,
         Duration::from_secs(2),
         Duration::from_secs(15),
     )
     .expect("drive_jet_with_interrupt");
 
-    let _ = std::fs::remove_dir_all(&dir);
-
     assert!(
         out.contains("^C"),
         "expected '^C' echo in jet output, got:\n{out}"
     );
-    assert!(
-        out.contains("KeyboardInterrupt"),
-        "expected KeyboardInterrupt in jet output (kernel didn't react to interrupt), got:\n{out}"
-    );
     // The kernel must survive ^C. If SIGINT propagates to the kernel's
     // process (because jet shares its tty's foreground process group with
     // the kernel), the kernel dies and jet prints "[jet] kernel exited".
-    // ipykernel happens to also print "KeyboardInterrupt" on its way out,
-    // so the assertion above passes for the wrong reason — this catches it.
     assert!(
         !out.contains("kernel exited"),
         "kernel exited after ^C — interrupt should have been delivered via \

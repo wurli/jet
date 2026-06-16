@@ -504,18 +504,17 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
                         // Either path means the user pressed ^C: as a real
                         // SIGINT (ISIG cooked-mode tty path) or as a `\x03`
                         // byte on stdin (rustyline keeps the tty in raw
-                        // mode between calls). Echo the marker for visual
-                        // feedback and forward to the kernel via
-                        // interrupt_session(). Whether the kernel actually
-                        // halts is up to it.
+                        // mode between calls). Forward to the kernel via
+                        // interrupt_session(); the tty driver already echoes
+                        // `^C` for cooked-mode signals, so we don't print
+                        // our own marker. Whether the kernel actually halts
+                        // is up to it.
                         _ = intr_rx.recv() => {
-                            println!("^C");
                             if let Err(e) = client.interrupt_session(&session_id).await {
                                 eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
                             }
                         }
                         _ = sigint.recv() => {
-                            println!("^C");
                             if let Err(e) = client.interrupt_session(&session_id).await {
                                 eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
                             }

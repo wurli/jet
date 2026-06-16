@@ -97,13 +97,24 @@ pub async fn spawn_kcserver(
     };
 
     log::debug!("spawning {bin} with connection file {conn_path:?}");
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    command
         .arg("--connection-file")
         .arg(&conn_path)
         .arg("--transport")
         .arg("tcp")
         .stdout(Stdio::null())
-        .stderr(stderr_setting)
+        .stderr(stderr_setting);
+    // Put kcserver — and the kernels it spawns — in a new process group.
+    // Otherwise they share jet's foreground pgrp and a ^C at the tty
+    // (cooked-mode SIGINT to the whole pgrp) kills the kernel before our
+    // interrupt_session HTTP call can reach it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
         .spawn()
         .with_context(|| format!("failed to spawn {bin}"))?;
 
