@@ -856,7 +856,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
-name = "jet"
+name = "jet_cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -865,15 +865,32 @@ dependencies = [
  "clap",
  "env_logger",
  "futures-util",
+ "jet_core",
  "libc",
  "log",
- "openapiv3",
  "portable-pty",
+ "rand 0.8.6",
+ "rustyline",
+ "serde_json",
+ "serial_test",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "jet_core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chrono",
+ "futures-util",
+ "log",
+ "openapiv3",
  "progenitor",
  "progenitor-client",
  "rand 0.8.6",
  "reqwest",
- "rustyline",
  "serde",
  "serde_json",
  "serial_test",
