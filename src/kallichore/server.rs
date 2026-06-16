@@ -93,8 +93,8 @@ pub async fn spawn_kcserver(
     }
 }
 
-pub async fn wait_for_status(api: &super::api::Client) -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(10);
+pub async fn wait_for_status(api: &super::api::Client, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
     match poll_until(deadline, Duration::from_millis(100), || async {
         api.server_status().await.ok().map(|_| ())
     })
@@ -103,4 +103,12 @@ pub async fn wait_for_status(api: &super::api::Client) -> Result<()> {
         Some(()) => Ok(()),
         None => bail!("kcserver /status never became ready"),
     }
+}
+
+/// Single-shot liveness check — does not poll.
+pub async fn probe_status(api: &super::api::Client) -> Result<()> {
+    api.server_status()
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("kcserver /status probe failed: {e}"))
 }

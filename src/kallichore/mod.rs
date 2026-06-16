@@ -8,10 +8,10 @@ pub mod api;
 mod server;
 mod session;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 pub use server::ConnectionFile;
-use server::{ChildGuard, spawn_kcserver, wait_for_status};
+use server::{ChildGuard, probe_status, spawn_kcserver, wait_for_status};
 
 use anyhow::{Result, anyhow};
 use futures_util::stream::SplitSink;
@@ -64,35 +64,44 @@ impl Client {
     pub async fn spawn(bin: &str, connection_file: Option<PathBuf>) -> Result<Self> {
         log::info!("Spawning kcserver: {bin}");
         let (conn, server) = spawn_kcserver(bin, connection_file).await?;
-        Self::from_conn(conn, Some(server)).await
+        let (api, ws_auth) = Self::build_api(conn)?;
+        wait_for_status(&api, Duration::from_secs(3)).await?;
+        log::info!("kcserver ready at {}", ws_auth.base);
+        Ok(Self {
+            api,
+            ws_auth,
+            _server: Some(server),
+        })
     }
 
     /// Connect to an already-running `kcserver` via its connection file.
     pub async fn connect(connection_file: &std::path::Path) -> Result<Self> {
         log::info!("Connecting to kcserver via existing {connection_file:?}");
         let conn = ConnectionFile::read(connection_file)?;
-        Self::from_conn(conn, None).await
+        let (api, ws_auth) = Self::build_api(conn)?;
+        probe_status(&api).await?;
+        log::info!("kcserver ready at {}", ws_auth.base);
+        Ok(Self {
+            api,
+            ws_auth,
+            _server: None,
+        })
     }
 
     /// Join a running `kcserver` if possible, otherwise spawn a new one.
     pub async fn connect_or_spawn(bin: &str, connection_file: &std::path::Path) -> Result<Self> {
         log::info!("Attempting to connect or spawn a new kcserver with {connection_file:?}");
-        match ConnectionFile::read(connection_file) {
+        match Self::connect(connection_file).await {
             Err(e) => log::warn!(
-                "Failed to read connection file {connection_file:?}: {e}, will spawn a new kcserver"
+                "Failed to connect with {connection_file:?}: {e}, will spawn a new kcserver"
             ),
-            Ok(conn) => match Self::from_conn(conn, None).await {
-                Err(e) => log::warn!(
-                    "Failed to connect to existing kcserver via {connection_file:?}: {e}, will spawn a new kcserver"
-                ),
-                Ok(client) => return Ok(client),
-            },
+            Ok(client) => return Ok(client),
         }
 
         Self::spawn(bin, Some(connection_file.to_path_buf())).await
     }
 
-    async fn from_conn(conn: ConnectionFile, server: Option<ChildGuard>) -> Result<Self> {
+    fn build_api(conn: ConnectionFile) -> Result<(api::Client, WsAuth)> {
         let base = conn
             .base_path
             .clone()
@@ -108,17 +117,11 @@ impl Client {
             .default_headers(headers)
             .build()?;
         let api = api::Client::new_with_client(&base, http);
-
-        wait_for_status(&api).await?;
-        log::info!("kcserver ready at {base}");
-        Ok(Self {
-            api,
-            ws_auth: WsAuth {
-                base,
-                bearer: conn.bearer_token,
-            },
-            _server: server,
-        })
+        let ws_auth = WsAuth {
+            base,
+            bearer: conn.bearer_token,
+        };
+        Ok((api, ws_auth))
     }
 
     pub fn base(&self) -> &str {
