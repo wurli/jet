@@ -1,8 +1,15 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use clap::builder::styling::{AnsiColor, Styles};
 
 use crate::kernel;
+
+const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Green.on_default().bold())
+    .usage(AnsiColor::Green.on_default().bold())
+    .literal(AnsiColor::Cyan.on_default().bold())
+    .placeholder(AnsiColor::Cyan.on_default());
 
 pub struct KernelSpec {
     pub language: String,
@@ -10,7 +17,7 @@ pub struct KernelSpec {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "jet", about = "kallichore-backed REPL with kitty graphics")]
+#[command(name = "jet", about = "kallichore-backed REPL with kitty graphics", styles = STYLES)]
 pub struct Args {
     /// Path to the kcserver binary.
     #[arg(long, default_value = "kcserver")]
