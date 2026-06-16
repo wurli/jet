@@ -17,10 +17,14 @@ use serde_json::json;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_tungstenite::tungstenite::Message;
 
-use jet::cli::{Args, Command, ConnectArgs, ListSessionsArgs, StopArgs};
-use jet::jupyter;
-use jet::kallichore::{Channel, Client};
-use jet::render::{Event, InputRequest, Renderer, SharedWriter, parse_event, warn_if_passthrough_off};
+mod cli;
+mod render;
+
+use cli::{Args, Command, ConnectArgs, ListSessionsArgs, StopArgs};
+use jet_core::events::{Event, InputRequest, parse_event};
+use jet_core::jupyter;
+use jet_core::kallichore::{Channel, Client};
+use render::{Renderer, SharedWriter, warn_if_passthrough_off};
 
 enum WaitResult {
     Idle,
@@ -198,7 +202,7 @@ async fn run_stop(args: StopArgs) -> Result<()> {
 /// `kill_session` if the kernel doesn't exit within a few seconds. Once the
 /// session is in `Exited`, delete it from the server.
 async fn stop_session(client: &Client, session_id: &str) -> Result<()> {
-    use jet::kallichore::api::types::Status;
+    use jet_core::kallichore::api::types::Status;
     let alive = |s: Status| {
         matches!(
             s,
@@ -309,7 +313,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     }
 
     let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
-    let spec = jet::kernel::KernelSpec::load(&args.kernelspec)?;
+    let spec = jet_core::kernel::KernelSpec::load(&args.kernelspec)?;
     log::info!(
         "Creating session {session_id} (language={}, argv={:?})",
         spec.language,
