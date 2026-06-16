@@ -41,6 +41,15 @@ impl Channel {
             .await?;
         Ok(())
     }
+
+    /// Send a websocket Close frame and shut the sink down so kallichore
+    /// sees a clean handshake instead of a TCP reset. Best-effort: errors
+    /// are ignored because we're already on a teardown path.
+    pub async fn close(&mut self) {
+        use futures_util::SinkExt;
+        let _ = self.sink.send(Message::Close(None)).await;
+        let _ = self.sink.close().await;
+    }
 }
 
 /// Bits we need for the WebSocket upgrade — the auto-generated `api::Client`

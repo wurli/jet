@@ -76,6 +76,27 @@ async fn run_stop(args: StopArgs) -> Result<()> {
         None => anyhow::bail!("--kcfile is required to identify the kcserver"),
     };
 
+    if let Some(session_id) = &args.session {
+        stop_session(&client, session_id).await?;
+        println!("stopped session {session_id}");
+        return Ok(());
+    }
+
+    let sessions = client.list_sessions().await?;
+    for s in &sessions {
+        if let Err(e) = stop_session(&client, &s.session_id).await {
+            eprintln!("warning: stopping {} failed: {e}", s.session_id);
+        }
+    }
+    client.shutdown_server().await?;
+    println!("stopped {} session(s) and kcserver", sessions.len());
+    Ok(())
+}
+
+/// Stop a single session: graceful `shutdown_request` first, escalating to
+/// `kill_session` if the kernel doesn't exit within a few seconds. Once the
+/// session is in `Exited`, delete it from the server.
+async fn stop_session(client: &Client, session_id: &str) -> Result<()> {
     use jet::kallichore::api::types::Status;
     let alive = |s: Status| {
         matches!(
@@ -84,34 +105,64 @@ async fn run_stop(args: StopArgs) -> Result<()> {
         )
     };
 
-    if let Some(session_id) = &args.session {
-        let sessions = client.list_sessions().await?;
-        let s = sessions
-            .iter()
-            .find(|s| &s.session_id == session_id)
-            .ok_or_else(|| anyhow::anyhow!("no session with id {session_id}"))?;
-        if alive(s.status) {
-            client.kill_session(session_id).await?;
-        } else {
-            client.delete_session(session_id).await?;
+    let sessions = client.list_sessions().await?;
+    let s = sessions
+        .iter()
+        .find(|s| s.session_id == session_id)
+        .ok_or_else(|| anyhow::anyhow!("no session with id {session_id}"))?;
+
+    if alive(s.status) {
+        match request_graceful_shutdown(client, session_id).await {
+            Ok(()) => {}
+            Err(e) => {
+                log::warn!(
+                    "graceful shutdown of {session_id} failed: {e}; falling back to kill"
+                );
+                client.kill_session(session_id).await?;
+            }
         }
-        println!("stopped session {session_id}");
-        return Ok(());
+
+        // Poll until the kernel reports `Exited`. Escalate to kill if it
+        // ignores the shutdown request.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if Instant::now() >= deadline {
+                log::warn!("{session_id} did not exit after shutdown_request; killing");
+                client.kill_session(session_id).await?;
+                break;
+            }
+            let cur = client.list_sessions().await?;
+            match cur.iter().find(|s| s.session_id == session_id) {
+                None => break,
+                Some(s) if !alive(s.status) => break,
+                _ => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
     }
 
-    let sessions = client.list_sessions().await?;
-    for s in &sessions {
-        let result = if alive(s.status) {
-            client.kill_session(&s.session_id).await
-        } else {
-            client.delete_session(&s.session_id).await
-        };
-        if let Err(e) = result {
-            eprintln!("warning: stopping {} failed: {e}", s.session_id);
-        }
-    }
-    client.shutdown_server().await?;
-    println!("stopped {} session(s) and kcserver", sessions.len());
+    client.delete_session(session_id).await?;
+    Ok(())
+}
+
+/// Open the session's channels websocket and send a Jupyter `shutdown_request`
+/// on the control channel. Returns once the request is sent — the caller
+/// polls the session status to confirm exit.
+async fn request_graceful_shutdown(client: &Client, session_id: &str) -> Result<()> {
+    use futures_util::SinkExt;
+    let ws = client.open_channels(session_id).await?;
+    let (mut sink, _stream) = ws.split();
+    let msg_id = jupyter::new_msg_id();
+    let req = jupyter::message(
+        "control",
+        &msg_id,
+        "shutdown_request",
+        json!({ "restart": false }),
+    );
+    sink.send(Message::Text(req.to_string().into())).await?;
+    // Send a proper close frame so kallichore doesn't log a "connection
+    // reset without close handshake" error when our ws drops.
+    let _ = sink.send(Message::Close(None)).await;
+    let _ = sink.close().await;
     Ok(())
 }
 
@@ -277,6 +328,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
             _ = closed.notified() => {
                 eprintln!("\x1b[31m[jet] kernel exited\x1b[0m");
                 shutdown.notify_one();
+                channel.close().await;
                 // The blocking readline task is parked on stdin.read(); the
                 // tokio runtime's Drop would wait for that thread to finish
                 // (it never will, until the user presses a key). Run drops
@@ -334,6 +386,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
                 // exit()) or `[jet] ws error: …` (something worse). Exit
                 // silently here either way.
                 shutdown.notify_one();
+                channel.close().await;
                 drop(client);
                 std::process::exit(0);
             }
@@ -341,6 +394,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     }
 
     shutdown.notify_one();
+    channel.close().await;
     // ^D is also reached only via the blocking readline thread returning,
     // so it's actually been joined. The runtime drop is fine here, but we
     // still process::exit for symmetry and to avoid waiting on the WS
