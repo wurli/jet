@@ -60,8 +60,9 @@ pub struct ConnectArgs {
     pub kernelspec: PathBuf,
 
     /// Leave any kcserver this process spawned running after jet exits, so
-    /// later invocations can reconnect to the same kernel.
-    #[arg(long)]
+    /// later invocations can reconnect to the same kernel. Requires
+    /// `--kcfile`, since reconnecting needs a known connection file.
+    #[arg(long, requires = "kcfile")]
     pub persist: bool,
 
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
