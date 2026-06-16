@@ -87,10 +87,10 @@ async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
     }
     for s in sessions {
         println!(
-            "{}  {}  {:<8}  {:<8}  pid={:<6}  pwd={}",
+            "{:<12}  {}  {}  {:<8}  pid={:<6}  pwd={}",
+            s.display_name.to_string(),
             s.started.format("%Y-%m-%d %H:%M:%S"),
             s.session_id,
-            s.language.to_string(),
             s.status.to_string(),
             s.process_id
                 .map(|p| p.to_string())
