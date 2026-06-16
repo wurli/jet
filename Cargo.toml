@@ -34,4 +34,5 @@ progenitor = { version = "=0.14.0", default-features = false }
 serde_json = "1"
 
 [dev-dependencies]
+portable-pty = "0.8"
 serial_test = "3"

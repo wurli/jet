@@ -62,6 +62,13 @@ pub async fn kill(api: &api::Client, session_id: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn interrupt(api: &api::Client, session_id: &str) -> Result<()> {
+    api.interrupt_session(session_id)
+        .await
+        .map_err(|e| anyhow!("POST /sessions/{session_id}/interrupt failed: {e}"))?;
+    Ok(())
+}
+
 pub async fn delete(api: &api::Client, session_id: &str) -> Result<()> {
     api.delete_session(session_id)
         .await

@@ -5,7 +5,8 @@
 // and drives a line-oriented REPL. PNG outputs from the kernel are rendered
 // inline with the kitty graphics protocol.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -26,6 +27,99 @@ enum WaitResult {
     Timeout,
     Closed,
 }
+
+/// Run a stdin-byte watcher for the lifetime of `f`. rustyline keeps the
+/// tty in raw mode (ISIG off) between readlines, so a real ^C during a
+/// kernel request arrives as the byte 0x03 on stdin instead of a SIGINT —
+/// nobody would observe it otherwise.
+///
+/// We spawn a dedicated thread for the call, join it when `f` finishes, and
+/// only run the watcher while we know rustyline is NOT reading from stdin
+/// (so we never race rustyline for input bytes). The thread is woken
+/// promptly via a self-pipe when `f` returns.
+async fn with_stdin_intr_watcher<Fut, T>(
+    on_intr: impl Fn() + Send + Sync + 'static,
+    f: Fut,
+) -> T
+where
+    Fut: std::future::Future<Output = T>,
+{
+    use std::os::fd::{AsRawFd, OwnedFd};
+
+    // Self-pipe so we can interrupt the watcher's poll() when f finishes.
+    let (read_fd, write_fd): (OwnedFd, OwnedFd) = match nix_pipe() {
+        Ok(p) => p,
+        Err(_) => return f.await,
+    };
+    let read_fd_raw = read_fd.as_raw_fd();
+    let on_intr = Arc::new(on_intr);
+    let on_intr_thread = on_intr.clone();
+
+    let handle = std::thread::spawn(move || {
+        let stdin = libc::STDIN_FILENO;
+        loop {
+            let mut pfds = [
+                libc::pollfd {
+                    fd: stdin,
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: read_fd_raw,
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+            ];
+            let rc = unsafe { libc::poll(pfds.as_mut_ptr(), 2, -1) };
+            if rc < 0 {
+                continue;
+            }
+            // Wake-pipe readable means f has finished; exit before reading
+            // stdin, otherwise we'd steal a byte from the next readline.
+            if pfds[1].revents & libc::POLLIN != 0 {
+                return;
+            }
+            if pfds[0].revents & libc::POLLIN != 0 {
+                let mut b = [0u8; 1];
+                let n = unsafe { libc::read(stdin, b.as_mut_ptr() as _, 1) };
+                if n <= 0 {
+                    continue;
+                }
+                if b[0] == 0x03 {
+                    on_intr_thread();
+                }
+                // Other bytes are dropped — typing while the kernel is busy
+                // is discarded, matching how most REPLs behave.
+            }
+        }
+    });
+
+    let result = f.await;
+
+    // Wake the watcher thread.
+    {
+        let buf = [0u8; 1];
+        let _ = unsafe { libc::write(write_fd.as_raw_fd(), buf.as_ptr() as _, 1) };
+    }
+    let _ = handle.join();
+    result
+}
+
+fn nix_pipe() -> std::io::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
+    use std::os::fd::FromRawFd;
+    let mut fds = [0i32; 2];
+    let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    unsafe {
+        Ok((
+            std::os::fd::OwnedFd::from_raw_fd(fds[0]),
+            std::os::fd::OwnedFd::from_raw_fd(fds[1]),
+        ))
+    }
+}
+
 
 async fn wait_for_idle(
     rx: &mut UnboundedReceiver<String>,
@@ -311,6 +405,21 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
         WaitResult::Closed => return Ok(()),
     }
 
+    // We watch for ^C in two ways:
+    //  - SIGINT from the OS (e.g. another process kill -INT). Registered
+    //    eagerly so we don't race the user's first ^C against tokio's lazy
+    //    registration in ctrl_c().
+    //  - The literal `\x03` byte on stdin. rustyline keeps the tty in raw
+    //    mode (ISIG off) between readlines, so the kernel doesn't translate
+    //    ^C to SIGINT — it arrives as a byte on stdin instead. We read
+    //    stdin ourselves while the kernel is busy and treat that byte as
+    //    a ^C.
+    // Eagerly register the SIGINT handler so we don't race the user's first
+    // ^C against tokio's lazy registration in ctrl_c().
+    let mut sigint = tokio::signal::unix::signal(
+        tokio::signal::unix::SignalKind::interrupt(),
+    )?;
+
     let mut rl = Some(rustyline::DefaultEditor::new()?);
     println!("jet — connected to session {session_id}. ^D to quit.");
     loop {
@@ -341,8 +450,10 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
                 rl = Some(returned_rl);
                 match result {
                     Ok(l) => l,
-                    Err(rustyline::error::ReadlineError::Eof)
-                    | Err(rustyline::error::ReadlineError::Interrupted) => break,
+                    Err(rustyline::error::ReadlineError::Eof) => break,
+                    // ^C at the prompt: discard the partial line and re-prompt,
+                    // matching python/ipython/node REPL conventions. Exit is ^D.
+                    Err(rustyline::error::ReadlineError::Interrupted) => continue,
                     Err(e) => {
                         eprintln!("[jet] readline: {e}");
                         break;
@@ -374,7 +485,47 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
         );
         channel.send(&req).await?;
 
-        match wait_for_idle(&mut idle_rx, &msg_id, Duration::from_secs(300)).await {
+        // Race wait-for-idle against ^C: rustyline leaves the tty in raw
+        // mode between calls (ISIG off), so we re-enable ISIG for the
+        // duration of the request — that lets the tty driver translate ^C
+        // into SIGINT, which tokio's signal handler observes. We then
+        // forward via interrupt_session(); the kernel's reply flows through
+        // the existing renderer/idle channel.
+        // Channel used by the stdin watcher to signal "user pressed ^C".
+        let (intr_tx, mut intr_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let interrupted = with_stdin_intr_watcher(
+            move || {
+                let _ = intr_tx.send(());
+            },
+            async {
+                loop {
+                    tokio::select! {
+                        r = wait_for_idle(&mut idle_rx, &msg_id, Duration::from_secs(300)) => return r,
+                        // Either path means the user pressed ^C: as a real
+                        // SIGINT (ISIG cooked-mode tty path) or as a `\x03`
+                        // byte on stdin (rustyline keeps the tty in raw
+                        // mode between calls). Echo the marker for visual
+                        // feedback and forward to the kernel via
+                        // interrupt_session(). Whether the kernel actually
+                        // halts is up to it.
+                        _ = intr_rx.recv() => {
+                            println!("^C");
+                            if let Err(e) = client.interrupt_session(&session_id).await {
+                                eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+                            }
+                        }
+                        _ = sigint.recv() => {
+                            println!("^C");
+                            if let Err(e) = client.interrupt_session(&session_id).await {
+                                eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+                            }
+                        }
+                    }
+                }
+            },
+        )
+        .await;
+        match interrupted {
             WaitResult::Idle => {}
             WaitResult::Timeout => {
                 log::warn!("timeout waiting for kernel idle (msg_id={msg_id})");

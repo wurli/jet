@@ -189,6 +189,11 @@ impl Client {
         session::kill(&self.api, session_id).await
     }
 
+    /// `POST /sessions/{id}/interrupt` — interrupt a running computation.
+    pub async fn interrupt_session(&self, session_id: &str) -> Result<()> {
+        session::interrupt(&self.api, session_id).await
+    }
+
     /// `DELETE /sessions/{id}` — remove the session record from the server.
     pub async fn delete_session(&self, session_id: &str) -> Result<()> {
         session::delete(&self.api, session_id).await
