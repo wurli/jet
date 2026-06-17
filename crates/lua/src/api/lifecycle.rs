@@ -28,11 +28,23 @@ pub fn start_kernel(lua: &Lua, spec_path: String) -> LuaResult<(String, LuaValue
     Ok((session_id, lua.to_value(&info)?))
 }
 
-/// `jet.attach_kernel(connection_file_path) -> (session_id, info)`
-pub fn attach_kernel(lua: &Lua, connection_file: String) -> LuaResult<(String, LuaValue)> {
+/// `jet.attach_kernel(spec_path, connection_file_path) -> (session_id, info)`
+///
+/// Attach to a kernel listening on `connection_file_path`, or spawn a
+/// new one from `spec_path` against that same connection file if the
+/// attach fails. Mirrors [`Kernel::attach_or_spawn`].
+pub fn attach_kernel(
+    lua: &Lua,
+    (spec_path, connection_file): (String, String),
+) -> LuaResult<(String, LuaValue)> {
+    let spec = KernelSpec::load(&PathBuf::from(&spec_path))
+        .with_context(|| format!("loading kernelspec {spec_path}"))
+        .into_lua_err()?;
     let path = PathBuf::from(&connection_file);
     let (session_id, info, handle) = rt()
-        .block_on(async move { boot_kernel(Kernel::attach(&path).await?).await })
+        .block_on(async move {
+            boot_kernel(Kernel::attach_or_spawn(&spec, &path).await?).await
+        })
         .into_lua_err()?;
 
     KERNELS.lock().unwrap().insert(session_id.clone(), handle);
