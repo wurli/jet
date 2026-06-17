@@ -247,21 +247,9 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
 
     // Move the sockets out of the kernel so we can spawn tasks that own
     // them. The kernel keeps `control` for interrupt() / shutdown().
-    let mut shell = kernel
-        .channels
-        .shell
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("shell channel already taken"))?;
-    let mut iopub = kernel
-        .channels
-        .iopub
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("iopub channel already taken"))?;
-    let mut stdin_sock = kernel
-        .channels
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("stdin channel already taken"))?;
+    let mut shell = kernel.channels.take_shell()?;
+    let mut iopub = kernel.channels.take_iopub()?;
+    let mut stdin_sock = kernel.channels.take_stdin()?;
 
     // Poll-based liveness watcher: if jet owns the child, waitpid()
     // for it with WNOHANG once every half second. We can't use

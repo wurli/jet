@@ -39,11 +39,6 @@ pub struct KernelHandle {
     /// Outbound stdin sends: `input_reply`.
     pub stdin_tx: UnboundedSender<JupyterMessage>,
     pub router: Arc<FrameRouter>,
-    /// Carried for parity with the kallichore shape and for future
-    /// debugging surfaces; not currently read from outside the lifecycle
-    /// module.
-    #[allow(dead_code)]
-    pub session_id: String,
 }
 
 pub static KERNELS: Lazy<Mutex<HashMap<String, Arc<KernelHandle>>>> =

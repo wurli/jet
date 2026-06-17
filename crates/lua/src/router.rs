@@ -25,20 +25,12 @@ pub struct FrameRouter {
     /// Live per-request senders, keyed by the parent_msg_id we generated
     /// when sending the request.
     by_parent: Mutex<HashMap<String, Sender<PollItem>>>,
-    /// Catch-all for kernel-initiated frames whose parent_msg_id we never
-    /// registered (e.g. async `comm_msg`s, kernel-driven `comm_open`).
-    unsolicited_tx: Sender<PollItem>,
-    #[allow(dead_code)]
-    unsolicited_rx: Receiver<PollItem>,
 }
 
 impl FrameRouter {
     pub fn new() -> Self {
-        let (unsolicited_tx, unsolicited_rx) = unbounded();
         Self {
             by_parent: Mutex::new(HashMap::new()),
-            unsolicited_tx,
-            unsolicited_rx,
         }
     }
 
@@ -57,29 +49,24 @@ impl FrameRouter {
 
     /// Route one parsed frame.
     ///
-    /// `idle_for` is `Some(parent_msg_id)` when this frame is an iopub
-    /// `status` with `execution_state=idle` — the terminal signal that
-    /// closes out a request. Otherwise the frame is forwarded to its
-    /// matching per-request sender, falling back to `unsolicited`.
+    /// `Idle` for a registered parent closes out the corresponding poller;
+    /// for an unregistered parent (e.g. our internal kernel_info_request
+    /// during start_kernel) it's a no-op. `Content` for an unregistered
+    /// parent — kernel-initiated `comm_msg` / `comm_open` — is dropped, as
+    /// the Lua surface has no consumer for it yet.
     pub fn dispatch(&self, parent_msg_id: Option<&str>, frame: Frame) {
         match frame {
             Frame::Idle { parent_msg_id } => {
-                let mut map = self.by_parent.lock().unwrap();
-                if let Some(tx) = map.remove(&parent_msg_id) {
+                if let Some(tx) = self.by_parent.lock().unwrap().remove(&parent_msg_id) {
                     let _ = tx.send(PollItem::Idle);
                 }
-                // Idle for an unregistered parent (e.g. our internal
-                // kernel_info_request during start_kernel) is a no-op.
             }
             Frame::Content { msg_type, content } => {
-                let item = PollItem::Frame { msg_type, content };
                 if let Some(pid) = parent_msg_id {
                     if let Some(tx) = self.by_parent.lock().unwrap().get(pid) {
-                        let _ = tx.send(item);
-                        return;
+                        let _ = tx.send(PollItem::Frame { msg_type, content });
                     }
                 }
-                let _ = self.unsolicited_tx.send(item);
             }
         }
     }

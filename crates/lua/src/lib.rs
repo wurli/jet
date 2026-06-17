@@ -16,6 +16,13 @@ mod runtime;
 
 use mlua::prelude::*;
 
+use api::lifecycle::{
+    attach_kernel, interrupt, list_available_kernels, list_running_kernels, shutdown_kernel,
+    start_kernel,
+};
+use api::request::{comm_open, comm_send, execute_code, get_completions, is_complete};
+use api::stdin::provide_stdin;
+
 #[mlua::lua_module]
 fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     register(lua)
@@ -26,41 +33,17 @@ fn jet(lua: &Lua) -> LuaResult<LuaTable> {
 /// is reachable to anyone embedding mlua.
 pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     let exports = lua.create_table()?;
-    exports.set("start_kernel", lua.create_function(api::lifecycle::start_kernel)?)?;
-    exports.set(
-        "attach_kernel",
-        lua.create_function(api::lifecycle::attach_kernel)?,
-    )?;
-    exports.set(
-        "shutdown_kernel",
-        lua.create_function(api::lifecycle::shutdown_kernel)?,
-    )?;
-    exports.set("interrupt", lua.create_function(api::lifecycle::interrupt)?)?;
-    exports.set(
-        "list_running_kernels",
-        lua.create_function(api::lifecycle::list_running_kernels)?,
-    )?;
-    exports.set(
-        "list_available_kernels",
-        lua.create_function(api::lifecycle::list_available_kernels)?,
-    )?;
-    exports.set(
-        "execute_code",
-        lua.create_function(api::request::execute_code)?,
-    )?;
-    exports.set(
-        "is_complete",
-        lua.create_function(api::request::is_complete)?,
-    )?;
-    exports.set(
-        "get_completions",
-        lua.create_function(api::request::get_completions)?,
-    )?;
-    exports.set("comm_open", lua.create_function(api::request::comm_open)?)?;
-    exports.set("comm_send", lua.create_function(api::request::comm_send)?)?;
-    exports.set(
-        "provide_stdin",
-        lua.create_function(api::stdin::provide_stdin)?,
-    )?;
+    exports.set("start_kernel", lua.create_function(start_kernel)?)?;
+    exports.set("attach_kernel", lua.create_function(attach_kernel)?)?;
+    exports.set("shutdown_kernel", lua.create_function(shutdown_kernel)?)?;
+    exports.set("interrupt", lua.create_function(interrupt)?)?;
+    exports.set("list_running_kernels", lua.create_function(list_running_kernels)?)?;
+    exports.set("list_available_kernels", lua.create_function(list_available_kernels)?)?;
+    exports.set("execute_code", lua.create_function(execute_code)?)?;
+    exports.set("is_complete", lua.create_function(is_complete)?)?;
+    exports.set("get_completions", lua.create_function(get_completions)?)?;
+    exports.set("comm_open", lua.create_function(comm_open)?)?;
+    exports.set("comm_send", lua.create_function(comm_send)?)?;
+    exports.set("provide_stdin", lua.create_function(provide_stdin)?)?;
     Ok(exports)
 }

@@ -15,7 +15,7 @@
 use jupyter_protocol::{
     ExecutionState, JupyterMessage, JupyterMessageContent, MediaType, Stdio,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 #[derive(Debug)]
 pub enum Event {
@@ -193,25 +193,6 @@ pub fn raw_msg_type_and_content(msg: &JupyterMessage) -> (String, Value) {
     let msg_type = msg.message_type().to_string();
     let content = serde_json::to_value(&msg.content).unwrap_or(Value::Null);
     (msg_type, content)
-}
-
-/// Convenience for callers that want a serde_json view of the entire frame
-/// (header + parent_header + content + msg_type) — used by the Lua binding
-/// where the frame is forwarded mostly-unparsed to user code.
-#[allow(dead_code)]
-pub fn frame_value(channel: Channel, msg: &JupyterMessage) -> Value {
-    let channel = match channel {
-        Channel::Shell => "shell",
-        Channel::IoPub => "iopub",
-        Channel::Stdin => "stdin",
-        Channel::Control => "control",
-    };
-    json!({
-        "channel": channel,
-        "header": &msg.header,
-        "parent_header": &msg.parent_header,
-        "content": &msg.content,
-    })
 }
 
 #[cfg(test)]

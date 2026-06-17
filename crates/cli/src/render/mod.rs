@@ -51,7 +51,7 @@ impl Renderer {
 
     pub fn handle_event(&self, event: Event) -> Result<()> {
         match event {
-            Event::Stream { name, text } => self.write_stream(&name, &text)?,
+            Event::Stream { name: _, text } => self.write_stream(&text)?,
             Event::DisplayData { data } => self.render_data(&data)?,
             Event::Error { traceback } => {
                 if !traceback.is_empty() {
@@ -82,7 +82,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn write_stream(&self, _name: &str, text: &str) -> Result<()> {
+    fn write_stream(&self, text: &str) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
         write!(w, "{text}")?;
         w.flush()?;

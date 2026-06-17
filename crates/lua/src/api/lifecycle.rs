@@ -48,21 +48,9 @@ async fn boot_kernel(
 ) -> anyhow::Result<(String, Value, Arc<KernelHandle>)> {
     let session_id = kernel.session_id.clone();
 
-    let mut shell = kernel
-        .channels
-        .shell
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("shell channel missing"))?;
-    let iopub = kernel
-        .channels
-        .iopub
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("iopub channel missing"))?;
-    let stdin_sock = kernel
-        .channels
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("stdin channel missing"))?;
+    let mut shell = kernel.channels.take_shell()?;
+    let iopub = kernel.channels.take_iopub()?;
+    let stdin_sock = kernel.channels.take_stdin()?;
 
     // kernel_info_request: send + wait for reply on the still-borrowed
     // shell socket, before spawning the long-running shell task.
@@ -71,7 +59,7 @@ async fn boot_kernel(
     shell
         .send(info_req)
         .await
-        .map_err(|e| anyhow::anyhow!("shell.send: {e}"))?;
+        .context("shell.send")?;
     let info = match tokio::time::timeout(
         Duration::from_secs(10),
         await_kernel_info(&mut shell, &info_id),
@@ -96,7 +84,6 @@ async fn boot_kernel(
         shell_tx,
         stdin_tx,
         router,
-        session_id: session_id.clone(),
     });
     Ok((session_id, info, handle))
 }

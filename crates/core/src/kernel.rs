@@ -26,17 +26,12 @@ use crate::connection_file;
 /// Per the Jupyter kernelspec: how the kernel expects to be interrupted.
 /// `Signal` (default) means SIGINT; `Message` means an `interrupt_request`
 /// on the control channel.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InterruptMode {
+    #[default]
     Signal,
     Message,
-}
-
-impl Default for InterruptMode {
-    fn default() -> Self {
-        InterruptMode::Signal
-    }
 }
 
 /// A parsed Jupyter `kernel.json` kernelspec.
@@ -133,6 +128,18 @@ pub struct Channels {
     pub iopub: Option<ClientIoPubConnection>,
     pub stdin: Option<ClientStdinConnection>,
     pub control: Option<ClientControlConnection>,
+}
+
+impl Channels {
+    pub fn take_shell(&mut self) -> Result<ClientShellConnection> {
+        self.shell.take().ok_or_else(|| anyhow!("shell channel already taken"))
+    }
+    pub fn take_iopub(&mut self) -> Result<ClientIoPubConnection> {
+        self.iopub.take().ok_or_else(|| anyhow!("iopub channel already taken"))
+    }
+    pub fn take_stdin(&mut self) -> Result<ClientStdinConnection> {
+        self.stdin.take().ok_or_else(|| anyhow!("stdin channel already taken"))
+    }
 }
 
 pub struct Kernel {
