@@ -17,8 +17,7 @@ mod runtime;
 use mlua::prelude::*;
 
 use api::lifecycle::{
-    attach_kernel, interrupt, list_available_kernels, list_running_kernels, shutdown_kernel,
-    start_kernel,
+    attach, connect, interrupt, list_available_kernels, list_running_kernels, shutdown_kernel,
 };
 use api::request::{comm_open, comm_send, execute_code, get_completions, is_complete};
 use api::stdin::provide_stdin;
@@ -33,8 +32,8 @@ fn jet(lua: &Lua) -> LuaResult<LuaTable> {
 /// is reachable to anyone embedding mlua.
 pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     let exports = lua.create_table()?;
-    exports.set("start_kernel", lua.create_function(start_kernel)?)?;
-    exports.set("attach_kernel", lua.create_function(attach_kernel)?)?;
+    exports.set("connect", lua.create_function(connect)?)?;
+    exports.set("attach", lua.create_function(attach)?)?;
     exports.set("shutdown_kernel", lua.create_function(shutdown_kernel)?)?;
     exports.set("interrupt", lua.create_function(interrupt)?)?;
     exports.set("list_running_kernels", lua.create_function(list_running_kernels)?)?;

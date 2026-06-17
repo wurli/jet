@@ -7,7 +7,7 @@ local jet = require('jet')
 local spec = os.getenv('JET_TEST_KERNEL')
 assert(spec and #spec > 0, 'JET_TEST_KERNEL env var must point to a kernel.json')
 
-local kid = jet.start_kernel(spec)
+local kid = jet.connect(spec)
 local poll = jet.execute_code(kid, "v = input('ASK> '); print('GOT:' + v)", {})
 
 local saw_input_request = false

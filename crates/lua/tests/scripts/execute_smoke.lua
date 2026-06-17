@@ -6,8 +6,8 @@ local jet = require('jet')
 local spec = os.getenv('JET_TEST_KERNEL')
 assert(spec and #spec > 0, 'JET_TEST_KERNEL env var must point to a kernel.json')
 
-local kid, info = jet.start_kernel(spec)
-assert(type(kid) == 'string' and #kid > 0, 'expected session id from start_kernel')
+local kid, info = jet.connect(spec)
+assert(type(kid) == 'string' and #kid > 0, 'expected session id from connect')
 assert(type(info) == 'table', 'expected kernel info table')
 
 local poll = jet.execute_code(kid, 'print(1+1)', {})

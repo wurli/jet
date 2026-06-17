@@ -51,7 +51,7 @@ impl FrameRouter {
     ///
     /// `Idle` for a registered parent closes out the corresponding poller;
     /// for an unregistered parent (e.g. our internal kernel_info_request
-    /// during start_kernel) it's a no-op. `Content` for an unregistered
+    /// during connect/attach) it's a no-op. `Content` for an unregistered
     /// parent — kernel-initiated `comm_msg` / `comm_open` — is dropped, as
     /// the Lua surface has no consumer for it yet.
     pub fn dispatch(&self, parent_msg_id: Option<&str>, frame: Frame) {

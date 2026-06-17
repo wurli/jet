@@ -14,37 +14,42 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::router::{Frame, FrameRouter};
 use crate::runtime::{KERNELS, KernelHandle, get, rt};
 
-/// `jet.start_kernel(spec_path) -> (session_id, info)`
-pub fn start_kernel(lua: &Lua, spec_path: String) -> LuaResult<(String, LuaValue)> {
+/// `jet.connect(spec_path, connection_file?) -> (session_id, info)`
+///
+/// Spawn a kernel from `spec_path`. If `connection_file` is given,
+/// attach to a kernel already listening there or spawn against that
+/// path if the attach fails (mirrors [`Kernel::attach_or_spawn`] and
+/// `jet connect --connection-file`).
+pub fn connect(
+    lua: &Lua,
+    (spec_path, connection_file): (String, Option<String>),
+) -> LuaResult<(String, LuaValue)> {
     let spec = KernelSpec::load(&PathBuf::from(&spec_path))
         .with_context(|| format!("loading kernelspec {spec_path}"))
         .into_lua_err()?;
 
     let (session_id, info, handle) = rt()
-        .block_on(async move { boot_kernel(Kernel::spawn(&spec, None).await?).await })
+        .block_on(async move {
+            let kernel = match connection_file {
+                Some(p) => Kernel::attach_or_spawn(&spec, &PathBuf::from(p)).await?,
+                None => Kernel::spawn(&spec, None).await?,
+            };
+            boot_kernel(kernel).await
+        })
         .into_lua_err()?;
 
     KERNELS.lock().unwrap().insert(session_id.clone(), handle);
     Ok((session_id, lua.to_value(&info)?))
 }
 
-/// `jet.attach_kernel(spec_path, connection_file_path) -> (session_id, info)`
+/// `jet.attach(connection_file) -> (session_id, info)`
 ///
-/// Attach to a kernel listening on `connection_file_path`, or spawn a
-/// new one from `spec_path` against that same connection file if the
-/// attach fails. Mirrors [`Kernel::attach_or_spawn`].
-pub fn attach_kernel(
-    lua: &Lua,
-    (spec_path, connection_file): (String, String),
-) -> LuaResult<(String, LuaValue)> {
-    let spec = KernelSpec::load(&PathBuf::from(&spec_path))
-        .with_context(|| format!("loading kernelspec {spec_path}"))
-        .into_lua_err()?;
+/// Attach to a kernel already running on `connection_file`. Mirrors
+/// `jet attach`: no kernelspec, never spawns.
+pub fn attach(lua: &Lua, connection_file: String) -> LuaResult<(String, LuaValue)> {
     let path = PathBuf::from(&connection_file);
     let (session_id, info, handle) = rt()
-        .block_on(async move {
-            boot_kernel(Kernel::attach_or_spawn(&spec, &path).await?).await
-        })
+        .block_on(async move { boot_kernel(Kernel::attach(&path).await?).await })
         .into_lua_err()?;
 
     KERNELS.lock().unwrap().insert(session_id.clone(), handle);
