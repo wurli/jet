@@ -21,20 +21,6 @@ fn which(name: &str) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
-fn locate_kcserver() -> Option<String> {
-    if let Ok(p) = std::env::var("JET_KCSERVER") {
-        if Path::new(&p).exists() {
-            return Some(p);
-        }
-    }
-    for p in ["/tmp/kc/kcserver"] {
-        if Path::new(p).exists() {
-            return Some(p.to_string());
-        }
-    }
-    which("kcserver")
-}
-
 fn ipykernel_available() -> bool {
     Command::new("python3")
         .args(["-c", "import ipykernel"])
@@ -113,10 +99,6 @@ fn run_lua_test(script_name: &str) {
         skip("luajit not on PATH");
         return;
     };
-    let Some(kc) = locate_kcserver() else {
-        skip("kcserver not found (set JET_KCSERVER=/path/to/kcserver)");
-        return;
-    };
     if !ipykernel_available() {
         skip("ipykernel not installed (`pip install ipykernel`)");
         return;
@@ -137,7 +119,6 @@ fn run_lua_test(script_name: &str) {
     let status = Command::new(&luajit)
         .arg(&script)
         .env("LUA_CPATH", &cpath)
-        .env("JET_KCSERVER", &kc)
         .env("JET_TEST_KERNEL", &kernelspec)
         .status()
         .expect("spawn luajit");

@@ -1,10 +1,13 @@
-//! jet-core — kallichore client + Jupyter wire-format helpers.
+//! jet-core — Jupyter kernel client over ZMQ + event translation.
 //!
-//! The transport- and protocol-level pieces of jet, with no dependency on
-//! the user's terminal. Consumed by `jet-cli` (the REPL) and by future
-//! bindings (e.g. mlua for Neovim).
+//! Owns the kernel lifecycle (spawn / attach / detach), connection-file
+//! generation, and converting kernel messages into a typed `Event` for
+//! whatever frontend is consuming them. Used by `jet-cli` (the REPL) and
+//! by `jet-lua` (Neovim binding).
 
+pub mod connection_file;
 pub mod events;
-pub mod jupyter;
-pub mod kallichore;
 pub mod kernel;
+
+pub use jupyter_protocol;
+pub use jupyter_zmq_client;

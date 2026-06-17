@@ -1,12 +1,21 @@
-//! Parsing kallichore websocket frames into typed events.
+//! Translate Jupyter wire messages into typed events for the renderer / Lua
+//! binding.
 //!
-//! Frames come off the websocket as JSON; [`parse_event`] turns them into
-//! a typed [`Event`] suitable for any consumer (the CLI renderer, a Lua
-//! binding, …). The pure-parsing path lives here so it has no I/O deps.
+//! The renderer (`crates/cli/src/render`) consumes [`Event`] without caring
+//! about the underlying wire format, so the previous kallichore-WebSocket
+//! variant of this module had the same enum. Now the source is
+//! [`JupyterMessage`] from `jupyter-protocol`, fed in from each ZMQ channel.
+//!
+//! Per Jupyter spec, the channel matters: an `input_request` is only valid
+//! on `stdin`, `kernel_info_reply` is on `shell`, and the rest live on
+//! `iopub`. Callers thread the [`Channel`] in so we can replicate that
+//! routing without depending on the optional `JupyterMessage::channel`
+//! field (which is `None` for ZMQ transports).
 
-use anyhow::Result;
-use serde::Deserialize;
-use serde_json::Value;
+use jupyter_protocol::{
+    ExecutionState, JupyterMessage, JupyterMessageContent, MediaType, Stdio,
+};
+use serde_json::{Map, Value};
 
 #[derive(Debug)]
 pub enum Event {
@@ -26,16 +35,13 @@ pub enum Event {
     Idle {
         parent_id: String,
     },
-    /// Kernel asked for stdin via the `stdin` channel (e.g. R `readline()`
-    /// or Python `input()`). The REPL prompts the user and replies with
-    /// `input_reply` carrying the same parent_id.
     InputRequest {
         prompt: String,
         password: bool,
         parent_id: String,
     },
-    /// kallichore reported the kernel has exited. The REPL uses this to
-    /// shut down immediately rather than wait for the user to press a key.
+    /// The kernel has gone away. Emitted by the reader task when its socket
+    /// returns an error or the child process exits — not from a wire frame.
     KernelExited,
     Other,
 }
@@ -49,193 +55,169 @@ pub struct InputRequest {
     pub parent_id: String,
 }
 
-/// kallichore wraps every websocket frame in a `{kind, ...}` envelope.
-/// Jupyter messages are tagged `kind: "jupyter"` with the standard
-/// `channel`/`header`/`parent_header`/`content` fields. Server-side
-/// kernel-lifecycle events are tagged `kind: "kernel"` with shapes like
-/// `{status: {...}}`, `{exited: <code>}`, `{output: [...]}`,
-/// `{resourceUsage: {...}}`. We only act on `exited` and on
-/// `status.status == "exited"`; the other kernel-kind frames are noise
-/// for a CLI REPL.
-#[derive(Deserialize)]
-struct IncomingMessage {
-    #[serde(default)]
-    kind: String,
-    // jupyter-kind fields
-    #[serde(default)]
-    channel: String,
-    #[serde(default)]
-    header: Header,
-    #[serde(default)]
-    parent_header: Option<ParentHeader>,
-    #[serde(default)]
-    content: Value,
-    // kernel-kind fields
-    #[serde(default)]
-    exited: Option<i64>,
-    #[serde(default)]
-    status: Option<KernelStatus>,
+/// Which ZMQ channel a message arrived on. We keep our own enum rather
+/// than reuse `jupyter_protocol::Channel` so callers don't need to import
+/// runtimed types just to feed events in.
+#[derive(Debug, Clone, Copy)]
+pub enum Channel {
+    Shell,
+    IoPub,
+    Stdin,
+    Control,
 }
 
-#[derive(Deserialize, Default)]
-struct Header {
-    #[serde(default)]
-    msg_type: String,
-}
+/// Convert a single message into an [`Event`].
+pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
+    let parent_id = msg
+        .parent_header
+        .as_ref()
+        .map(|h| h.msg_id.clone())
+        .unwrap_or_default();
 
-#[derive(Deserialize, Default)]
-struct ParentHeader {
-    #[serde(default)]
-    msg_id: String,
-}
-
-#[derive(Deserialize)]
-struct KernelStatus {
-    #[serde(default)]
-    status: String,
-}
-
-pub fn parse_event(text: &str) -> Result<Event> {
-    let m: IncomingMessage = serde_json::from_str(text)?;
-    if m.kind == "kernel" {
-        if m.exited.is_some() {
-            return Ok(Event::KernelExited);
-        }
-        if m.status
-            .as_ref()
-            .map(|s| s.status == "exited")
-            .unwrap_or(false)
-        {
-            return Ok(Event::KernelExited);
-        }
-        return Ok(Event::Other);
-    }
-    let event = match (m.channel.as_str(), m.header.msg_type.as_str()) {
-        ("iopub", "stream") => {
-            let name = m
-                .content
-                .get("name")
-                .and_then(|s| s.as_str())
-                .unwrap_or("stdout")
-                .to_string();
-            let text = m
-                .content
-                .get("text")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            Event::Stream { name, text }
-        }
-        ("iopub", "execute_result") | ("iopub", "display_data") => {
-            let data = m.content.get("data").cloned().unwrap_or(Value::Null);
-            Event::DisplayData { data }
-        }
-        ("iopub", "error") => {
-            // Python kernels put the colorized backtrace in `traceback`;
-            // ark/R leaves traceback empty and puts the message in `evalue`.
-            // Fall back to `ename: evalue` when traceback is empty/missing.
-            let traceback = m
-                .content
-                .get("traceback")
-                .and_then(|t| t.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| {
-                    let ename = m
-                        .content
-                        .get("ename")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("");
-                    let evalue = m
-                        .content
-                        .get("evalue")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("");
-                    match (ename.is_empty(), evalue.is_empty()) {
-                        (false, false) => format!("{ename}: {evalue}"),
-                        (true, false) => evalue.to_string(),
-                        (false, true) => ename.to_string(),
-                        (true, true) => String::new(),
-                    }
-                });
+    match (&channel, &msg.content) {
+        (Channel::IoPub, JupyterMessageContent::StreamContent(sc)) => Event::Stream {
+            name: match sc.name {
+                Stdio::Stdout => "stdout".into(),
+                Stdio::Stderr => "stderr".into(),
+            },
+            text: sc.text.clone(),
+        },
+        (Channel::IoPub, JupyterMessageContent::DisplayData(dd)) => Event::DisplayData {
+            data: media_to_value(&dd.data.content),
+        },
+        (Channel::IoPub, JupyterMessageContent::ExecuteResult(er)) => Event::DisplayData {
+            data: media_to_value(&er.data.content),
+        },
+        (Channel::IoPub, JupyterMessageContent::ErrorOutput(err)) => {
+            let traceback = if err.traceback.is_empty() {
+                match (err.ename.is_empty(), err.evalue.is_empty()) {
+                    (false, false) => format!("{}: {}", err.ename, err.evalue),
+                    (true, false) => err.evalue.clone(),
+                    (false, true) => err.ename.clone(),
+                    (true, true) => String::new(),
+                }
+            } else {
+                err.traceback.join("\n")
+            };
             Event::Error { traceback }
         }
-        ("shell", "kernel_info_reply") => {
-            let text = m
-                .content
-                .get("banner")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            Event::Banner { text }
-        }
-        ("stdin", "input_request") => {
-            let prompt = m
-                .content
-                .get("prompt")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            let password = m
-                .content
-                .get("password")
-                .and_then(|b| b.as_bool())
-                .unwrap_or(false);
-            let parent_id = m.parent_header.map(|p| p.msg_id).unwrap_or_default();
-            Event::InputRequest {
-                prompt,
-                password,
-                parent_id,
-            }
-        }
-        ("iopub", "status") => {
-            let state = m
-                .content
-                .get("execution_state")
-                .and_then(|s| s.as_str())
-                .unwrap_or("");
-            let parent_id = m.parent_header.map(|p| p.msg_id).unwrap_or_default();
-            if state == "idle" && !parent_id.is_empty() {
+        (Channel::Shell, JupyterMessageContent::KernelInfoReply(reply)) => Event::Banner {
+            text: reply.banner.clone(),
+        },
+        (Channel::Stdin, JupyterMessageContent::InputRequest(req)) => Event::InputRequest {
+            prompt: req.prompt.clone(),
+            password: req.password,
+            parent_id,
+        },
+        (Channel::IoPub, JupyterMessageContent::Status(s)) => {
+            if matches!(s.execution_state, ExecutionState::Idle) && !parent_id.is_empty() {
                 Event::Idle { parent_id }
             } else {
                 Event::Other
             }
         }
         _ => Event::Other,
-    };
-    Ok(event)
+    }
+}
+
+/// Re-encode a `Vec<MediaType>` back into the original Jupyter media bundle
+/// shape (`{ "image/png": ..., "text/plain": ..., ... }`) so the existing
+/// renderer (which works on `serde_json::Value`) doesn't need to learn the
+/// runtimed type.
+fn media_to_value(content: &[MediaType]) -> Value {
+    let mut map = Map::new();
+    for mt in content {
+        match mt {
+            MediaType::Plain(s) => {
+                map.insert("text/plain".into(), Value::String(s.clone()));
+            }
+            MediaType::Html(s) => {
+                map.insert("text/html".into(), Value::String(s.clone()));
+            }
+            MediaType::Latex(s) => {
+                map.insert("text/latex".into(), Value::String(s.clone()));
+            }
+            MediaType::Javascript(s) => {
+                map.insert("application/javascript".into(), Value::String(s.clone()));
+            }
+            MediaType::Markdown(s) => {
+                map.insert("text/markdown".into(), Value::String(s.clone()));
+            }
+            MediaType::Svg(s) => {
+                map.insert("image/svg+xml".into(), Value::String(s.clone()));
+            }
+            MediaType::Png(s) => {
+                map.insert("image/png".into(), Value::String(s.clone()));
+            }
+            MediaType::Jpeg(s) => {
+                map.insert("image/jpeg".into(), Value::String(s.clone()));
+            }
+            MediaType::Gif(s) => {
+                map.insert("image/gif".into(), Value::String(s.clone()));
+            }
+            MediaType::Json(o)
+            | MediaType::GeoJson(o)
+            | MediaType::Plotly(o)
+            | MediaType::WidgetView(o)
+            | MediaType::WidgetState(o)
+            | MediaType::VegaLiteV2(o)
+            | MediaType::VegaLiteV3(o)
+            | MediaType::VegaLiteV4(o)
+            | MediaType::VegaLiteV5(o)
+            | MediaType::VegaLiteV6(o)
+            | MediaType::VegaV3(o)
+            | MediaType::VegaV4(o)
+            | MediaType::VegaV5(o)
+            | MediaType::Vdom(o) => {
+                map.insert(mt.mime_type().into(), o.clone());
+            }
+            MediaType::DataTable(boxed) => {
+                if let Ok(v) = serde_json::to_value(boxed) {
+                    map.insert(mt.mime_type().into(), v);
+                }
+            }
+            MediaType::Other((mime, value)) => {
+                map.insert(mime.clone(), value.clone());
+            }
+            // MediaType is #[non_exhaustive]; ignore variants we don't
+            // recognize. The renderer only knows about a handful anyway.
+            _ => {}
+        }
+    }
+    Value::Object(map)
+}
+
+/// Build a raw `(msg_type, content)` JSON pair from a [`JupyterMessage`].
+/// Used by the Lua router which forwards untyped frames to its callers.
+pub fn raw_msg_type_and_content(msg: &JupyterMessage) -> (String, Value) {
+    let msg_type = msg.message_type().to_string();
+    let content = serde_json::to_value(&msg.content).unwrap_or(Value::Null);
+    (msg_type, content)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use jupyter_protocol::{
+        DisplayData, ErrorOutput, InputRequest as JpInputRequest, JupyterMessage,
+        KernelInfoReply, LanguageInfo, Media, MediaType, Status, StreamContent,
+    };
 
-    fn frame(channel: &str, msg_type: &str, parent_id: &str, content: Value) -> String {
-        json!({
-            "kind": "jupyter",
-            "channel": channel,
-            "header": {"msg_type": msg_type},
-            "parent_header": {"msg_id": parent_id},
-            "content": content,
-        })
-        .to_string()
+    fn with_parent(mut m: JupyterMessage, parent_id: &str) -> JupyterMessage {
+        let mut header = m.header.clone();
+        header.msg_id = parent_id.to_string();
+        m.parent_header = Some(header);
+        m
     }
 
     #[test]
-    fn parse_stream_event() {
-        let f = frame(
-            "iopub",
-            "stream",
-            "",
-            json!({"name": "stdout", "text": "hi"}),
-        );
-        match parse_event(&f).unwrap() {
+    fn stream_event() {
+        let msg: JupyterMessage = StreamContent {
+            name: Stdio::Stdout,
+            text: "hi".into(),
+        }
+        .into();
+        match from_message(Channel::IoPub, &msg) {
             Event::Stream { name, text } => {
                 assert_eq!(name, "stdout");
                 assert_eq!(text, "hi");
@@ -245,14 +227,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_display_data_event() {
-        let f = frame(
-            "iopub",
-            "display_data",
-            "",
-            json!({"data": {"text/plain": "x"}}),
-        );
-        match parse_event(&f).unwrap() {
+    fn display_data_event() {
+        let msg: JupyterMessage = DisplayData {
+            data: Media {
+                content: vec![MediaType::Plain("x".into())],
+            },
+            metadata: Default::default(),
+            transient: None,
+        }
+        .into();
+        match from_message(Channel::IoPub, &msg) {
             Event::DisplayData { data } => {
                 assert_eq!(data["text/plain"], "x");
             }
@@ -261,151 +245,117 @@ mod tests {
     }
 
     #[test]
-    fn parse_error_event() {
-        let f = frame(
-            "iopub",
-            "error",
-            "",
-            json!({"traceback": ["line1", "line2"]}),
-        );
-        match parse_event(&f).unwrap() {
+    fn error_event_uses_traceback() {
+        let msg: JupyterMessage = ErrorOutput {
+            ename: "RuntimeError".into(),
+            evalue: "boom".into(),
+            traceback: vec!["line1".into(), "line2".into()],
+        }
+        .into();
+        match from_message(Channel::IoPub, &msg) {
             Event::Error { traceback } => assert_eq!(traceback, "line1\nline2"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
 
     #[test]
-    fn parse_error_falls_back_to_evalue_when_traceback_empty() {
-        // ark/R sends `traceback: []` and puts the message in `evalue`.
-        let f = frame(
-            "iopub",
-            "error",
-            "",
-            json!({"ename": "", "evalue": "Error:\n! boom", "traceback": []}),
-        );
-        match parse_event(&f).unwrap() {
+    fn error_event_falls_back_to_evalue() {
+        let msg: JupyterMessage = ErrorOutput {
+            ename: "".into(),
+            evalue: "Error:\n! boom".into(),
+            traceback: vec![],
+        }
+        .into();
+        match from_message(Channel::IoPub, &msg) {
             Event::Error { traceback } => assert_eq!(traceback, "Error:\n! boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
 
     #[test]
-    fn parse_error_with_ename_and_evalue() {
-        let f = frame(
-            "iopub",
-            "error",
-            "",
-            json!({"ename": "RuntimeError", "evalue": "boom", "traceback": []}),
-        );
-        match parse_event(&f).unwrap() {
+    fn error_event_combines_ename_evalue() {
+        let msg: JupyterMessage = ErrorOutput {
+            ename: "RuntimeError".into(),
+            evalue: "boom".into(),
+            traceback: vec![],
+        }
+        .into();
+        match from_message(Channel::IoPub, &msg) {
             Event::Error { traceback } => assert_eq!(traceback, "RuntimeError: boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
 
     #[test]
-    fn parse_banner_event() {
-        let f = frame("shell", "kernel_info_reply", "", json!({"banner": "hello"}));
-        match parse_event(&f).unwrap() {
+    fn banner_event() {
+        let reply = KernelInfoReply {
+            status: Default::default(),
+            protocol_version: "5.3".into(),
+            implementation: "ipykernel".into(),
+            implementation_version: "0".into(),
+            language_info: LanguageInfo {
+                name: "python".into(),
+                version: "3".into(),
+                mimetype: None,
+                file_extension: None,
+                pygments_lexer: None,
+                codemirror_mode: None,
+                nbconvert_exporter: None,
+            },
+            banner: "hello".into(),
+            help_links: vec![],
+            debugger: false,
+            error: None,
+        };
+        let msg: JupyterMessage = reply.into();
+        match from_message(Channel::Shell, &msg) {
             Event::Banner { text } => assert_eq!(text, "hello"),
             other => panic!("expected Banner, got {other:?}"),
         }
     }
 
     #[test]
-    fn parse_idle_event() {
-        let f = frame("iopub", "status", "abc", json!({"execution_state": "idle"}));
-        match parse_event(&f).unwrap() {
+    fn idle_event() {
+        let msg: JupyterMessage = Status::idle().into();
+        let msg = with_parent(msg, "abc");
+        match from_message(Channel::IoPub, &msg) {
             Event::Idle { parent_id } => assert_eq!(parent_id, "abc"),
             other => panic!("expected Idle, got {other:?}"),
         }
     }
 
     #[test]
-    fn parse_busy_status_is_other() {
-        let f = frame("iopub", "status", "abc", json!({"execution_state": "busy"}));
-        assert!(matches!(parse_event(&f).unwrap(), Event::Other));
+    fn busy_status_is_other() {
+        let msg: JupyterMessage = Status::busy().into();
+        let msg = with_parent(msg, "abc");
+        assert!(matches!(from_message(Channel::IoPub, &msg), Event::Other));
     }
 
     #[test]
-    fn parse_idle_without_parent_is_other() {
-        let f = frame("iopub", "status", "", json!({"execution_state": "idle"}));
-        assert!(matches!(parse_event(&f).unwrap(), Event::Other));
+    fn idle_without_parent_is_other() {
+        let msg: JupyterMessage = Status::idle().into();
+        assert!(matches!(from_message(Channel::IoPub, &msg), Event::Other));
     }
 
     #[test]
-    fn parse_unknown_msg_type_is_other() {
-        let f = frame("iopub", "comm_msg", "", json!({}));
-        assert!(matches!(parse_event(&f).unwrap(), Event::Other));
-    }
-
-    #[test]
-    fn parse_input_request_event() {
-        let f = frame(
-            "stdin",
-            "input_request",
-            "exec-1",
-            json!({"prompt": "enter something: ", "password": false}),
-        );
-        match parse_event(&f).unwrap() {
+    fn input_request_event() {
+        let msg: JupyterMessage = JpInputRequest {
+            prompt: "enter: ".into(),
+            password: false,
+        }
+        .into();
+        let msg = with_parent(msg, "exec-1");
+        match from_message(Channel::Stdin, &msg) {
             Event::InputRequest {
                 prompt,
                 password,
                 parent_id,
             } => {
-                assert_eq!(prompt, "enter something: ");
+                assert_eq!(prompt, "enter: ");
                 assert!(!password);
                 assert_eq!(parent_id, "exec-1");
             }
             other => panic!("expected InputRequest, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn parse_kernel_exited_frame() {
-        let raw = json!({"kind": "kernel", "exited": 0}).to_string();
-        assert!(matches!(parse_event(&raw).unwrap(), Event::KernelExited));
-    }
-
-    #[test]
-    fn parse_kernel_status_exited_frame() {
-        let raw = json!({
-            "kind": "kernel",
-            "status": {"status": "exited", "reason": "child process exited"},
-        })
-        .to_string();
-        assert!(matches!(parse_event(&raw).unwrap(), Event::KernelExited));
-    }
-
-    #[test]
-    fn parse_kernel_status_busy_is_other() {
-        let raw = json!({
-            "kind": "kernel",
-            "status": {"status": "busy", "reason": "execute_request"},
-        })
-        .to_string();
-        assert!(matches!(parse_event(&raw).unwrap(), Event::Other));
-    }
-
-    #[test]
-    fn parse_kernel_resource_usage_is_other() {
-        let raw = json!({
-            "kind": "kernel",
-            "resourceUsage": {"cpu_percent": 0, "memory_bytes": 1234},
-        })
-        .to_string();
-        assert!(matches!(parse_event(&raw).unwrap(), Event::Other));
-    }
-
-    #[test]
-    fn parse_handles_null_parent_header() {
-        let raw = serde_json::json!({
-            "channel": "iopub",
-            "header": {"msg_type": "status"},
-            "parent_header": null,
-            "content": {"execution_state": "starting"},
-        })
-        .to_string();
-        assert!(matches!(parse_event(&raw).unwrap(), Event::Other));
     }
 }

@@ -22,6 +22,7 @@ use tokio::sync::mpsc;
 
 pub type SharedWriter = Arc<Mutex<dyn Write + Send>>;
 
+#[derive(Clone)]
 pub struct Renderer {
     pub render_graphics: bool,
     pub idle_tx: mpsc::UnboundedSender<String>,
@@ -48,14 +49,9 @@ impl Renderer {
         self
     }
 
-    #[cfg(test)]
-    pub fn handle_text(&self, text: &str) -> Result<()> {
-        self.handle_event(jet_core::events::parse_event(text)?)
-    }
-
     pub fn handle_event(&self, event: Event) -> Result<()> {
         match event {
-            Event::Stream { name, text } => self.write_stream(&name, &text)?,
+            Event::Stream { name: _, text } => self.write_stream(&text)?,
             Event::DisplayData { data } => self.render_data(&data)?,
             Event::Error { traceback } => {
                 if !traceback.is_empty() {
@@ -86,7 +82,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn write_stream(&self, _name: &str, text: &str) -> Result<()> {
+    fn write_stream(&self, text: &str) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
         write!(w, "{text}")?;
         w.flush()?;
@@ -151,18 +147,6 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    fn frame(channel: &str, msg_type: &str, parent_id: &str, content: Value) -> String {
-        json!({
-            "kind": "jupyter",
-            "channel": channel,
-            "header": {"msg_type": msg_type},
-            "parent_header": {"msg_id": parent_id},
-            "content": content,
-        })
-        .to_string()
-    }
 
     #[test]
     fn renderer_writes_stream_to_injected_writer() {
@@ -170,13 +154,11 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        let f = frame(
-            "iopub",
-            "stream",
-            "",
-            json!({"name": "stdout", "text": "hello"}),
-        );
-        r.handle_text(&f).unwrap();
+        r.handle_event(Event::Stream {
+            name: "stdout".into(),
+            text: "hello".into(),
+        })
+        .unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(&*bytes, b"hello");
     }
@@ -187,13 +169,11 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        let f = frame(
-            "iopub",
-            "stream",
-            "",
-            json!({"name": "stderr", "text": "oops"}),
-        );
-        r.handle_text(&f).unwrap();
+        r.handle_event(Event::Stream {
+            name: "stderr".into(),
+            text: "oops".into(),
+        })
+        .unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), "oops");
     }
@@ -204,13 +184,10 @@ mod tests {
         let writer: SharedWriter = captured;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        let f = frame(
-            "iopub",
-            "status",
-            "msg-1",
-            json!({"execution_state": "idle"}),
-        );
-        r.handle_text(&f).unwrap();
+        r.handle_event(Event::Idle {
+            parent_id: "msg-1".into(),
+        })
+        .unwrap();
         assert_eq!(rx.try_recv().unwrap(), "msg-1");
     }
 }
