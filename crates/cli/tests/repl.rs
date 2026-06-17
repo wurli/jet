@@ -309,6 +309,151 @@ fn jet_exits_when_kernel_quits() {
     }
 }
 
+/// Locate the user-installed ark R kernelspec, or `None` if it isn't
+/// present (skip the test).
+fn ark_kernelspec() -> Option<std::path::PathBuf> {
+    let p = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join("Library/Jupyter/kernels/ark/kernel.json");
+    if p.exists() { Some(p) } else { None }
+}
+
+/// R's `quit()` cleanly closes the kernel sockets and exits. On the
+/// spawn path the waitpid watcher catches this; this test guards that
+/// path. (`jet_exits_when_kernel_quits` covers Python+ipykernel.)
+#[test]
+#[serial_test::serial]
+fn jet_exits_when_r_kernel_quits_spawn() {
+    let Some(kernel_json) = ark_kernelspec() else {
+        skip("ark kernelspec not found");
+        return;
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+
+    use std::io::Write;
+    let mut child = Command::new(bin)
+        .args(["connect", kernel_json.to_str().unwrap()])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    std::thread::sleep(Duration::from_secs(3));
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    stdin.write_all(b"quit()\n").expect("write to jet stdin");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut exited = false;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                exited = true;
+                break;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait failed: {e}"),
+        }
+    }
+    drop(stdin);
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!("jet did not exit within 15s after R kernel quit() (spawn path)");
+    }
+}
+
+/// Regression for the attach-path liveness watcher (heartbeat). With no
+/// child pid, jet relies on the heartbeat REQ/REP echo to detect that
+/// the kernel has exited; without it, `quit()` would hang the REPL
+/// indefinitely because ZMQ DEALER/SUB reads on a closed peer never
+/// error.
+#[test]
+#[serial_test::serial]
+fn jet_exits_when_r_kernel_quits_attach() {
+    let Some(kernel_json) = ark_kernelspec() else {
+        skip("ark kernelspec not found");
+        return;
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+
+    let conn = std::env::temp_dir().join(format!(
+        "jet-attach-quit-test-{:x}.json",
+        rand::thread_rng().gen::<u64>()
+    ));
+    let conn_str = conn.to_string_lossy().to_string();
+
+    // Spawn detached: get a kernel that survives jet exiting.
+    {
+        use std::io::Write;
+        let mut child = Command::new(bin)
+            .args([
+                "connect",
+                "--connection-file",
+                &conn_str,
+                "--detach",
+                kernel_json.to_str().unwrap(),
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn jet (detach)");
+        std::thread::sleep(Duration::from_secs(3));
+        let mut stdin = child.stdin.take().expect("stdin piped");
+        // ^D to exit jet without quitting the kernel.
+        stdin.write_all(&[0x04]).expect("write ^D");
+        drop(stdin);
+        let _ = child.wait();
+    }
+    assert!(
+        conn.exists(),
+        "connection file {conn_str} should still exist after --detach"
+    );
+
+    // Attach + quit().
+    use std::io::Write;
+    let mut attach = Command::new(bin)
+        .args(["attach", &conn_str])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet (attach)");
+
+    std::thread::sleep(Duration::from_secs(3));
+    let mut stdin = attach.stdin.take().expect("stdin piped");
+    stdin.write_all(b"quit()\n").expect("write quit()");
+
+    // Heartbeat poll cadence is 2s + up to 5s recv timeout, so allow
+    // generous wall-clock for the dead detection to fire.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut exited = false;
+    while Instant::now() < deadline {
+        match attach.try_wait() {
+            Ok(Some(_)) => {
+                exited = true;
+                break;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait failed: {e}"),
+        }
+    }
+    drop(stdin);
+    let _ = std::fs::remove_file(&conn);
+    if !exited {
+        let _ = attach.kill();
+        let _ = attach.wait();
+        // Also try to clear any straggler kernel.
+        let _ = std::process::Command::new("pkill")
+            .args(["-9", "-f", "ark"])
+            .status();
+        panic!(
+            "jet did not exit within 20s after R kernel quit() on attach path \
+             — heartbeat liveness watcher should have noticed the closed socket"
+        );
+    }
+}
+
 fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
     let user = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join("Library/Jupyter/kernels/python3/kernel.json");

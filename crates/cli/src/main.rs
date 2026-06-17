@@ -243,15 +243,53 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
     let mut iopub = kernel.channels.take_iopub()?;
     let mut stdin_sock = kernel.channels.take_stdin()?;
 
-    // Poll-based liveness watcher: if jet owns the child, waitpid()
-    // for it with WNOHANG once every half second. We can't use
-    // `child.wait()` because the kernel struct still owns the child
-    // (so it gets killed on Drop in the no-detach case). When the
-    // child is reapable, signal `closed` and let the kernel struct
-    // continue to handle the wait/reap.
+    // Liveness watcher.
     //
-    // Attached-mode kernels are not polled — we rely on a socket
-    // error from the kernel hanging up.
+    // - Spawn path (we own the child): waitpid(pid, WNOHANG) every
+    //   500ms. Instant, kernel-level, gives an exit status.
+    // - Attach path (no pid): heartbeat. ZMQ DEALER/SUB reads on a
+    //   peer that exited don't error — they block forever — so a
+    //   clean exit like R's `quit()` would otherwise hang jet
+    //   indefinitely. The heartbeat REQ/REP echo is what JEP 13
+    //   designed for this case.
+    if kernel.child_pid().is_none() {
+        let mut hb = kernel.channels.take_heartbeat()?;
+        let closed_for_hb = closed.clone();
+        let shutdown_for_hb = shutdown.clone();
+        tokio::spawn(async move {
+            let mut consecutive_timeouts = 0;
+            loop {
+                tokio::select! {
+                    _ = shutdown_for_hb.notified() => return,
+                    r = tokio::time::timeout(Duration::from_secs(5), hb.single_heartbeat()) => {
+                        match r {
+                            Ok(Ok(())) => {
+                                consecutive_timeouts = 0;
+                            }
+                            Ok(Err(e)) => {
+                                log::info!("heartbeat error: {e} — kernel gone");
+                                closed_for_hb.notify_one();
+                                return;
+                            }
+                            Err(_) => {
+                                consecutive_timeouts += 1;
+                                log::warn!("heartbeat timeout ({consecutive_timeouts})");
+                                if consecutive_timeouts >= 2 {
+                                    log::info!("heartbeat: kernel unresponsive, declaring dead");
+                                    closed_for_hb.notify_one();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                tokio::select! {
+                    _ = shutdown_for_hb.notified() => return,
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                }
+            }
+        });
+    }
     if let Some(pid) = kernel.child_pid() {
         let closed_for_watcher = closed.clone();
         let shutdown_for_watcher = shutdown.clone();

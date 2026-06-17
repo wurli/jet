@@ -12,8 +12,9 @@ use std::process::Stdio;
 use anyhow::{Context, Result, anyhow, bail};
 use jupyter_protocol::{ConnectionInfo, JupyterMessage};
 use jupyter_zmq_client::{
-    ClientControlConnection, ClientIoPubConnection, ClientShellConnection, ClientStdinConnection,
-    create_client_control_connection, create_client_iopub_connection,
+    ClientControlConnection, ClientHeartbeatConnection, ClientIoPubConnection,
+    ClientShellConnection, ClientStdinConnection, create_client_control_connection,
+    create_client_heartbeat_connection, create_client_iopub_connection,
     create_client_shell_connection_with_identity, create_client_stdin_connection_with_identity,
     peer_identity_for_session,
 };
@@ -137,6 +138,7 @@ pub struct Channels {
     pub iopub: Option<ClientIoPubConnection>,
     pub stdin: Option<ClientStdinConnection>,
     pub control: Option<ClientControlConnection>,
+    pub heartbeat: Option<ClientHeartbeatConnection>,
 }
 
 impl Channels {
@@ -154,6 +156,11 @@ impl Channels {
         self.stdin
             .take()
             .ok_or_else(|| anyhow!("stdin channel already taken"))
+    }
+    pub fn take_heartbeat(&mut self) -> Result<ClientHeartbeatConnection> {
+        self.heartbeat
+            .take()
+            .ok_or_else(|| anyhow!("heartbeat channel already taken"))
     }
 }
 
@@ -231,6 +238,11 @@ impl Kernel {
     /// the kernel.
     pub async fn attach(connection_path: &Path) -> Result<Self> {
         let info = connection_file::read(connection_path)?;
+        // ZMQ DEALER/SUB sockets connect to dead endpoints without
+        // complaint and just queue forever, so probe the shell port
+        // with a plain TCP connect first to fail fast when the kernel
+        // recorded in the connection file is no longer alive.
+        probe_kernel_alive(&info).await?;
         let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
         let channels = connect_channels(&info, &session_id).await?;
         let log_path = log_path_for(connection_path);
@@ -358,6 +370,23 @@ impl Kernel {
     }
 }
 
+/// Quick liveness check for an attach: TCP-connect to the shell port
+/// with a short timeout. Returns `Err` if the kernel's no longer
+/// listening, so `attach_or_spawn` can fall through to spawn.
+async fn probe_kernel_alive(info: &ConnectionInfo) -> Result<()> {
+    use jupyter_protocol::Transport;
+    if !matches!(info.transport, Transport::TCP) {
+        return Ok(());
+    }
+    let addr = format!("{}:{}", info.ip, info.shell_port);
+    let connect = tokio::net::TcpStream::connect(&addr);
+    match tokio::time::timeout(std::time::Duration::from_millis(200), connect).await {
+        Ok(Ok(_stream)) => Ok(()),
+        Ok(Err(e)) => Err(anyhow!("kernel not reachable at {addr}: {e}")),
+        Err(_) => Err(anyhow!("kernel probe timed out at {addr}")),
+    }
+}
+
 async fn connect_channels(info: &ConnectionInfo, session_id: &str) -> Result<Channels> {
     let identity =
         peer_identity_for_session(session_id).map_err(|e| anyhow!("peer_identity: {e}"))?;
@@ -374,11 +403,15 @@ async fn connect_channels(info: &ConnectionInfo, session_id: &str) -> Result<Cha
     let control = create_client_control_connection(info, session_id)
         .await
         .map_err(|e| anyhow!("control connect: {e}"))?;
+    let heartbeat = create_client_heartbeat_connection(info)
+        .await
+        .map_err(|e| anyhow!("heartbeat connect: {e}"))?;
     Ok(Channels {
         shell: Some(shell),
         iopub: Some(iopub),
         stdin: Some(stdin),
         control: Some(control),
+        heartbeat: Some(heartbeat),
     })
 }
 
