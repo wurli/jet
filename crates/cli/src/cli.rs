@@ -27,6 +27,14 @@ pub enum Command {
 }
 
 #[derive(Parser, Debug)]
+pub struct GlobalArgs {
+    /// File to write logs to. If unset, logging is disabled.
+    /// Log level is controlled with `RUST_LOG` (e.g. `RUST_LOG=jet=trace`).
+    #[arg(long, global = true)]
+    pub log: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
 pub struct ConnectArgs {
     /// Path to a Jupyter `kernel.json` kernelspec. Argv and language are
     /// taken from the spec; `{connection_file}` placeholders are
@@ -53,10 +61,8 @@ pub struct ConnectArgs {
     #[arg(long)]
     pub no_graphics: bool,
 
-    /// File to write logs to. If unset, logging is disabled.
-    /// Log level is controlled with `RUST_LOG` (e.g. `RUST_LOG=jet=trace`).
-    #[arg(long)]
-    pub log: Option<PathBuf>,
+    #[command(flatten)]
+    pub global: GlobalArgs,
 }
 
 #[derive(Parser, Debug)]
@@ -70,7 +76,6 @@ pub struct AttachArgs {
     #[arg(long)]
     pub no_graphics: bool,
 
-    /// File to write logs to. If unset, logging is disabled.
-    #[arg(long)]
-    pub log: Option<PathBuf>,
+    #[command(flatten)]
+    pub global: GlobalArgs,
 }

@@ -178,7 +178,7 @@ fn default_persistent_path() -> PathBuf {
 }
 
 async fn run_connect(args: ConnectArgs) -> Result<()> {
-    init_logger(args.log.as_deref());
+    init_logger(args.global.log.as_deref());
 
     let spec = jet_core::kernel::KernelSpec::load(&args.kernelspec)?;
     log::info!(
@@ -209,7 +209,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 }
 
 async fn run_attach(args: AttachArgs) -> Result<()> {
-    init_logger(args.log.as_deref());
+    init_logger(args.global.log.as_deref());
     let mut kernel = Kernel::attach(&args.connection_file).await?;
     let render_graphics = !args.no_graphics;
     drive_repl(&mut kernel, render_graphics).await?;
