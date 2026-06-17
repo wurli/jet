@@ -1,295 +1,248 @@
-//! Kernel lifecycle: start, shutdown, interrupt, list.
+//! Kernel lifecycle: start, attach, shutdown, interrupt, list.
 
 use anyhow::Context;
-use futures_util::StreamExt;
-use jet_core::jupyter;
-use jet_core::kallichore::{Channel, Client, WsStream};
-use jet_core::kernel::KernelSpec;
+use jet_core::events::{Channel, Event, from_message, raw_msg_type_and_content};
+use jet_core::jupyter_protocol::{JupyterMessage, KernelInfoRequest};
+use jet_core::kernel::{Kernel, KernelSpec};
 use mlua::prelude::*;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio_tungstenite::tungstenite::Message;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::router::{Frame, FrameRouter};
 use crate::runtime::{KERNELS, KernelHandle, get, rt};
 
 /// `jet.start_kernel(spec_path) -> (session_id, info)`
-///
-/// Loads the kernelspec, joins-or-spawns kcserver, creates+starts a session,
-/// performs `kernel_info_request`, and returns the kallichore session id
-/// plus the kernel's `kernel_info_reply.content` table.
 pub fn start_kernel(lua: &Lua, spec_path: String) -> LuaResult<(String, LuaValue)> {
     let spec = KernelSpec::load(&PathBuf::from(&spec_path))
         .with_context(|| format!("loading kernelspec {spec_path}"))
         .into_lua_err()?;
 
     let (session_id, info, handle) = rt()
-        .block_on(start_kernel_async(spec))
+        .block_on(async move { boot_kernel(Kernel::spawn(&spec, None).await?).await })
         .into_lua_err()?;
 
-    KERNELS
-        .lock()
-        .unwrap()
-        .insert(session_id.clone(), handle);
-
+    KERNELS.lock().unwrap().insert(session_id.clone(), handle);
     Ok((session_id, lua.to_value(&info)?))
 }
 
-async fn start_kernel_async(
-    spec: KernelSpec,
+/// `jet.attach_kernel(connection_file_path) -> (session_id, info)`
+pub fn attach_kernel(lua: &Lua, connection_file: String) -> LuaResult<(String, LuaValue)> {
+    let path = PathBuf::from(&connection_file);
+    let (session_id, info, handle) = rt()
+        .block_on(async move { boot_kernel(Kernel::attach(&path).await?).await })
+        .into_lua_err()?;
+
+    KERNELS.lock().unwrap().insert(session_id.clone(), handle);
+    Ok((session_id, lua.to_value(&info)?))
+}
+
+/// Move all four channel halves out of the kernel, send
+/// `kernel_info_request` synchronously, then spawn the long-running
+/// reader/writer tasks and return a populated [`KernelHandle`]. Used
+/// by both `start_kernel` and `attach_kernel`.
+async fn boot_kernel(
+    mut kernel: Kernel,
 ) -> anyhow::Result<(String, Value, Arc<KernelHandle>)> {
-    let kcserver = std::env::var("JET_KCSERVER").unwrap_or_else(|_| "kcserver".to_string());
-    // No persistent kcfile from Lua callers — they get a fresh per-session
-    // kcserver. Multi-kernel reuse will come when we wire kc files in.
-    let client = Client::spawn(&kcserver, None, false).await?;
+    let session_id = kernel.session_id.clone();
 
-    let session_id = format!(
-        "jet-{:x}",
-        rand::random::<u64>(),
-    );
-    let display_name = spec.display_name.as_deref().unwrap_or("jet");
-    client
-        .create_session(
-            &session_id,
-            display_name,
-            &spec.language,
-            &spec.argv,
-            &spec.env,
-            spec.interrupt_mode,
-        )
-        .await?;
+    let mut shell = kernel
+        .channels
+        .shell
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("shell channel missing"))?;
+    let iopub = kernel
+        .channels
+        .iopub
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("iopub channel missing"))?;
+    let stdin_sock = kernel
+        .channels
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("stdin channel missing"))?;
 
-    let ws = client.open_channels(&session_id).await?;
-    let (sink, stream) = ws.split();
-    let mut channel = Channel::new(sink);
+    // kernel_info_request: send + wait for reply on the still-borrowed
+    // shell socket, before spawning the long-running shell task.
+    let info_req: JupyterMessage = KernelInfoRequest {}.into();
+    let info_id = info_req.header.msg_id.clone();
+    shell
+        .send(info_req)
+        .await
+        .map_err(|e| anyhow::anyhow!("shell.send: {e}"))?;
+    let info = match tokio::time::timeout(
+        Duration::from_secs(10),
+        await_kernel_info(&mut shell, &info_id),
+    )
+    .await
+    {
+        Ok(r) => r?,
+        Err(_) => anyhow::bail!("timed out waiting for kernel_info_reply"),
+    };
 
-    client.start_session(&session_id).await?;
-
-    // Send kernel_info_request and watch for its reply on the stream side
-    // BEFORE we hand the stream off to the per-kernel reader task. This
-    // way Lua callers see a fully booted kernel by the time start_kernel
-    // returns.
-    let info_id = jupyter::new_msg_id();
-    let info_req = jupyter::message("shell", &info_id, "kernel_info_request", json!({}));
-    channel.send(&info_req).await?;
-    let info = await_kernel_info_reply(stream, &info_id, Duration::from_secs(10)).await?;
-
-    // info.0 = the parsed content; info.1 = the WsStream handed back to us
-    // post-await so we can spawn the reader on the same connection.
-    let (info_content, stream) = info;
+    let (shell_tx, shell_rx) = tokio::sync::mpsc::unbounded_channel::<JupyterMessage>();
+    let (stdin_tx, stdin_rx) = tokio::sync::mpsc::unbounded_channel::<JupyterMessage>();
 
     let router = Arc::new(FrameRouter::new());
-    spawn_reader(stream, router.clone());
+
+    spawn_shell_loop(shell, shell_rx, router.clone());
+    spawn_iopub_reader(iopub, router.clone());
+    spawn_stdin_loop(stdin_sock, stdin_rx, router.clone());
 
     let handle = Arc::new(KernelHandle {
-        client: Arc::new(client),
-        channel: Arc::new(tokio::sync::Mutex::new(channel)),
+        kernel: Arc::new(tokio::sync::Mutex::new(kernel)),
+        shell_tx,
+        stdin_tx,
         router,
         session_id: session_id.clone(),
     });
-    Ok((session_id, info_content, handle))
+    Ok((session_id, info, handle))
 }
 
-/// Drain the WsStream until the `kernel_info_reply` for `expected_id`
-/// arrives, then return its content alongside the (still-open) stream so
-/// the caller can hand it to the long-running reader task.
-async fn await_kernel_info_reply(
-    mut stream: futures_util::stream::SplitStream<WsStream>,
+async fn await_kernel_info(
+    shell: &mut jet_core::jupyter_zmq_client::ClientShellConnection,
     expected_id: &str,
-    timeout: Duration,
-) -> anyhow::Result<(Value, futures_util::stream::SplitStream<WsStream>)> {
-    let deadline = tokio::time::Instant::now() + timeout;
+) -> anyhow::Result<Value> {
     loop {
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            anyhow::bail!("timed out waiting for kernel_info_reply");
+        let msg = shell
+            .read()
+            .await
+            .map_err(|e| anyhow::anyhow!("shell.read: {e}"))?;
+        let parent = msg
+            .parent_header
+            .as_ref()
+            .map(|h| h.msg_id.as_str())
+            .unwrap_or("");
+        if parent == expected_id && msg.message_type() == "kernel_info_reply" {
+            return Ok(serde_json::to_value(&msg.content)?);
         }
-        match tokio::time::timeout(remaining, stream.next()).await {
-            Ok(Some(Ok(Message::Text(t)))) => {
-                let v: Value = match serde_json::from_str(&t) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
-                let parent = v
-                    .pointer("/parent_header/msg_id")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("");
-                let msg_type = v
-                    .pointer("/header/msg_type")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("");
-                if parent == expected_id && msg_type == "kernel_info_reply" {
-                    let content = v.get("content").cloned().unwrap_or(Value::Null);
-                    return Ok((content, stream));
-                }
-                // Drop everything else during boot — we're not registered
-                // with the router yet, and the caller doesn't see this
-                // chatter.
-            }
-            Ok(Some(Ok(_))) => continue,
-            Ok(Some(Err(e))) => anyhow::bail!("ws error during boot: {e}"),
-            Ok(None) => anyhow::bail!("websocket closed before kernel_info_reply"),
-            Err(_) => anyhow::bail!("timed out waiting for kernel_info_reply"),
-        }
+        // Otherwise drop the message — boot-time chatter we don't show.
     }
 }
 
-/// Spawn the long-running per-kernel reader. Frames go through
-/// `parse_event` for the idle/exited cues; everything else is forwarded
-/// to the router as a raw `(msg_type, content)` pair so Lua sees the full
-/// kernel payload.
-fn spawn_reader(
-    stream: futures_util::stream::SplitStream<WsStream>,
+fn spawn_shell_loop(
+    mut shell: jet_core::jupyter_zmq_client::ClientShellConnection,
+    mut send_rx: UnboundedReceiver<JupyterMessage>,
     router: Arc<FrameRouter>,
 ) {
     rt().spawn(async move {
-        let mut stream = stream;
-        while let Some(msg) = stream.next().await {
-            let t = match msg {
-                Ok(Message::Text(t)) => t,
-                Ok(Message::Close(_)) => break,
-                Ok(_) => continue,
-                Err(e) => {
-                    log::warn!("ws error: {e}");
-                    break;
-                }
-            };
-            let v: Value = match serde_json::from_str(&t) {
-                Ok(v) => v,
-                Err(e) => {
-                    log::warn!("frame parse failed: {e}");
-                    continue;
-                }
-            };
-            // Only act on jupyter-kind frames; ignore kernel-lifecycle
-            // (`kind: "kernel"`) noise except for the exited signal, which
-            // we treat as "tear everything down."
-            let kind = v.get("kind").and_then(|s| s.as_str()).unwrap_or("");
-            if kind == "kernel" {
-                let exited_status = v
-                    .pointer("/status/status")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("");
-                if v.get("exited").is_some() || exited_status == "exited" {
-                    log::info!("kernel exited; reader stopping");
-                    break;
-                }
-                continue;
+        loop {
+            tokio::select! {
+                send = send_rx.recv() => match send {
+                    Some(msg) => {
+                        if let Err(e) = shell.send(msg).await {
+                            log::warn!("shell.send: {e}");
+                            return;
+                        }
+                    }
+                    None => return,
+                },
+                read = shell.read() => match read {
+                    Ok(msg) => dispatch(&router, Channel::Shell, &msg),
+                    Err(e) => {
+                        log::warn!("shell.read: {e}");
+                        return;
+                    }
+                },
             }
-            let parent_id = v
-                .pointer("/parent_header/msg_id")
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string());
-            let msg_type = v
-                .pointer("/header/msg_type")
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            let channel = v.get("channel").and_then(|s| s.as_str()).unwrap_or("");
-            let content = v.get("content").cloned().unwrap_or(Value::Null);
-
-            if channel == "iopub"
-                && msg_type == "status"
-                && content
-                    .get("execution_state")
-                    .and_then(|s| s.as_str())
-                    == Some("idle")
-            {
-                if let Some(pid) = parent_id {
-                    router.dispatch(None, Frame::Idle { parent_msg_id: pid });
-                }
-                continue;
-            }
-
-            router.dispatch(
-                parent_id.as_deref(),
-                Frame::Content { msg_type, content },
-            );
         }
     });
 }
 
-/// `jet.shutdown_kernel(session_id)` — graceful `shutdown_request` over
-/// control, then DELETE the session record. Mirrors `jet stop` in the CLI.
+fn spawn_iopub_reader(
+    mut iopub: jet_core::jupyter_zmq_client::ClientIoPubConnection,
+    router: Arc<FrameRouter>,
+) {
+    rt().spawn(async move {
+        loop {
+            match iopub.read().await {
+                Ok(msg) => dispatch(&router, Channel::IoPub, &msg),
+                Err(e) => {
+                    log::warn!("iopub.read: {e}");
+                    return;
+                }
+            }
+        }
+    });
+}
+
+fn spawn_stdin_loop(
+    mut stdin_sock: jet_core::jupyter_zmq_client::ClientStdinConnection,
+    mut send_rx: UnboundedReceiver<JupyterMessage>,
+    router: Arc<FrameRouter>,
+) {
+    rt().spawn(async move {
+        loop {
+            tokio::select! {
+                send = send_rx.recv() => match send {
+                    Some(msg) => {
+                        if let Err(e) = stdin_sock.send(msg).await {
+                            log::warn!("stdin.send: {e}");
+                            return;
+                        }
+                    }
+                    None => return,
+                },
+                read = stdin_sock.read() => match read {
+                    Ok(msg) => dispatch(&router, Channel::Stdin, &msg),
+                    Err(e) => {
+                        log::warn!("stdin.read: {e}");
+                        return;
+                    }
+                },
+            }
+        }
+    });
+}
+
+/// Convert one message into router frames. Idle is its own terminal
+/// signal; everything else becomes a `Content` frame keyed by parent_id.
+fn dispatch(router: &FrameRouter, channel: Channel, msg: &JupyterMessage) {
+    let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
+    if let Event::Idle { parent_id } = from_message(channel, msg) {
+        router.dispatch(None, Frame::Idle { parent_msg_id: parent_id });
+        return;
+    }
+    let (msg_type, content) = raw_msg_type_and_content(msg);
+    router.dispatch(parent_id.as_deref(), Frame::Content { msg_type, content });
+}
+
+/// `jet.shutdown_kernel(session_id)`
 pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
     rt()
-        .block_on(async move {
-            // Best-effort graceful shutdown: send shutdown_request on the
-            // control channel, wait briefly, then ask kallichore to delete
-            // the session record. Errors are logged but don't propagate
-            // unless the whole flow fails.
-            let msg_id = jupyter::new_msg_id();
-            let req = jupyter::message(
-                "control",
-                &msg_id,
-                "shutdown_request",
-                json!({ "restart": false }),
-            );
-            if let Err(e) = handle.channel.lock().await.send(&req).await {
-                log::warn!("shutdown_request send failed: {e}");
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            let _ = handle.channel.lock().await.close().await;
-            // If the kernel didn't honor shutdown_request, kill outright.
-            let _ = handle.client.kill_session(&handle.session_id).await;
-            handle
-                .client
-                .delete_session(&handle.session_id)
-                .await
-                .ok();
-            anyhow::Ok(())
-        })
+        .block_on(async move { handle.kernel.lock().await.shutdown().await })
         .into_lua_err()?;
     KERNELS.lock().unwrap().remove(&session_id);
     Ok(())
 }
 
-/// `jet.interrupt(session_id)` — POST `/sessions/{id}/interrupt`. Reply
-/// shape from the kernel (KeyboardInterrupt error → idle) flows through
-/// the existing execute_code poll closure.
+/// `jet.interrupt(session_id)`
 pub fn interrupt(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
     rt()
-        .block_on(handle.client.interrupt_session(&handle.session_id))
+        .block_on(async move { handle.kernel.lock().await.interrupt().await })
         .into_lua_err()
 }
 
-/// `jet.list_running_kernels()` — `{ [session_id] = { language, ... }, ... }`
-/// from kallichore's view. Pulls live data, not the local registry, so any
-/// sessions another client created on the same kcserver show up too.
+/// `jet.list_running_kernels()` — local registry only. Without a
+/// supervisor, jet_lua only knows about kernels it itself started or
+/// attached to in this process.
 pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
-    // Without a registered local kernel there's no kcserver to query, so
-    // pick any one and ask it. If none registered, return empty.
-    let handle = {
-        let map = KERNELS.lock().unwrap();
-        map.values().next().cloned()
-    };
     let table = lua.create_table()?;
-    let Some(handle) = handle else {
-        return Ok(table);
-    };
-    let sessions = rt()
-        .block_on(handle.client.list_sessions())
-        .into_lua_err()?;
-    for s in sessions {
+    let map = KERNELS.lock().unwrap();
+    for id in map.keys() {
         let entry = lua.create_table()?;
-        entry.set("language", s.language.clone())?;
-        entry.set("display_name", s.display_name.to_string())?;
-        entry.set("status", s.status.to_string())?;
-        if let Some(pid) = s.process_id {
-            entry.set("pid", pid)?;
-        }
-        table.set(s.session_id.clone(), entry)?;
+        entry.set("status", "running")?;
+        table.set(id.clone(), entry)?;
     }
     Ok(table)
 }
 
-/// `jet.list_available_kernels()` — `{ [path] = KernelSpec }` discovered
-/// under the standard Jupyter directories. Scans the same locations
-/// `jupyter kernelspec list` would.
+/// `jet.list_available_kernels()` — kernelspecs discovered under the
+/// standard Jupyter directories.
 pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let table = lua.create_table()?;
     for (path, spec) in discover_kernelspecs() {
@@ -308,8 +261,8 @@ fn discover_kernelspecs() -> Vec<(PathBuf, KernelSpec)> {
     let mut roots: Vec<PathBuf> = Vec::new();
     if let Ok(home) = std::env::var("HOME") {
         let h = PathBuf::from(home);
-        roots.push(h.join("Library/Jupyter/kernels")); // macOS
-        roots.push(h.join(".local/share/jupyter/kernels")); // Linux
+        roots.push(h.join("Library/Jupyter/kernels"));
+        roots.push(h.join(".local/share/jupyter/kernels"));
         roots.push(h.join(".jupyter/kernels"));
     }
     roots.push(PathBuf::from("/usr/local/share/jupyter/kernels"));

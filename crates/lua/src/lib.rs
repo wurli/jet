@@ -28,6 +28,10 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     let exports = lua.create_table()?;
     exports.set("start_kernel", lua.create_function(api::lifecycle::start_kernel)?)?;
     exports.set(
+        "attach_kernel",
+        lua.create_function(api::lifecycle::attach_kernel)?,
+    )?;
+    exports.set(
         "shutdown_kernel",
         lua.create_function(api::lifecycle::shutdown_kernel)?,
     )?;
