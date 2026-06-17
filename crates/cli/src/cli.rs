@@ -50,11 +50,9 @@ pub struct ConnectArgs {
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
 
-    /// Leave the spawned kernel running after jet exits, so a later
-    /// `jet attach <connection-file>` can reuse it. Implies a stable
-    /// connection-file path; if `--connection-file` is unset, jet picks
-    /// one under `$TMPDIR/jet/`.
-    #[arg(long)]
+    /// Leave the spawned kernel running after jet exits, so a later `jet
+    /// attach <connection-file>` can reuse it. Requires `--connection-file`.
+    #[arg(long, requires = "connection_file")]
     pub detach: bool,
 
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.

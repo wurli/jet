@@ -132,13 +132,19 @@ pub struct Channels {
 
 impl Channels {
     pub fn take_shell(&mut self) -> Result<ClientShellConnection> {
-        self.shell.take().ok_or_else(|| anyhow!("shell channel already taken"))
+        self.shell
+            .take()
+            .ok_or_else(|| anyhow!("shell channel already taken"))
     }
     pub fn take_iopub(&mut self) -> Result<ClientIoPubConnection> {
-        self.iopub.take().ok_or_else(|| anyhow!("iopub channel already taken"))
+        self.iopub
+            .take()
+            .ok_or_else(|| anyhow!("iopub channel already taken"))
     }
     pub fn take_stdin(&mut self) -> Result<ClientStdinConnection> {
-        self.stdin.take().ok_or_else(|| anyhow!("stdin channel already taken"))
+        self.stdin
+            .take()
+            .ok_or_else(|| anyhow!("stdin channel already taken"))
     }
 }
 
@@ -211,6 +217,16 @@ impl Kernel {
         })
     }
 
+    pub async fn attach_or_spawn(spec: &KernelSpec, connection_path: &Path) -> Result<Self> {
+        match Self::attach(&connection_path).await {
+            Ok(kernel) => Ok(kernel),
+            Err(e) => {
+                log::info!("Failed to connect to existing kernel at {connection_path:?}: {e}");
+                Self::spawn(spec, Some(connection_path.to_path_buf())).await
+            }
+        }
+    }
+
     /// Stop killing the child on drop. Use before exiting `jet` when the
     /// caller wants the kernel to outlive the process. No-op for attached
     /// kernels.
@@ -254,8 +270,7 @@ impl Kernel {
         match self.interrupt_mode {
             InterruptMode::Signal => self.interrupt_signal(),
             InterruptMode::Message => {
-                let msg: JupyterMessage =
-                    jupyter_protocol::InterruptRequest::default().into();
+                let msg: JupyterMessage = jupyter_protocol::InterruptRequest::default().into();
                 let control = self
                     .channels
                     .control

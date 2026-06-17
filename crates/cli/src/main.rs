@@ -4,7 +4,6 @@
 // the four ZMQ channels (shell, iopub, stdin, control), and renders PNG
 // outputs inline using the kitty graphics protocol.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -12,9 +11,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use clap::Parser;
 use jet_core::events::{Channel, InputRequest, from_message};
-use jet_core::jupyter_protocol::{
-    ExecuteRequest, InputReply, JupyterMessage, KernelInfoRequest,
-};
+use jet_core::jupyter_protocol::{ExecuteRequest, InputReply, JupyterMessage, KernelInfoRequest};
 use jet_core::kernel::Kernel;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -164,19 +161,6 @@ struct Pipes {
     closed: Arc<tokio::sync::Notify>,
 }
 
-/// Default location for a `--detach`-style connection file when the user
-/// didn't pick one. Lives under TMPDIR (macOS) / /tmp (linux) and persists
-/// past jet's exit so a future `jet attach` can find it.
-fn default_persistent_path() -> PathBuf {
-    use rand::Rng;
-    let dir = std::env::temp_dir().join("jet");
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join(format!(
-        "kernel-{:x}.json",
-        rand::thread_rng().gen::<u64>()
-    ))
-}
-
 async fn run_connect(args: ConnectArgs) -> Result<()> {
     init_logger(args.global.log.as_deref());
 
@@ -189,10 +173,15 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let conn_path = match (args.connection_file.clone(), args.detach) {
         (Some(p), _) => Some(p),
-        (None, true) => Some(default_persistent_path()),
         (None, false) => None,
+        _ => unreachable!(),
     };
-    let mut kernel = Kernel::spawn(&spec, conn_path.clone()).await?;
+
+    let mut kernel = if let Some(ref path) = conn_path {
+        Kernel::attach_or_spawn(&spec, path).await?
+    } else {
+        Kernel::spawn(&spec, conn_path.clone()).await?
+    };
 
     let render_graphics = !args.no_graphics;
     drive_repl(&mut kernel, render_graphics).await?;
@@ -200,7 +189,10 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     if args.detach {
         kernel.detach();
         if let Some(p) = conn_path {
-            eprintln!("[jet] kernel detached. reattach with: jet attach {}", p.display());
+            eprintln!(
+                "[jet] kernel detached. reattach with: jet attach {}",
+                p.display()
+            );
         }
     } else {
         let _ = kernel.shutdown().await;
@@ -394,7 +386,14 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
     let info_req: JupyterMessage = KernelInfoRequest {}.into();
     let info_id = info_req.header.msg_id.clone();
     let _ = pipes.shell_tx.send(info_req);
-    match wait_for_idle(&mut idle_rx, &mut input_rx, &info_id, Duration::from_secs(10)).await {
+    match wait_for_idle(
+        &mut idle_rx,
+        &mut input_rx,
+        &info_id,
+        Duration::from_secs(10),
+    )
+    .await
+    {
         WaitResult::Idle | WaitResult::Timeout => {}
         WaitResult::Closed => {
             shutdown.notify_waiters();
@@ -532,4 +531,3 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
     shutdown.notify_waiters();
     Ok(())
 }
-
