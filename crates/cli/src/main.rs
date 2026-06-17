@@ -397,7 +397,7 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
     match wait_for_idle(&mut idle_rx, &mut input_rx, &info_id, Duration::from_secs(10)).await {
         WaitResult::Idle | WaitResult::Timeout => {}
         WaitResult::Closed => {
-            shutdown.notify_one();
+            shutdown.notify_waiters();
             return Ok(());
         }
         WaitResult::Input(_) => {}
@@ -415,7 +415,7 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
         let line = tokio::select! {
             _ = pipes.closed.notified() => {
                 eprintln!("\x1b[31m[jet] kernel exited\x1b[0m");
-                shutdown.notify_one();
+                shutdown.notify_waiters();
                 std::process::exit(0);
             }
             joined = read => {
@@ -462,6 +462,7 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
                     loop {
                         tokio::select! {
                             r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id, Duration::from_secs(300)) => return r,
+                            _ = pipes.closed.notified() => return WaitResult::Closed,
                             _ = intr_rx.recv() => {
                                 if let Err(e) = kernel.interrupt().await {
                                     eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
@@ -522,13 +523,13 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
                 eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m");
             }
             WaitResult::Closed => {
-                shutdown.notify_one();
+                shutdown.notify_waiters();
                 std::process::exit(0);
             }
         }
     }
 
-    shutdown.notify_one();
+    shutdown.notify_waiters();
     Ok(())
 }
 

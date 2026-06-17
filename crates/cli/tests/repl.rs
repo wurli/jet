@@ -200,6 +200,66 @@ fn jet_exits_on_eof() {
     panic!("jet did not exit within 10s after stdin closed");
 }
 
+/// Regression: ark's `quit()` (and any kernel that exits mid-execute
+/// without sending an idle status) used to hang jet for 300s because
+/// the inner `wait_for_idle` loop didn't watch the `closed` notify.
+/// Simulate the same shape with `os._exit(0)` on ipykernel — it skips
+/// the normal shutdown handshake, so no idle ever arrives.
+#[test]
+#[serial_test::serial]
+fn jet_exits_when_kernel_dies_mid_execute() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+
+    use std::io::Write;
+    let mut child = Command::new(bin)
+        .args(["connect", kernel_json.to_str().unwrap()])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    std::thread::sleep(Duration::from_secs(3));
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    stdin
+        .write_all(b"import os; os._exit(0)\n")
+        .expect("write to jet stdin");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut exited = false;
+    while Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                exited = true;
+                break;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => panic!("try_wait failed: {e}"),
+        }
+    }
+    drop(stdin);
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!(
+            "jet did not exit within 10s after the kernel died mid-execute \
+             without sending idle — wait_for_idle is probably blocking on \
+             a Closed signal it never receives"
+        );
+    }
+}
+
 #[test]
 #[serial_test::serial]
 fn jet_exits_when_kernel_quits() {
