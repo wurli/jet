@@ -420,24 +420,29 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
         closed: closed.clone(),
     };
 
-    // Banner: kernel_info_request, wait for its idle.
-    let info_req: JupyterMessage = KernelInfoRequest {}.into();
-    let info_id = info_req.header.msg_id.clone();
-    let _ = pipes.shell_tx.send(info_req);
-    match wait_for_idle(
-        &mut idle_rx,
-        &mut input_rx,
-        &info_id,
-        Duration::from_secs(10),
-    )
-    .await
-    {
-        WaitResult::Idle | WaitResult::Timeout => {}
-        WaitResult::Closed => {
-            shutdown.notify_waiters();
-            return Ok(());
+    // Banner: kernel_info_request, wait for its idle. Skipped on attach
+    // — the kernel's already past startup and the second client's banner
+    // round-trip just produces a duplicate idle status with nothing
+    // useful to render.
+    if !kernel.is_attached() {
+        let info_req: JupyterMessage = KernelInfoRequest {}.into();
+        let info_id = info_req.header.msg_id.clone();
+        let _ = pipes.shell_tx.send(info_req);
+        match wait_for_idle(
+            &mut idle_rx,
+            &mut input_rx,
+            &info_id,
+            Duration::from_secs(10),
+        )
+        .await
+        {
+            WaitResult::Idle | WaitResult::Timeout => {}
+            WaitResult::Closed => {
+                shutdown.notify_waiters();
+                return Ok(());
+            }
+            WaitResult::Input(_) => {}
         }
-        WaitResult::Input(_) => {}
     }
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
