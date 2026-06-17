@@ -118,6 +118,15 @@ impl Drop for ConnectionPath {
     }
 }
 
+/// Sibling log file path for a given connection file: `foo.json` →
+/// `foo.json.log`. Persistent across detach so a later `attach` can tail
+/// it.
+pub fn log_path_for(connection_path: &Path) -> PathBuf {
+    let mut s = connection_path.as_os_str().to_owned();
+    s.push(".log");
+    PathBuf::from(s)
+}
+
 /// The four ZMQ client connections. Stored as `Option`s so callers can
 /// `take_*()` ownership of one socket for a long-running task without
 /// borrowing the whole `Kernel`. Once taken, the slot stays `None`; the
@@ -156,6 +165,11 @@ pub struct Kernel {
     pub session_id: String,
     pub interrupt_mode: InterruptMode,
     pub channels: Channels,
+    /// Path to the on-disk log file capturing the kernel's stderr.
+    /// `Some` whenever the connection file lives on a persistent path
+    /// (so it survives detach for later inspection / a future attach);
+    /// `None` for temp-path spawns. Cleaned up on graceful shutdown.
+    pub log_file_path: Option<PathBuf>,
 }
 
 impl Kernel {
@@ -172,7 +186,20 @@ impl Kernel {
         };
         let info = connection_file::generate(conn_path.as_path())?;
 
+        // Persistent connection paths get a sibling log file so a later
+        // `jet attach` can tail the kernel's stderr. Temp/owned paths
+        // keep stderr in-process: nothing else will ever attach to them.
+        let log_file_path = match &conn_path {
+            ConnectionPath::Persistent(p) => Some(log_path_for(p)),
+            ConnectionPath::OwnedTemp(_) => None,
+        };
+
         let mut command = build_kernel_command(spec, conn_path.as_path())?;
+        if let Some(p) = &log_file_path {
+            let f = std::fs::File::create(p)
+                .with_context(|| format!("creating kernel log file {}", p.display()))?;
+            command.stderr(Stdio::from(f));
+        }
         // Put the kernel in its own process group so a ^C at the tty
         // (cooked-mode SIGINT to the foreground pgrp) doesn't reach it
         // until we explicitly forward via interrupt().
@@ -195,6 +222,7 @@ impl Kernel {
             session_id,
             interrupt_mode: spec.interrupt_mode,
             channels,
+            log_file_path,
         })
     }
 
@@ -205,6 +233,8 @@ impl Kernel {
         let info = connection_file::read(connection_path)?;
         let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
         let channels = connect_channels(&info, &session_id).await?;
+        let log_path = log_path_for(connection_path);
+        let log_file_path = log_path.exists().then_some(log_path);
         Ok(Self {
             child: None,
             _connection_path: ConnectionPath::Persistent(connection_path.to_path_buf()),
@@ -214,6 +244,7 @@ impl Kernel {
             // case appears.
             interrupt_mode: InterruptMode::Signal,
             channels,
+            log_file_path,
         })
     }
 
@@ -317,6 +348,12 @@ impl Kernel {
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        // Clean up the on-disk stderr log on graceful shutdown. Detach
+        // skips this path, so detached kernels leave the log in place
+        // for a future `attach` to tail.
+        if let Some(p) = self.log_file_path.take() {
+            let _ = std::fs::remove_file(p);
+        }
         Ok(())
     }
 }
@@ -352,7 +389,7 @@ fn build_kernel_command(spec: &KernelSpec, connection_path: &Path) -> Result<Com
     let mut cmd = Command::new(&spec.argv[0]);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit());
+        .stderr(Stdio::null());
     for arg in &spec.argv[1..] {
         if arg == "{connection_file}" {
             cmd.arg(connection_path.as_os_str());
