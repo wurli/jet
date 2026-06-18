@@ -224,7 +224,9 @@ async fn drive_repl(
     let (idle_tx, mut idle_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel::<InputRequest>();
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
-    let renderer = Renderer::new(render_graphics, idle_tx, writer).with_input_tx(input_tx);
+    let renderer = Renderer::new(render_graphics, idle_tx, writer)
+        .with_input_tx(input_tx)
+        .with_own_session_name(session_name.clone());
 
     // Channels carrying messages FROM the REPL TO the per-channel writer
     // tasks. We can't borrow &mut kernel.channels.shell across an await

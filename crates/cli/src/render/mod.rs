@@ -28,6 +28,11 @@ pub struct Renderer {
     pub idle_tx: mpsc::UnboundedSender<String>,
     pub input_tx: Option<mpsc::UnboundedSender<InputRequest>>,
     writer: SharedWriter,
+    // The session name passed via --session-name (None or "jet" if not
+    // set). Output that originated from this same session is shown
+    // un-prefixed; output from any *other* session sharing the kernel
+    // is tagged so the user can tell who's typing.
+    own_session_name: Option<String>,
     // True when the next byte we write will start a fresh line, so a
     // session prefix should be emitted before it. Tracked across writes
     // because kernel streams arrive in arbitrary chunks — a partial line
@@ -46,8 +51,14 @@ impl Renderer {
             idle_tx,
             input_tx: None,
             writer,
+            own_session_name: None,
             at_line_start: Arc::new(Mutex::new(true)),
         }
+    }
+
+    pub fn with_own_session_name(mut self, name: Option<String>) -> Self {
+        self.own_session_name = name;
+        self
     }
 
     pub fn with_input_tx(mut self, tx: mpsc::UnboundedSender<InputRequest>) -> Self {
@@ -56,19 +67,19 @@ impl Renderer {
     }
 
     pub fn handle_event(&self, event: Event) -> Result<()> {
-        let (session_name, session_type) = if let Some(session_id) = event.parent_session.as_deref()
-        {
-            (
-                session_id.split("---").nth(0),
-                session_id.split("---").nth(1),
-            )
-        } else {
-            (None, None)
-        };
+        let session_name = event
+            .parent_session
+            .as_deref()
+            .and_then(|id| id.split("---").next());
 
-        // The default session name "jet" means the user didn't pass
-        // --session-name, so we don't tag any output. Any other name is
-        // shown as a `[name]` prefix on each line.
+        // Tag every kernel-emitted line with the originating session
+        // name when one was set, regardless of whether it came from
+        // *this* REPL or another client sharing the kernel — the user
+        // wants `[s2]` on every kernel line so it's clear which session
+        // produced it. The default name "jet" (no --session-name) is
+        // treated as "no tag".
+        let own = self.own_session_name.as_deref().unwrap_or("jet");
+        let is_own_session = session_name == Some(own);
         let prefix = match session_name {
             Some("jet") | None => None,
             Some(name) => Some(name.to_string()),
@@ -76,13 +87,21 @@ impl Renderer {
 
         match event.data {
             EventData::Stream { name: _, text } => self.write_prefixed(&text, prefix.as_deref())?,
-            EventData::ExecuteInput { code } => match (session_name, session_type) {
-                // Our own REPL already echoed the prompt locally — don't
-                // duplicate it when the kernel rebroadcasts the input.
-                (_, Some("repl")) => {}
-                (Some(session), _) => self.write_line(&format!("[{session}]> {code}"))?,
-                (_, _) => self.write_line(&format!("> {code}"))?,
-            },
+            EventData::ExecuteInput { code } => {
+                // Skip the kernel's iopub echo of *our own* input —
+                // rustyline already drew the prompt locally. For any
+                // other session's input we render `[name]> code` so the
+                // user can follow what other clients are doing.
+                if !is_own_session {
+                    if let Some(name) = session_name {
+                        self.break_for_async_write()?;
+                        self.write_line(&format!("[{name}]> {code}"))?;
+                    } else {
+                        self.break_for_async_write()?;
+                        self.write_line(&format!("> {code}"))?;
+                    }
+                }
+            }
             EventData::DisplayData { data } => self.render_data(&data)?,
             EventData::Error { traceback } => {
                 self.write_prefixed(&traceback, prefix.as_deref())?;
@@ -166,6 +185,29 @@ impl Renderer {
             writeln!(w, "{text}")?;
         }
         *at_start = true;
+        w.flush()?;
+        Ok(())
+    }
+
+    /// Make sure the next write starts on its own clean line, without
+    /// destroying any content the renderer has already written.
+    ///
+    /// - If we last left the cursor at column 0 (`at_line_start`), the
+    ///   only thing that could be on the current line is rustyline's
+    ///   prompt — wipe it with `\r\x1b[2K` so async other-session output
+    ///   doesn't land on top of it. Rustyline redraws on next keystroke.
+    /// - If we last wrote partial content with no trailing newline (e.g.
+    ///   a spinner frame), clearing would erase it. Emit a `\n` instead
+    ///   to drop to a fresh line, preserving what's above.
+    fn break_for_async_write(&self) -> Result<()> {
+        let mut w = self.writer.lock().unwrap();
+        let mut at_start = self.at_line_start.lock().unwrap();
+        if *at_start {
+            write!(w, "\r\x1b[2K")?;
+        } else {
+            writeln!(w)?;
+            *at_start = true;
+        }
         w.flush()?;
         Ok(())
     }
@@ -302,6 +344,38 @@ mod tests {
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
             "[s] hello world\n[s] bye"
+        );
+    }
+
+    #[test]
+    fn own_session_output_is_not_prefixed_other_sessions_are() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer)
+            .with_own_session_name(Some("alice".into()));
+
+        r.handle_event(Event {
+            parent_session: Some("alice---repl---abc".into()),
+            data: EventData::Stream {
+                name: "stdout".into(),
+                text: "mine\n".into(),
+            },
+        })
+        .unwrap();
+        r.handle_event(Event {
+            parent_session: Some("bob---repl---xyz".into()),
+            data: EventData::Stream {
+                name: "stdout".into(),
+                text: "theirs\n".into(),
+            },
+        })
+        .unwrap();
+
+        let bytes = captured.lock().unwrap();
+        assert_eq!(
+            std::str::from_utf8(&*bytes).unwrap(),
+            "mine\n[bob] theirs\n"
         );
     }
 
