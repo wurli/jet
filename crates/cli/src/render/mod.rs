@@ -122,9 +122,11 @@ impl Renderer {
                         self.break_for_async_write()?;
                     }
                     match session_name {
-                        Some(name) => self
-                            .write_line(&format!("{}> {code}", ansi::dim(&format!("[{name}]"))))?,
-                        None => self.write_line(&format!("> {code}"))?,
+                        Some(name) => self.write_line(&format!(
+                            "\n{}> {code}",
+                            ansi::dim(&format!("[{name}]"))
+                        ))?,
+                        None => self.write_line(&format!("\n> {code}"))?,
                     }
                 }
             }
@@ -284,7 +286,10 @@ impl Renderer {
                     }
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
-                        eprintln!("{}", ansi::yellow(&format!("[jet] kitty render failed: {e}")));
+                        eprintln!(
+                            "{}",
+                            ansi::yellow(&format!("[jet] kitty render failed: {e}"))
+                        );
                         return Ok(());
                     }
                 }
@@ -409,8 +414,7 @@ mod tests {
         let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
-        let r = Renderer::new(false, tx, writer)
-            .with_own_session_name(Some("alice".into()));
+        let r = Renderer::new(false, tx, writer).with_own_session_name(Some("alice".into()));
 
         r.handle_event(Event {
             parent_session: Some("alice---repl---abc".into()),
