@@ -28,6 +28,11 @@ pub struct Renderer {
     pub idle_tx: mpsc::UnboundedSender<String>,
     pub input_tx: Option<mpsc::UnboundedSender<InputRequest>>,
     writer: SharedWriter,
+    // True when the next byte we write will start a fresh line, so a
+    // session prefix should be emitted before it. Tracked across writes
+    // because kernel streams arrive in arbitrary chunks — a partial line
+    // followed by more text must NOT get a second prefix.
+    at_line_start: Arc<Mutex<bool>>,
 }
 
 impl Renderer {
@@ -41,6 +46,7 @@ impl Renderer {
             idle_tx,
             input_tx: None,
             writer,
+            at_line_start: Arc::new(Mutex::new(true)),
         }
     }
 
@@ -60,24 +66,29 @@ impl Renderer {
             (None, None)
         };
 
-        // Prefix each line of output with `[session-name]` - if we're not running
-        // a REPL session.
-        let prefix = |text: String| match (session_name, session_type) {
-            (Some("jet"), _) => text,
-            (Some(session), _) => text.replace("\n", &format!("\n[{session}] ")),
-            (_, _) => text,
+        // The default session name "jet" means the user didn't pass
+        // --session-name, so we don't tag any output. Any other name is
+        // shown as a `[name]` prefix on each line.
+        let prefix = match session_name {
+            Some("jet") | None => None,
+            Some(name) => Some(name.to_string()),
         };
 
         match event.data {
-            EventData::Stream { name: _, text } => self.write_stream(&prefix(text))?,
+            EventData::Stream { name: _, text } => self.write_prefixed(&text, prefix.as_deref())?,
             EventData::ExecuteInput { code } => match (session_name, session_type) {
+                // Our own REPL already echoed the prompt locally — don't
+                // duplicate it when the kernel rebroadcasts the input.
                 (_, Some("repl")) => {}
-                (Some(session), _) => self.write(&format!("[{session}]> {code}"))?,
-                (_, _) => self.write(&format!("> {code}"))?,
+                (Some(session), _) => self.write_line(&format!("[{session}]> {code}"))?,
+                (_, _) => self.write_line(&format!("> {code}"))?,
             },
             EventData::DisplayData { data } => self.render_data(&data)?,
-            EventData::Error { traceback } => self.write(&prefix(traceback))?,
-            EventData::Banner { text } => self.write(&text)?,
+            EventData::Error { traceback } => {
+                self.write_prefixed(&traceback, prefix.as_deref())?;
+                self.ensure_newline()?;
+            }
+            EventData::Banner { text } => self.write_line(&text)?,
             EventData::Idle { parent_id } => {
                 let _ = self.idle_tx.send(parent_id.unwrap_or_default());
             }
@@ -99,24 +110,73 @@ impl Renderer {
         Ok(())
     }
 
-    fn write(&self, text: &str) -> Result<()> {
+    /// Write a chunk to the terminal, inserting `[prefix] ` at the start
+    /// of every new line. Honours streaming boundaries: if the previous
+    /// write ended without a newline, the next call continues the same
+    /// line (no extra prefix); a chunk that ends with `\n` leaves the
+    /// next call expecting to start a new line.
+    fn write_prefixed(&self, text: &str, prefix: Option<&str>) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
         let mut w = self.writer.lock().unwrap();
+        let mut at_start = self.at_line_start.lock().unwrap();
+        match prefix {
+            None => {
+                write!(w, "{text}")?;
+            }
+            Some(p) => {
+                let tag = format!("[{p}] ");
+                let mut first = true;
+                // Use split_inclusive so we can tell whether the final
+                // segment ended in a newline (full line) or not (partial).
+                for segment in text.split_inclusive('\n') {
+                    if first {
+                        if *at_start {
+                            write!(w, "{tag}")?;
+                        }
+                        first = false;
+                    } else {
+                        // We're past the first segment, so the previous
+                        // segment ended with '\n' — start a fresh prefix.
+                        write!(w, "{tag}")?;
+                    }
+                    write!(w, "{segment}")?;
+                }
+            }
+        }
+        *at_start = text.ends_with('\n');
+        w.flush()?;
+        Ok(())
+    }
+
+    /// Write a complete line (appends a newline if missing). Resets the
+    /// streaming state to "at line start" so subsequent stream output is
+    /// re-prefixed.
+    fn write_line(&self, text: &str) -> Result<()> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let mut w = self.writer.lock().unwrap();
+        let mut at_start = self.at_line_start.lock().unwrap();
         if text.ends_with('\n') {
             write!(w, "{text}")?;
         } else {
             writeln!(w, "{text}")?;
         }
+        *at_start = true;
         w.flush()?;
         Ok(())
     }
 
-    fn write_stream(&self, text: &str) -> Result<()> {
+    fn ensure_newline(&self) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
-        write!(w, "{text}")?;
-        w.flush()?;
+        let mut at_start = self.at_line_start.lock().unwrap();
+        if !*at_start {
+            writeln!(w)?;
+            *at_start = true;
+            w.flush()?;
+        }
         Ok(())
     }
 
@@ -128,8 +188,12 @@ impl Renderer {
         if let Some(image_data) = data.get("image/png").and_then(|s| s.as_str()) {
             if self.render_graphics {
                 let mut w = self.writer.lock().unwrap();
+                let mut at_start = self.at_line_start.lock().unwrap();
                 match emit_png(&mut *w, image_data) {
-                    Ok(()) => return Ok(()),
+                    Ok(()) => {
+                        *at_start = true;
+                        return Ok(());
+                    }
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
                         eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m");
@@ -141,17 +205,13 @@ impl Renderer {
                     .decode(image_data)
                     .map(|b| b.len())
                     .unwrap_or(0);
-                let mut w = self.writer.lock().unwrap();
-                writeln!(w, "[image/png {len} bytes]")?;
-                w.flush()?;
+                self.write_line(&format!("[image/png {len} bytes]"))?;
                 return Ok(());
             }
         };
 
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
-            let mut w = self.writer.lock().unwrap();
-            writeln!(w, "{t}")?;
-            w.flush()?;
+            self.write_line(t)?;
             return Ok(());
         }
 
@@ -198,6 +258,68 @@ mod tests {
         .unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), "oops");
+    }
+
+    #[test]
+    fn stream_event_prefixes_first_line_and_subsequent_lines() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer);
+        r.handle_event(Event {
+            parent_session: Some("my-session---bg".into()),
+            data: EventData::Stream {
+                name: "stdout".into(),
+                text: "Error\nSomething went wrong".into(),
+            },
+        })
+        .unwrap();
+        let bytes = captured.lock().unwrap();
+        assert_eq!(
+            std::str::from_utf8(&*bytes).unwrap(),
+            "[my-session] Error\n[my-session] Something went wrong"
+        );
+    }
+
+    #[test]
+    fn partial_lines_dont_get_double_prefixed() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer);
+        for chunk in ["hel", "lo ", "world\nbye"] {
+            r.handle_event(Event {
+                parent_session: Some("s---bg".into()),
+                data: EventData::Stream {
+                    name: "stdout".into(),
+                    text: chunk.into(),
+                },
+            })
+            .unwrap();
+        }
+        let bytes = captured.lock().unwrap();
+        assert_eq!(
+            std::str::from_utf8(&*bytes).unwrap(),
+            "[s] hello world\n[s] bye"
+        );
+    }
+
+    #[test]
+    fn repl_session_is_not_prefixed() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer);
+        r.handle_event(Event {
+            parent_session: Some("jet---repl".into()),
+            data: EventData::Stream {
+                name: "stdout".into(),
+                text: "a\nb".into(),
+            },
+        })
+        .unwrap();
+        let bytes = captured.lock().unwrap();
+        assert_eq!(std::str::from_utf8(&*bytes).unwrap(), "a\nb");
     }
 
     #[test]
