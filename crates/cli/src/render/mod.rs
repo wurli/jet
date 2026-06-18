@@ -12,7 +12,6 @@ pub use kitty::emit_png;
 pub use tmux::warn_if_passthrough_off;
 
 use std::io::Write;
-use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -51,10 +50,33 @@ impl Renderer {
     }
 
     pub fn handle_event(&self, event: Event) -> Result<()> {
+        let (session_name, session_type) = if let Some(session_id) = event.parent_session.as_deref()
+        {
+            (
+                session_id.split("---").nth(0),
+                session_id.split("---").nth(1),
+            )
+        } else {
+            (None, None)
+        };
+
+        // Prefix each line of output with `[session-name]` - if we're not running
+        // a REPL session.
+        let prefix = |text: String| match (session_name, session_type) {
+            (Some("jet"), _) => text,
+            (Some(session), _) => text.replace("\n", &format!("\n[{session}] ")),
+            (_, _) => text,
+        };
+
         match event.data {
-            EventData::Stream { name: _, text } => self.write_stream(&text)?,
+            EventData::Stream { name: _, text } => self.write_stream(&prefix(text))?,
+            EventData::ExecuteInput { code } => match (session_name, session_type) {
+                (_, Some("repl")) => {}
+                (Some(session), _) => self.write(&format!("[{session}]> {code}"))?,
+                (_, _) => self.write(&format!("> {code}"))?,
+            },
             EventData::DisplayData { data } => self.render_data(&data)?,
-            EventData::Error { traceback } => self.write(traceback.deref())?,
+            EventData::Error { traceback } => self.write(&prefix(traceback))?,
             EventData::Banner { text } => self.write(&text)?,
             EventData::Idle { parent_id } => {
                 let _ = self.idle_tx.send(parent_id.unwrap_or_default());

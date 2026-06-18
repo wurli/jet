@@ -44,6 +44,9 @@ pub enum EventData {
         password: bool,
         parent_id: Option<String>,
     },
+    ExecuteInput {
+        code: String,
+    },
     /// The kernel has gone away. Emitted by the reader task when its socket
     /// returns an error or the child process exits — not from a wire frame.
     KernelExited,
@@ -91,6 +94,9 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
         },
         (Channel::IoPub, JupyterMessageContent::ExecuteResult(er)) => EventData::DisplayData {
             data: media_to_value(&er.data.content),
+        },
+        (Channel::IoPub, JupyterMessageContent::ExecuteInput(ei)) => EventData::ExecuteInput {
+            code: ei.code.clone(),
         },
         (Channel::IoPub, JupyterMessageContent::ErrorOutput(err)) => {
             let traceback = if err.traceback.is_empty() {

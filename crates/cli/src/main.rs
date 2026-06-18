@@ -184,7 +184,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     };
 
     let render_graphics = !args.no_graphics;
-    drive_repl(&mut kernel, render_graphics).await?;
+    drive_repl(&mut kernel, render_graphics, args.session_name).await?;
 
     if args.detach {
         kernel.detach();
@@ -204,7 +204,7 @@ async fn run_attach(args: AttachArgs) -> Result<()> {
     init_logger(args.global.log.as_deref());
     let mut kernel = Kernel::attach(&args.connection_file, args.session_name.as_deref()).await?;
     let render_graphics = !args.no_graphics;
-    drive_repl(&mut kernel, render_graphics).await?;
+    drive_repl(&mut kernel, render_graphics, args.session_name).await?;
     // Attach mode never kills the kernel; we just disconnect.
     Ok(())
 }
@@ -212,7 +212,11 @@ async fn run_attach(args: AttachArgs) -> Result<()> {
 /// Run the prompt → execute → render loop until the user exits or the
 /// kernel dies. Borrows the kernel's channels rather than the `Kernel`
 /// itself so the caller still owns the lifecycle (detach vs shutdown).
-async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
+async fn drive_repl(
+    kernel: &mut Kernel,
+    render_graphics: bool,
+    session_name: Option<String>,
+) -> Result<()> {
     if render_graphics {
         warn_if_passthrough_off();
     }
@@ -450,8 +454,12 @@ async fn drive_repl(kernel: &mut Kernel, render_graphics: bool) -> Result<()> {
     let mut rl = Some(rustyline::DefaultEditor::new()?);
     loop {
         let mut prompt_rl = rl.take().expect("editor present at top of loop");
+        let prompt = match session_name {
+            Some(ref name) => format!("[{name}]> "),
+            None => "> ".to_string(),
+        };
         let read = tokio::task::spawn_blocking(move || {
-            let result = prompt_rl.readline("> ");
+            let result = prompt_rl.readline(&prompt);
             (prompt_rl, result)
         });
         let line = tokio::select! {
