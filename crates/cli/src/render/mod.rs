@@ -107,39 +107,38 @@ impl Renderer {
         if !data.is_object() {
             return Ok(());
         }
-        let png = data.get("image/png").and_then(|s| s.as_str());
-        let handled = match (self.render_graphics, png) {
-            (true, Some(b64)) => {
+
+        if let Some(image_data) = data.get("image/png").and_then(|s| s.as_str()) {
+            if self.render_graphics {
                 let mut w = self.writer.lock().unwrap();
-                match emit_png(&mut *w, b64) {
-                    Ok(()) => true,
+                match emit_png(&mut *w, image_data) {
+                    Ok(()) => return Ok(()),
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
                         eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m");
-                        false
+                        return Ok(());
                     }
                 }
-            }
-            (false, Some(b64)) => {
+            } else {
                 let len = base64::engine::general_purpose::STANDARD
-                    .decode(b64)
+                    .decode(image_data)
                     .map(|b| b.len())
                     .unwrap_or(0);
                 let mut w = self.writer.lock().unwrap();
                 writeln!(w, "[image/png {len} bytes]")?;
                 w.flush()?;
-                true
+                return Ok(());
             }
-            (_, None) => false,
         };
-        if handled {
-            return Ok(());
-        }
+
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
             let mut w = self.writer.lock().unwrap();
             writeln!(w, "{t}")?;
             w.flush()?;
+            return Ok(());
         }
+
+        // Should we really return Ok here?
         Ok(())
     }
 }
