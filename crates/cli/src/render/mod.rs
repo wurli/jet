@@ -12,6 +12,7 @@ pub use kitty::emit_png;
 pub use tmux::warn_if_passthrough_off;
 
 use std::io::Write;
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -53,14 +54,8 @@ impl Renderer {
         match event {
             Event::Stream { name: _, text } => self.write_stream(&text)?,
             Event::DisplayData { data } => self.render_data(&data)?,
-            Event::Error { traceback } => {
-                if !traceback.is_empty() {
-                    let mut w = self.writer.lock().unwrap();
-                    writeln!(w, "{traceback}")?;
-                    w.flush()?;
-                }
-            }
-            Event::Banner { text } => self.write_banner(&text)?,
+            Event::Error { traceback } => self.write(traceback.deref())?,
+            Event::Banner { text } => self.write(&text)?,
             Event::Idle { parent_id } => {
                 let _ = self.idle_tx.send(parent_id.unwrap_or_default());
             }
@@ -82,23 +77,23 @@ impl Renderer {
         Ok(())
     }
 
-    fn write_stream(&self, text: &str) -> Result<()> {
+    fn write(&self, text: &str) -> Result<()> {
+        if text.is_empty() {
+            return Ok(());
+        }
         let mut w = self.writer.lock().unwrap();
-        write!(w, "{text}")?;
+        if text.ends_with('\n') {
+            write!(w, "{text}")?;
+        } else {
+            writeln!(w, "{text}")?;
+        }
         w.flush()?;
         Ok(())
     }
 
-    fn write_banner(&self, banner: &str) -> Result<()> {
-        if banner.is_empty() {
-            return Ok(());
-        }
+    fn write_stream(&self, text: &str) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
-        if banner.ends_with('\n') {
-            write!(w, "{banner}")?;
-        } else {
-            writeln!(w, "{banner}")?;
-        }
+        write!(w, "{text}")?;
         w.flush()?;
         Ok(())
     }
