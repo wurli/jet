@@ -19,7 +19,7 @@ mod cli;
 mod render;
 
 use cli::{Args, AttachArgs, Command, ConnectArgs};
-use render::{Renderer, SharedWriter, warn_if_passthrough_off};
+use render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
 
 enum WaitResult {
     Idle,
@@ -463,7 +463,7 @@ async fn drive_repl(
         });
         let line = tokio::select! {
             _ = pipes.closed.notified() => {
-                eprintln!("\x1b[31m[jet] kernel exited\x1b[0m");
+                eprintln!("{}", ansi::red("[jet] kernel exited"));
                 shutdown.notify_waiters();
                 std::process::exit(0);
             }
@@ -514,12 +514,12 @@ async fn drive_repl(
                             _ = pipes.closed.notified() => return WaitResult::Closed,
                             _ = intr_rx.recv() => {
                                 if let Err(e) = kernel.interrupt().await {
-                                    eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+                                    eprintln!("{}", ansi::red(&format!("[jet] interrupt failed: {e}")));
                                 }
                             }
                             _ = sigint.recv() => {
                                 if let Err(e) = kernel.interrupt().await {
-                                    eprintln!("\x1b[31m[jet] interrupt failed: {e}\x1b[0m");
+                                    eprintln!("{}", ansi::red(&format!("[jet] interrupt failed: {e}")));
                                 }
                             }
                         }
@@ -569,7 +569,7 @@ async fn drive_repl(
             WaitResult::Input(_) => unreachable!("handled above"),
             WaitResult::Timeout => {
                 log::warn!("timeout waiting for kernel idle (msg_id={msg_id})");
-                eprintln!("\x1b[33m[jet] timeout waiting for kernel\x1b[0m");
+                eprintln!("{}", ansi::yellow("[jet] timeout waiting for kernel"));
             }
             WaitResult::Closed => {
                 shutdown.notify_waiters();

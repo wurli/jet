@@ -5,6 +5,7 @@
 //! rendering content events to stdout, and forwarding `Idle` parent_ids on
 //! `idle_tx` so the REPL knows it's safe to prompt again.
 
+pub mod ansi;
 mod kitty;
 mod tmux;
 
@@ -121,7 +122,8 @@ impl Renderer {
                         self.break_for_async_write()?;
                     }
                     match session_name {
-                        Some(name) => self.write_line(&format!("[{name}]> {code}"))?,
+                        Some(name) => self
+                            .write_line(&format!("{}> {code}", ansi::dim(&format!("[{name}]"))))?,
                         None => self.write_line(&format!("> {code}"))?,
                     }
                 }
@@ -184,7 +186,9 @@ impl Renderer {
                 write!(w, "{text}")?;
             }
             Some(p) => {
-                let tag = format!("[{p}] ");
+                // Dim the `[session]` tag so it stays visually
+                // subordinate to kernel output.
+                let tag = format!("{} ", ansi::dim(&format!("[{p}]")));
                 let mut first = true;
                 // Use split_inclusive so we can tell whether the final
                 // segment ended in a line break (full line) or not (partial).
@@ -228,21 +232,23 @@ impl Renderer {
         Ok(())
     }
 
-    /// Make sure the next write starts on its own clean line, without
-    /// destroying any content the renderer has already written.
+    /// Make sure the next write starts on its own clean line.
     ///
-    /// - If we last left the cursor at column 0 (`at_line_start`), the
-    ///   only thing that could be on the current line is rustyline's
-    ///   prompt — wipe it with `\r\x1b[2K` so async other-session output
-    ///   doesn't land on top of it. Rustyline redraws on next keystroke.
-    /// - If we last wrote partial content with no trailing newline (e.g.
-    ///   a spinner frame), clearing would erase it. Emit a `\n` instead
-    ///   to drop to a fresh line, preserving what's above.
+    /// If we last wrote at column 0 (`at_line_start`), rustyline's
+    /// prompt may be on the current line — emit `CLEAR_LINE` (which
+    /// rewinds to column 0 and erases) so async other-session output
+    /// doesn't land on top of it, then a newline so we drop below
+    /// rustyline's redraw point. Without the newline, rustyline can
+    /// race us and redraw the prompt back onto the same line, leaving
+    /// `> [s2]> code` visible.
+    ///
+    /// If we last wrote partial content (no trailing newline), just
+    /// emit a newline — clearing would erase the partial content.
     fn break_for_async_write(&self) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
         if *at_start {
-            write!(w, "\r\x1b[2K")?;
+            write!(w, "{}", ansi::CLEAR_LINE)?;
         } else {
             writeln!(w)?;
             *at_start = true;
@@ -278,7 +284,7 @@ impl Renderer {
                     }
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
-                        eprintln!("\x1b[33m[jet] kitty render failed: {e}\x1b[0m");
+                        eprintln!("{}", ansi::yellow(&format!("[jet] kitty render failed: {e}")));
                         return Ok(());
                     }
                 }
@@ -359,7 +365,12 @@ mod tests {
         let bytes = captured.lock().unwrap();
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "\r\x1b[2K[my-session] Error\n[my-session] Something went wrong"
+            &format!(
+                "{}{} Error\n{} Something went wrong",
+                ansi::CLEAR_LINE,
+                ansi::dim("[my-session]"),
+                ansi::dim("[my-session]"),
+            )
         );
     }
 
@@ -384,7 +395,12 @@ mod tests {
         // continue the same line so they don't.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "\r\x1b[2K[s] hello world\n[s] bye"
+            &format!(
+                "{}{} hello world\n{} bye",
+                ansi::CLEAR_LINE,
+                ansi::dim("[s]"),
+                ansi::dim("[s]"),
+            )
         );
     }
 
@@ -419,7 +435,7 @@ mod tests {
         // rustyline's prompt.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "mine\n\r\x1b[2K[bob] theirs\n"
+            &format!("mine\n{}{} theirs\n", ansi::CLEAR_LINE, ansi::dim("[bob]"))
         );
     }
 
@@ -441,7 +457,12 @@ mod tests {
         // First chunk from `s` triggers the author-change break.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "\r\x1b[2K[s] frame1\r[s] frame2"
+            &format!(
+                "{}{} frame1\r{} frame2",
+                ansi::CLEAR_LINE,
+                ansi::dim("[s]"),
+                ansi::dim("[s]"),
+            )
         );
     }
 

@@ -25,10 +25,13 @@ pub fn warn_if_passthrough_off() {
         }
     }
     eprintln!(
-        "\x1b[33m[jet] warning: tmux `allow-passthrough` is off. \
-         Kitty graphics will not render inline.\n\
-         Enable it in this pane:    tmux set -p allow-passthrough all\n\
-         Or globally in your config: set -g allow-passthrough on\x1b[0m"
+        "{}",
+        super::ansi::yellow(
+            "[jet] warning: tmux `allow-passthrough` is off. \
+             Kitty graphics will not render inline.\n\
+             Enable it in this pane:    tmux set -p allow-passthrough all\n\
+             Or globally in your config: set -g allow-passthrough on"
+        )
     );
 }
 
