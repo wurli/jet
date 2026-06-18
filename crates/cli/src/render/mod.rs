@@ -39,11 +39,6 @@ pub struct Renderer {
     // because kernel streams arrive in arbitrary chunks — a partial line
     // followed by more text must NOT get a second prefix.
     at_line_start: Arc<Mutex<bool>>,
-    // The session name of the *last* output we wrote, or None for "own
-    // session / banner / no-parent". Used to decide whether to break to
-    // a fresh line before async other-session output: only break when we
-    // are switching authors, not continuing a stream from the same one.
-    last_author: Arc<Mutex<Option<String>>>,
 }
 
 impl Renderer {
@@ -59,7 +54,6 @@ impl Renderer {
             writer,
             own_session_name: None,
             at_line_start: Arc::new(Mutex::new(true)),
-            last_author: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -96,61 +90,46 @@ impl Renderer {
             session_name.map(|s| s.to_string())
         };
 
-        // Break to a fresh line before async output only when the
-        // *author* changes — when own→other, other→different-other, or
-        // own→prompt-clear. Continuing a stream from the same author
-        // (e.g. successive partial chunks) doesn't break.
-        let new_author = if is_own_session {
-            None
-        } else {
-            session_name.map(|s| s.to_string())
-        };
-        let author_changed = {
-            let last = self.last_author.lock().unwrap();
-            *last != new_author
-        };
-        let needs_break = !is_own_session && author_changed;
-
         match event.data {
             EventData::ExecuteInput { code } => {
                 // Skip the kernel's iopub echo of *our own* input —
                 // rustyline already drew the prompt locally. For any
                 // other session's input we render `[name]> code` so the
-                // user can follow what other clients are doing.
+                // user can follow what other clients are doing. The
+                // leading `\n` drops us to a fresh line so we don't
+                // collide with rustyline's prompt.
                 if !is_own_session {
-                    if needs_break {
-                        self.break_for_async_write()?;
-                    }
                     match session_name {
                         Some(name) => self.write_line(&format!(
-                            "\n{}> {code}",
+                            "\r{}> {code}",
                             ansi::dim(&format!("[{name}]"))
                         ))?,
-                        None => self.write_line(&format!("\n> {code}"))?,
+                        None => self.write_line(&format!("\r> {code}"))?,
                     }
                 }
             }
-            EventData::DisplayData { data } => {
-                if needs_break {
-                    self.break_for_async_write()?;
-                }
-                self.render_data(&data)?;
-            }
+            EventData::DisplayData { data } => self.render_data(&data)?,
             EventData::Stream { name: _, text } => {
-                if needs_break {
-                    self.break_for_async_write()?;
-                }
                 self.write_prefixed(&text, prefix.as_deref())?;
             }
             EventData::Error { traceback } => {
-                if needs_break {
-                    self.break_for_async_write()?;
-                }
                 self.write_prefixed(&traceback, prefix.as_deref())?;
                 self.ensure_newline()?;
             }
             EventData::Banner { text } => self.write_line(&text)?,
             EventData::Idle { parent_id } => {
+                // When *another* session's execution finishes, rustyline's
+                // prompt is no longer where it last drew it (we've written
+                // text on top of and below it). Re-emit a bare `> ` so the
+                // cursor lands at a fresh prompt. Any input the user had
+                // already typed is still in rustyline's buffer — it'll
+                // refresh visually as soon as they press the next key.
+                if !is_own_session {
+                    self.ensure_newline()?;
+                    let mut w = self.writer.lock().unwrap();
+                    write!(w, "> ")?;
+                    w.flush()?;
+                }
                 let _ = self.idle_tx.send(parent_id.unwrap_or_default());
             }
             EventData::InputRequest {
@@ -168,7 +147,6 @@ impl Renderer {
             }
             EventData::KernelExited | EventData::Other => {}
         }
-        *self.last_author.lock().unwrap() = new_author;
         Ok(())
     }
 
@@ -230,31 +208,6 @@ impl Renderer {
             writeln!(w, "{text}")?;
         }
         *at_start = true;
-        w.flush()?;
-        Ok(())
-    }
-
-    /// Make sure the next write starts on its own clean line.
-    ///
-    /// If we last wrote at column 0 (`at_line_start`), rustyline's
-    /// prompt may be on the current line — emit `CLEAR_LINE` (which
-    /// rewinds to column 0 and erases) so async other-session output
-    /// doesn't land on top of it, then a newline so we drop below
-    /// rustyline's redraw point. Without the newline, rustyline can
-    /// race us and redraw the prompt back onto the same line, leaving
-    /// `> [s2]> code` visible.
-    ///
-    /// If we last wrote partial content (no trailing newline), just
-    /// emit a newline — clearing would erase the partial content.
-    fn break_for_async_write(&self) -> Result<()> {
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        if *at_start {
-            write!(w, "{}", ansi::CLEAR_LINE)?;
-        } else {
-            writeln!(w)?;
-            *at_start = true;
-        }
         w.flush()?;
         Ok(())
     }
@@ -371,8 +324,7 @@ mod tests {
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
             &format!(
-                "{}{} Error\n{} Something went wrong",
-                ansi::CLEAR_LINE,
+                "{} Error\n{} Something went wrong",
                 ansi::dim("[my-session]"),
                 ansi::dim("[my-session]"),
             )
@@ -396,16 +348,9 @@ mod tests {
             .unwrap();
         }
         let bytes = captured.lock().unwrap();
-        // First chunk fires `break_for_async_write`; subsequent chunks
-        // continue the same line so they don't.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            &format!(
-                "{}{} hello world\n{} bye",
-                ansi::CLEAR_LINE,
-                ansi::dim("[s]"),
-                ansi::dim("[s]"),
-            )
+            &format!("{} hello world\n{} bye", ansi::dim("[s]"), ansi::dim("[s]"))
         );
     }
 
@@ -434,12 +379,9 @@ mod tests {
         .unwrap();
 
         let bytes = captured.lock().unwrap();
-        // Switching from alice (own) to bob (other) triggers a clean
-        // line-break before bob's output so it can't land on top of
-        // rustyline's prompt.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            &format!("mine\n{}{} theirs\n", ansi::CLEAR_LINE, ansi::dim("[bob]"))
+            &format!("mine\n{} theirs\n", ansi::dim("[bob]"))
         );
     }
 
@@ -458,15 +400,9 @@ mod tests {
         })
         .unwrap();
         let bytes = captured.lock().unwrap();
-        // First chunk from `s` triggers the author-change break.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            &format!(
-                "{}{} frame1\r{} frame2",
-                ansi::CLEAR_LINE,
-                ansi::dim("[s]"),
-                ansi::dim("[s]"),
-            )
+            &format!("{} frame1\r{} frame2", ansi::dim("[s]"), ansi::dim("[s]"))
         );
     }
 

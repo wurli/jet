@@ -16,11 +16,6 @@ pub const YELLOW: &str = "\x1b[33m";
 pub const DIM: &str = "\x1b[2m";
 pub const UNDIM: &str = "\x1b[22m";
 
-/// Move cursor to column 0 and erase the current line. We use this
-/// before async output that might land on top of rustyline's prompt;
-/// rustyline redraws on the next keystroke.
-pub const CLEAR_LINE: &str = "\r\x1b[2K";
-
 /// Wrap `text` in dim-on/dim-off so it renders faint.
 pub fn dim(text: &str) -> String {
     format!("{DIM}{text}{UNDIM}")
