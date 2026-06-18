@@ -129,23 +129,24 @@ impl Renderer {
                 let tag = format!("[{p}] ");
                 let mut first = true;
                 // Use split_inclusive so we can tell whether the final
-                // segment ended in a newline (full line) or not (partial).
-                for segment in text.split_inclusive('\n') {
+                // segment ended in a line break (full line) or not (partial).
+                // Both '\n' and '\r' count: '\r' is used by spinners /
+                // progress bars to redraw a line in place, and we want each
+                // redraw to start with a fresh prefix.
+                for segment in text.split_inclusive(['\n', '\r']) {
                     if first {
                         if *at_start {
                             write!(w, "{tag}")?;
                         }
                         first = false;
                     } else {
-                        // We're past the first segment, so the previous
-                        // segment ended with '\n' — start a fresh prefix.
                         write!(w, "{tag}")?;
                     }
                     write!(w, "{segment}")?;
                 }
             }
         }
-        *at_start = text.ends_with('\n');
+        *at_start = text.ends_with(['\n', '\r']);
         w.flush()?;
         Ok(())
     }
@@ -301,6 +302,27 @@ mod tests {
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
             "[s] hello world\n[s] bye"
+        );
+    }
+
+    #[test]
+    fn carriage_return_starts_a_fresh_prefix() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer);
+        r.handle_event(Event {
+            parent_session: Some("s---bg".into()),
+            data: EventData::Stream {
+                name: "stdout".into(),
+                text: "frame1\rframe2".into(),
+            },
+        })
+        .unwrap();
+        let bytes = captured.lock().unwrap();
+        assert_eq!(
+            std::str::from_utf8(&*bytes).unwrap(),
+            "[s] frame1\r[s] frame2"
         );
     }
 
