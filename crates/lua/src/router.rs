@@ -57,7 +57,12 @@ impl FrameRouter {
     pub fn dispatch(&self, parent_msg_id: Option<&str>, frame: Frame) {
         match frame {
             Frame::Idle { parent_msg_id } => {
-                if let Some(tx) = self.by_parent.lock().unwrap().remove(&parent_msg_id) {
+                if let Some(tx) = self
+                    .by_parent
+                    .lock()
+                    .unwrap()
+                    .remove(&parent_msg_id.unwrap_or_default())
+                {
                     let _ = tx.send(PollItem::Idle);
                 }
             }
@@ -74,6 +79,6 @@ impl FrameRouter {
 
 /// Parsed-enough form of a websocket frame to make a routing decision.
 pub enum Frame {
-    Idle { parent_msg_id: String },
+    Idle { parent_msg_id: Option<String> },
     Content { msg_type: String, content: Value },
 }

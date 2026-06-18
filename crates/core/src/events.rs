@@ -12,9 +12,7 @@
 //! routing without depending on the optional `JupyterMessage::channel`
 //! field (which is `None` for ZMQ transports).
 
-use jupyter_protocol::{
-    ExecutionState, JupyterMessage, JupyterMessageContent, MediaType, Stdio,
-};
+use jupyter_protocol::{ExecutionState, JupyterMessage, JupyterMessageContent, MediaType, Stdio};
 use serde_json::{Map, Value};
 
 #[derive(Debug)]
@@ -33,12 +31,12 @@ pub enum Event {
         text: String,
     },
     Idle {
-        parent_id: String,
+        parent_id: Option<String>,
     },
     InputRequest {
         prompt: String,
         password: bool,
-        parent_id: String,
+        parent_id: Option<String>,
     },
     /// The kernel has gone away. Emitted by the reader task when its socket
     /// returns an error or the child process exits — not from a wire frame.
@@ -68,11 +66,7 @@ pub enum Channel {
 
 /// Convert a single message into an [`Event`].
 pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
-    let parent_id = msg
-        .parent_header
-        .as_ref()
-        .map(|h| h.msg_id.clone())
-        .unwrap_or_default();
+    let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
 
     match (&channel, &msg.content) {
         (Channel::IoPub, JupyterMessageContent::StreamContent(sc)) => Event::Stream {
@@ -110,7 +104,7 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             parent_id,
         },
         (Channel::IoPub, JupyterMessageContent::Status(s)) => {
-            if matches!(s.execution_state, ExecutionState::Idle) && !parent_id.is_empty() {
+            if matches!(s.execution_state, ExecutionState::Idle) && !parent_id.is_none() {
                 Event::Idle { parent_id }
             } else {
                 Event::Other
@@ -199,8 +193,8 @@ pub fn raw_msg_type_and_content(msg: &JupyterMessage) -> (String, Value) {
 mod tests {
     use super::*;
     use jupyter_protocol::{
-        DisplayData, ErrorOutput, InputRequest as JpInputRequest, JupyterMessage,
-        KernelInfoReply, LanguageInfo, Media, MediaType, Status, StreamContent,
+        DisplayData, ErrorOutput, InputRequest as JpInputRequest, JupyterMessage, KernelInfoReply,
+        LanguageInfo, Media, MediaType, Status, StreamContent,
     };
 
     fn with_parent(mut m: JupyterMessage, parent_id: &str) -> JupyterMessage {
@@ -319,7 +313,7 @@ mod tests {
         let msg: JupyterMessage = Status::idle().into();
         let msg = with_parent(msg, "abc");
         match from_message(Channel::IoPub, &msg) {
-            Event::Idle { parent_id } => assert_eq!(parent_id, "abc"),
+            Event::Idle { parent_id } => assert_eq!(parent_id, Some("abc".into())),
             other => panic!("expected Idle, got {other:?}"),
         }
     }
@@ -353,7 +347,7 @@ mod tests {
             } => {
                 assert_eq!(prompt, "enter: ");
                 assert!(!password);
-                assert_eq!(parent_id, "exec-1");
+                assert_eq!(parent_id, Some("exec-1".into()));
             }
             other => panic!("expected InputRequest, got {other:?}"),
         }

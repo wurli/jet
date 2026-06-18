@@ -452,6 +452,9 @@ fn default_temp_path() -> PathBuf {
 }
 
 fn make_session_id(name: Option<&str>) -> String {
+    // 'jet' is a special value which won't be printed in the CLI. Other values will be printed,
+    // which is useful for showing when another client (e.g. an agent) is interacting with the
+    // kernel.
     let prefix = name.unwrap_or_else(|| "jet");
-    format!("{}-{:x}", prefix, rand::thread_rng().gen::<u64>())
+    format!("{}---{:x}", prefix, rand::thread_rng().gen::<u64>())
 }

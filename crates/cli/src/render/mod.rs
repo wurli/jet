@@ -62,7 +62,7 @@ impl Renderer {
             }
             Event::Banner { text } => self.write_banner(&text)?,
             Event::Idle { parent_id } => {
-                let _ = self.idle_tx.send(parent_id);
+                let _ = self.idle_tx.send(parent_id.unwrap_or_default());
             }
             Event::InputRequest {
                 prompt,
@@ -73,7 +73,7 @@ impl Renderer {
                     let _ = tx.send(InputRequest {
                         prompt,
                         password,
-                        parent_id,
+                        parent_id: parent_id.unwrap_or_default(),
                     });
                 }
             }
@@ -184,7 +184,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
         r.handle_event(Event::Idle {
-            parent_id: "msg-1".into(),
+            parent_id: Some("msg-1".into()),
         })
         .unwrap();
         assert_eq!(rx.try_recv().unwrap(), "msg-1");
