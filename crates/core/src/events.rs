@@ -16,6 +16,12 @@ use jupyter_protocol::{ExecutionState, JupyterMessage, JupyterMessageContent, Me
 use serde_json::{Map, Value};
 
 #[derive(Debug)]
+pub struct Event {
+    pub parent_session: Option<String>,
+    pub data: EventData,
+}
+
+#[derive(Debug)]
 pub enum EventData {
     Stream {
         name: String,
@@ -65,10 +71,14 @@ pub enum Channel {
 }
 
 /// Convert a single message into an [`Event`].
-pub fn from_message(channel: Channel, msg: &JupyterMessage) -> EventData {
+pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
+    let parent_session = match msg.parent_header {
+        Some(ref h) => Some(h.session.clone()),
+        None => None,
+    };
     let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
 
-    match (&channel, &msg.content) {
+    let event_data = match (&channel, &msg.content) {
         (Channel::IoPub, JupyterMessageContent::StreamContent(sc)) => EventData::Stream {
             name: match sc.name {
                 Stdio::Stdout => "stdout".into(),
@@ -111,6 +121,11 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> EventData {
             }
         }
         _ => EventData::Other,
+    };
+
+    Event {
+        parent_session,
+        data: event_data,
     }
 }
 
@@ -211,7 +226,7 @@ mod tests {
             text: "hi".into(),
         }
         .into();
-        match from_message(Channel::IoPub, &msg) {
+        match from_message(Channel::IoPub, &msg).data {
             EventData::Stream { name, text } => {
                 assert_eq!(name, "stdout");
                 assert_eq!(text, "hi");
@@ -230,7 +245,7 @@ mod tests {
             transient: None,
         }
         .into();
-        match from_message(Channel::IoPub, &msg) {
+        match from_message(Channel::IoPub, &msg).data {
             EventData::DisplayData { data } => {
                 assert_eq!(data["text/plain"], "x");
             }
@@ -246,7 +261,7 @@ mod tests {
             traceback: vec!["line1".into(), "line2".into()],
         }
         .into();
-        match from_message(Channel::IoPub, &msg) {
+        match from_message(Channel::IoPub, &msg).data {
             EventData::Error { traceback } => assert_eq!(traceback, "line1\nline2"),
             other => panic!("expected Error, got {other:?}"),
         }
@@ -260,7 +275,7 @@ mod tests {
             traceback: vec![],
         }
         .into();
-        match from_message(Channel::IoPub, &msg) {
+        match from_message(Channel::IoPub, &msg).data {
             EventData::Error { traceback } => assert_eq!(traceback, "Error:\n! boom"),
             other => panic!("expected Error, got {other:?}"),
         }
@@ -274,7 +289,7 @@ mod tests {
             traceback: vec![],
         }
         .into();
-        match from_message(Channel::IoPub, &msg) {
+        match from_message(Channel::IoPub, &msg).data {
             EventData::Error { traceback } => assert_eq!(traceback, "RuntimeError: boom"),
             other => panic!("expected Error, got {other:?}"),
         }
@@ -302,7 +317,7 @@ mod tests {
             error: None,
         };
         let msg: JupyterMessage = reply.into();
-        match from_message(Channel::Shell, &msg) {
+        match from_message(Channel::Shell, &msg).data {
             EventData::Banner { text } => assert_eq!(text, "hello"),
             other => panic!("expected Banner, got {other:?}"),
         }
@@ -312,7 +327,7 @@ mod tests {
     fn idle_event() {
         let msg: JupyterMessage = Status::idle().into();
         let msg = with_parent(msg, "abc");
-        match from_message(Channel::IoPub, &msg) {
+        match from_message(Channel::IoPub, &msg).data {
             EventData::Idle { parent_id } => assert_eq!(parent_id, Some("abc".into())),
             other => panic!("expected Idle, got {other:?}"),
         }
@@ -323,7 +338,7 @@ mod tests {
         let msg: JupyterMessage = Status::busy().into();
         let msg = with_parent(msg, "abc");
         assert!(matches!(
-            from_message(Channel::IoPub, &msg),
+            from_message(Channel::IoPub, &msg).data,
             EventData::Other
         ));
     }
@@ -332,7 +347,7 @@ mod tests {
     fn idle_without_parent_is_other() {
         let msg: JupyterMessage = Status::idle().into();
         assert!(matches!(
-            from_message(Channel::IoPub, &msg),
+            from_message(Channel::IoPub, &msg).data,
             EventData::Other
         ));
     }
@@ -345,7 +360,7 @@ mod tests {
         }
         .into();
         let msg = with_parent(msg, "exec-1");
-        match from_message(Channel::Stdin, &msg) {
+        match from_message(Channel::Stdin, &msg).data {
             EventData::InputRequest {
                 prompt,
                 password,

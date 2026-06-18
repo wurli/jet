@@ -208,7 +208,7 @@ fn spawn_stdin_loop(
 /// signal; everything else becomes a `Content` frame keyed by parent_id.
 fn dispatch(router: &FrameRouter, channel: Channel, msg: &JupyterMessage) {
     let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
-    if let EventData::Idle { parent_id } = from_message(channel, msg) {
+    if let EventData::Idle { parent_id } = from_message(channel, msg).data {
         router.dispatch(
             None,
             Frame::Idle {

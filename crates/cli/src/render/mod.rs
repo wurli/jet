@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use base64::Engine;
-use jet_core::events::{EventData, InputRequest};
+use jet_core::events::{Event, EventData, InputRequest};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -50,8 +50,8 @@ impl Renderer {
         self
     }
 
-    pub fn handle_event(&self, event: EventData) -> Result<()> {
-        match event {
+    pub fn handle_event(&self, event: Event) -> Result<()> {
+        match event.data {
             EventData::Stream { name: _, text } => self.write_stream(&text)?,
             EventData::DisplayData { data } => self.render_data(&data)?,
             EventData::Error { traceback } => self.write(traceback.deref())?,
@@ -148,9 +148,12 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        r.handle_event(EventData::Stream {
-            name: "stdout".into(),
-            text: "hello".into(),
+        r.handle_event(Event {
+            parent_session: None,
+            data: EventData::Stream {
+                name: "stdout".into(),
+                text: "hello".into(),
+            },
         })
         .unwrap();
         let bytes = captured.lock().unwrap();
@@ -163,9 +166,12 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        r.handle_event(EventData::Stream {
-            name: "stderr".into(),
-            text: "oops".into(),
+        r.handle_event(Event {
+            parent_session: None,
+            data: EventData::Stream {
+                name: "stderr".into(),
+                text: "oops".into(),
+            },
         })
         .unwrap();
         let bytes = captured.lock().unwrap();
@@ -178,8 +184,11 @@ mod tests {
         let writer: SharedWriter = captured;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        r.handle_event(EventData::Idle {
-            parent_id: Some("msg-1".into()),
+        r.handle_event(Event {
+            parent_session: None,
+            data: EventData::Idle {
+                parent_id: Some("msg-1".into()),
+            },
         })
         .unwrap();
         assert_eq!(rx.try_recv().unwrap(), "msg-1");
