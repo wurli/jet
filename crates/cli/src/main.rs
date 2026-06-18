@@ -456,10 +456,7 @@ async fn drive_repl(
     let mut rl = Some(rustyline::DefaultEditor::new()?);
     loop {
         let mut prompt_rl = rl.take().expect("editor present at top of loop");
-        let prompt = match session_name {
-            Some(ref name) => format!("[{name}]> "),
-            None => "> ".to_string(),
-        };
+        let prompt = "> ".to_string();
         let read = tokio::task::spawn_blocking(move || {
             let result = prompt_rl.readline(&prompt);
             (prompt_rl, result)

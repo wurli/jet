@@ -38,6 +38,11 @@ pub struct Renderer {
     // because kernel streams arrive in arbitrary chunks — a partial line
     // followed by more text must NOT get a second prefix.
     at_line_start: Arc<Mutex<bool>>,
+    // The session name of the *last* output we wrote, or None for "own
+    // session / banner / no-parent". Used to decide whether to break to
+    // a fresh line before async other-session output: only break when we
+    // are switching authors, not continuing a stream from the same one.
+    last_author: Arc<Mutex<Option<String>>>,
 }
 
 impl Renderer {
@@ -53,6 +58,7 @@ impl Renderer {
             writer,
             own_session_name: None,
             at_line_start: Arc::new(Mutex::new(true)),
+            last_author: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -72,38 +78,70 @@ impl Renderer {
             .as_deref()
             .and_then(|id| id.split("---").next());
 
-        // Tag every kernel-emitted line with the originating session
-        // name when one was set, regardless of whether it came from
-        // *this* REPL or another client sharing the kernel — the user
-        // wants `[s2]` on every kernel line so it's clear which session
-        // produced it. The default name "jet" (no --session-name) is
-        // treated as "no tag".
+        // Output parented from this same session is shown un-prefixed
+        // (the rustyline prompt makes it obvious whose REPL you're in).
+        // Output from any *other* session sharing the kernel is tagged
+        // `[name]` on each line so the user can tell who's typing.
+        // Messages with no parent_session at all (banners, replies to
+        // our own kernel_info_request) are also treated as own.
         let own = self.own_session_name.as_deref().unwrap_or("jet");
-        let is_own_session = session_name == Some(own);
-        let prefix = match session_name {
-            Some("jet") | None => None,
-            Some(name) => Some(name.to_string()),
+        let is_own_session = match session_name {
+            Some(name) => name == own,
+            None => true,
+        };
+        let prefix = if is_own_session {
+            None
+        } else {
+            session_name.map(|s| s.to_string())
         };
 
+        // Break to a fresh line before async output only when the
+        // *author* changes — when own→other, other→different-other, or
+        // own→prompt-clear. Continuing a stream from the same author
+        // (e.g. successive partial chunks) doesn't break.
+        let new_author = if is_own_session {
+            None
+        } else {
+            session_name.map(|s| s.to_string())
+        };
+        let author_changed = {
+            let last = self.last_author.lock().unwrap();
+            *last != new_author
+        };
+        let needs_break = !is_own_session && author_changed;
+
         match event.data {
-            EventData::Stream { name: _, text } => self.write_prefixed(&text, prefix.as_deref())?,
             EventData::ExecuteInput { code } => {
                 // Skip the kernel's iopub echo of *our own* input —
                 // rustyline already drew the prompt locally. For any
                 // other session's input we render `[name]> code` so the
                 // user can follow what other clients are doing.
                 if !is_own_session {
-                    if let Some(name) = session_name {
+                    if needs_break {
                         self.break_for_async_write()?;
-                        self.write_line(&format!("[{name}]> {code}"))?;
-                    } else {
-                        self.break_for_async_write()?;
-                        self.write_line(&format!("> {code}"))?;
+                    }
+                    match session_name {
+                        Some(name) => self.write_line(&format!("[{name}]> {code}"))?,
+                        None => self.write_line(&format!("> {code}"))?,
                     }
                 }
             }
-            EventData::DisplayData { data } => self.render_data(&data)?,
+            EventData::DisplayData { data } => {
+                if needs_break {
+                    self.break_for_async_write()?;
+                }
+                self.render_data(&data)?;
+            }
+            EventData::Stream { name: _, text } => {
+                if needs_break {
+                    self.break_for_async_write()?;
+                }
+                self.write_prefixed(&text, prefix.as_deref())?;
+            }
             EventData::Error { traceback } => {
+                if needs_break {
+                    self.break_for_async_write()?;
+                }
                 self.write_prefixed(&traceback, prefix.as_deref())?;
                 self.ensure_newline()?;
             }
@@ -126,6 +164,7 @@ impl Renderer {
             }
             EventData::KernelExited | EventData::Other => {}
         }
+        *self.last_author.lock().unwrap() = new_author;
         Ok(())
     }
 
@@ -320,7 +359,7 @@ mod tests {
         let bytes = captured.lock().unwrap();
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "[my-session] Error\n[my-session] Something went wrong"
+            "\r\x1b[2K[my-session] Error\n[my-session] Something went wrong"
         );
     }
 
@@ -341,9 +380,11 @@ mod tests {
             .unwrap();
         }
         let bytes = captured.lock().unwrap();
+        // First chunk fires `break_for_async_write`; subsequent chunks
+        // continue the same line so they don't.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "[s] hello world\n[s] bye"
+            "\r\x1b[2K[s] hello world\n[s] bye"
         );
     }
 
@@ -373,9 +414,12 @@ mod tests {
         .unwrap();
 
         let bytes = captured.lock().unwrap();
+        // Switching from alice (own) to bob (other) triggers a clean
+        // line-break before bob's output so it can't land on top of
+        // rustyline's prompt.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "mine\n[bob] theirs\n"
+            "mine\n\r\x1b[2K[bob] theirs\n"
         );
     }
 
@@ -394,9 +438,10 @@ mod tests {
         })
         .unwrap();
         let bytes = captured.lock().unwrap();
+        // First chunk from `s` triggers the author-change break.
         assert_eq!(
             std::str::from_utf8(&*bytes).unwrap(),
-            "[s] frame1\r[s] frame2"
+            "\r\x1b[2K[s] frame1\r[s] frame2"
         );
     }
 
