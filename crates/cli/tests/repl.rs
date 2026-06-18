@@ -378,7 +378,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
 
     let conn = std::env::temp_dir().join(format!(
         "jet-attach-quit-test-{:x}.json",
-        rand::thread_rng().gen::<u64>()
+        rand::thread_rng().r#gen::<u64>()
     ));
     let conn_str = conn.to_string_lossy().to_string();
 
@@ -463,7 +463,7 @@ fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
     let python = which("python3").ok_or_else(|| anyhow::anyhow!("python3 not on PATH"))?;
     let dir = std::env::temp_dir().join(format!(
         "jet-test-kernelspec-{:x}",
-        rand::thread_rng().gen::<u64>()
+        rand::thread_rng().r#gen::<u64>()
     ));
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("kernel.json");
@@ -500,7 +500,7 @@ fn detach_and_attach_round_trip() {
 
     let conn = std::env::temp_dir().join(format!(
         "jet-detach-test-{:x}.json",
-        rand::thread_rng().gen::<u64>()
+        rand::thread_rng().r#gen::<u64>()
     ));
 
     fn drive(

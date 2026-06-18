@@ -37,7 +37,7 @@ pub fn generate(path: &Path) -> Result<ConnectionInfo> {
     let control_port = iter.next().unwrap();
     let hb_port = iter.next().unwrap();
 
-    let key_bytes: [u8; 16] = rand::thread_rng().gen();
+    let key_bytes: [u8; 16] = rand::thread_rng().r#gen();
     let key = hex::encode(key_bytes);
 
     let info = ConnectionInfo {
@@ -107,7 +107,7 @@ mod tests {
     fn tempfile_path(prefix: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
             "jet-test-{prefix}-{:x}.json",
-            rand::thread_rng().gen::<u64>()
+            rand::thread_rng().r#gen::<u64>()
         ))
     }
 }

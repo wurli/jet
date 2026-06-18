@@ -61,7 +61,7 @@ mod tests {
     #[serial]
     fn no_tmux_passes_through_unchanged() {
         let prev = std::env::var_os("TMUX");
-        std::env::remove_var("TMUX");
+        unsafe { std::env::remove_var("TMUX") };
 
         let mut out = Vec::new();
         let payload = b"\x1b_Ga=T;abc\x1b\\";
@@ -69,14 +69,14 @@ mod tests {
         assert_eq!(out, payload);
 
         if let Some(v) = prev {
-            std::env::set_var("TMUX", v);
+            unsafe { std::env::set_var("TMUX", v) };
         }
     }
 
     #[test]
     #[serial]
     fn in_tmux_doubles_escapes() {
-        std::env::set_var("TMUX", "fake");
+        unsafe { std::env::set_var("TMUX", "fake") };
 
         let mut out = Vec::new();
         let payload = b"\x1b_Ga=T;abc\x1b\\";
@@ -89,7 +89,7 @@ mod tests {
         let original_esc = payload.iter().filter(|&&b| b == 0x1b).count();
         assert_eq!(interior_esc, original_esc * 2);
 
-        std::env::remove_var("TMUX");
+        unsafe { std::env::remove_var("TMUX") };
     }
 
     #[test]

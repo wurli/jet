@@ -93,7 +93,7 @@ pub fn comm_open(
         Value::Object(m) => m,
         _ => Default::default(),
     };
-    let comm_id = format!("{:032x}", rand::thread_rng().gen::<u128>());
+    let comm_id = format!("{:032x}", rand::thread_rng().r#gen::<u128>());
     let req: JupyterMessage = CommOpen {
         comm_id: comm_id.clone().into(),
         target_name,

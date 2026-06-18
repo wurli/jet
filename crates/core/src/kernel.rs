@@ -447,7 +447,7 @@ fn build_kernel_command(spec: &KernelSpec, connection_path: &Path) -> Result<Com
 fn default_temp_path() -> PathBuf {
     std::env::temp_dir().join(format!(
         "jet-conn-{:x}.json",
-        rand::thread_rng().gen::<u64>()
+        rand::thread_rng().r#gen::<u64>()
     ))
 }
 
@@ -456,5 +456,5 @@ fn make_session_id(name: Option<&str>) -> String {
     // which is useful for showing when another client (e.g. an agent) is interacting with the
     // kernel.
     let prefix = name.unwrap_or_else(|| "jet");
-    format!("{}---{:x}", prefix, rand::thread_rng().gen::<u64>())
+    format!("{}---{:x}", prefix, rand::thread_rng().r#gen::<u64>())
 }
