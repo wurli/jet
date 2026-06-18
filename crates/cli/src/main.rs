@@ -178,9 +178,9 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     };
 
     let mut kernel = if let Some(ref path) = conn_path {
-        Kernel::attach_or_spawn(&spec, path).await?
+        Kernel::attach_or_spawn(&spec, path, args.session_name.as_deref()).await?
     } else {
-        Kernel::spawn(&spec, conn_path.clone()).await?
+        Kernel::spawn(&spec, conn_path.clone(), args.session_name.as_deref()).await?
     };
 
     let render_graphics = !args.no_graphics;
@@ -202,7 +202,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 
 async fn run_attach(args: AttachArgs) -> Result<()> {
     init_logger(args.global.log.as_deref());
-    let mut kernel = Kernel::attach(&args.connection_file).await?;
+    let mut kernel = Kernel::attach(&args.connection_file, args.session_name.as_deref()).await?;
     let render_graphics = !args.no_graphics;
     drive_repl(&mut kernel, render_graphics).await?;
     // Attach mode never kills the kernel; we just disconnect.

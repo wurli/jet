@@ -22,7 +22,7 @@ use crate::runtime::{KERNELS, KernelHandle, get, rt};
 /// `jet connect --connection-file`).
 pub fn connect(
     lua: &Lua,
-    (spec_path, connection_file): (String, Option<String>),
+    (spec_path, connection_file, session_name): (String, Option<String>, Option<String>),
 ) -> LuaResult<(String, LuaValue)> {
     let spec = KernelSpec::load(&PathBuf::from(&spec_path))
         .with_context(|| format!("loading kernelspec {spec_path}"))
@@ -31,8 +31,11 @@ pub fn connect(
     let (session_id, info, handle) = rt()
         .block_on(async move {
             let kernel = match connection_file {
-                Some(p) => Kernel::attach_or_spawn(&spec, &PathBuf::from(p)).await?,
-                None => Kernel::spawn(&spec, None).await?,
+                Some(p) => {
+                    Kernel::attach_or_spawn(&spec, &PathBuf::from(p), session_name.as_deref())
+                        .await?
+                }
+                None => Kernel::spawn(&spec, None, session_name.as_deref()).await?,
             };
             boot_kernel(kernel).await
         })
@@ -46,10 +49,15 @@ pub fn connect(
 ///
 /// Attach to a kernel already running on `connection_file`. Mirrors
 /// `jet attach`: no kernelspec, never spawns.
-pub fn attach(lua: &Lua, connection_file: String) -> LuaResult<(String, LuaValue)> {
+pub fn attach(
+    lua: &Lua,
+    (connection_file, session_name): (String, Option<String>),
+) -> LuaResult<(String, LuaValue)> {
     let path = PathBuf::from(&connection_file);
     let (session_id, info, handle) = rt()
-        .block_on(async move { boot_kernel(Kernel::attach(&path).await?).await })
+        .block_on(async move {
+            boot_kernel(Kernel::attach(&path, session_name.as_deref()).await?).await
+        })
         .into_lua_err()?;
 
     KERNELS.lock().unwrap().insert(session_id.clone(), handle);
@@ -60,9 +68,7 @@ pub fn attach(lua: &Lua, connection_file: String) -> LuaResult<(String, LuaValue
 /// `kernel_info_request` synchronously, then spawn the long-running
 /// reader/writer tasks and return a populated [`KernelHandle`]. Used
 /// by both `start_kernel` and `attach_kernel`.
-async fn boot_kernel(
-    mut kernel: Kernel,
-) -> anyhow::Result<(String, Value, Arc<KernelHandle>)> {
+async fn boot_kernel(mut kernel: Kernel) -> anyhow::Result<(String, Value, Arc<KernelHandle>)> {
     let session_id = kernel.session_id.clone();
 
     let mut shell = kernel.channels.take_shell()?;
@@ -73,10 +79,7 @@ async fn boot_kernel(
     // shell socket, before spawning the long-running shell task.
     let info_req: JupyterMessage = KernelInfoRequest {}.into();
     let info_id = info_req.header.msg_id.clone();
-    shell
-        .send(info_req)
-        .await
-        .context("shell.send")?;
+    shell.send(info_req).await.context("shell.send")?;
     let info = match tokio::time::timeout(
         Duration::from_secs(10),
         await_kernel_info(&mut shell, &info_id),
@@ -206,7 +209,12 @@ fn spawn_stdin_loop(
 fn dispatch(router: &FrameRouter, channel: Channel, msg: &JupyterMessage) {
     let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
     if let Event::Idle { parent_id } = from_message(channel, msg) {
-        router.dispatch(None, Frame::Idle { parent_msg_id: parent_id });
+        router.dispatch(
+            None,
+            Frame::Idle {
+                parent_msg_id: parent_id,
+            },
+        );
         return;
     }
     let (msg_type, content) = raw_msg_type_and_content(msg);
@@ -216,8 +224,7 @@ fn dispatch(router: &FrameRouter, channel: Channel, msg: &JupyterMessage) {
 /// `jet.shutdown_kernel(session_id)`
 pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
-    rt()
-        .block_on(async move { handle.kernel.lock().await.shutdown().await })
+    rt().block_on(async move { handle.kernel.lock().await.shutdown().await })
         .into_lua_err()?;
     KERNELS.lock().unwrap().remove(&session_id);
     Ok(())
@@ -226,8 +233,7 @@ pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
 /// `jet.interrupt(session_id)`
 pub fn interrupt(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
-    rt()
-        .block_on(async move { handle.kernel.lock().await.interrupt().await })
+    rt().block_on(async move { handle.kernel.lock().await.interrupt().await })
         .into_lua_err()
 }
 

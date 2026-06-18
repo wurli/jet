@@ -186,7 +186,11 @@ impl Kernel {
     /// `connection_path` chooses where the file lives. `None` → a tempfile
     /// scoped to this kernel's lifetime. `Some(path)` → that exact path,
     /// preserved when the kernel is later detached or attached to.
-    pub async fn spawn(spec: &KernelSpec, connection_path: Option<PathBuf>) -> Result<Self> {
+    pub async fn spawn(
+        spec: &KernelSpec,
+        connection_path: Option<PathBuf>,
+        session_name: Option<&str>,
+    ) -> Result<Self> {
         let conn_path = match connection_path {
             Some(p) => ConnectionPath::Persistent(p),
             None => ConnectionPath::OwnedTemp(default_temp_path()),
@@ -220,7 +224,7 @@ impl Kernel {
             .with_context(|| format!("spawning kernel {:?}", spec.argv.first()))?;
         let guard = ChildGuard::new(child);
 
-        let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
+        let session_id = make_session_id(session_name);
         let channels = connect_channels(&info, &session_id).await?;
 
         Ok(Self {
@@ -236,14 +240,14 @@ impl Kernel {
     /// Attach to an already-running kernel via its connection file. We do
     /// not own the child process; dropping this `Kernel` does not stop
     /// the kernel.
-    pub async fn attach(connection_path: &Path) -> Result<Self> {
+    pub async fn attach(connection_path: &Path, session_name: Option<&str>) -> Result<Self> {
         let info = connection_file::read(connection_path)?;
         // ZMQ DEALER/SUB sockets connect to dead endpoints without
         // complaint and just queue forever, so probe the shell port
         // with a plain TCP connect first to fail fast when the kernel
         // recorded in the connection file is no longer alive.
         probe_kernel_alive(&info).await?;
-        let session_id = format!("jet-{:x}", rand::thread_rng().gen::<u64>());
+        let session_id = make_session_id(session_name);
         let channels = connect_channels(&info, &session_id).await?;
         let log_path = log_path_for(connection_path);
         let log_file_path = log_path.exists().then_some(log_path);
@@ -260,12 +264,16 @@ impl Kernel {
         })
     }
 
-    pub async fn attach_or_spawn(spec: &KernelSpec, connection_path: &Path) -> Result<Self> {
-        match Self::attach(&connection_path).await {
+    pub async fn attach_or_spawn(
+        spec: &KernelSpec,
+        connection_path: &Path,
+        session_name: Option<&str>,
+    ) -> Result<Self> {
+        match Self::attach(&connection_path, session_name).await {
             Ok(kernel) => Ok(kernel),
             Err(e) => {
                 log::info!("Failed to connect to existing kernel at {connection_path:?}: {e}");
-                Self::spawn(spec, Some(connection_path.to_path_buf())).await
+                Self::spawn(spec, Some(connection_path.to_path_buf()), session_name).await
             }
         }
     }
@@ -441,4 +449,9 @@ fn default_temp_path() -> PathBuf {
         "jet-conn-{:x}.json",
         rand::thread_rng().gen::<u64>()
     ))
+}
+
+fn make_session_id(name: Option<&str>) -> String {
+    let prefix = name.unwrap_or_else(|| "jet");
+    format!("{}-{:x}", prefix, rand::thread_rng().gen::<u64>())
 }

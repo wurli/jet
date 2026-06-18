@@ -59,6 +59,10 @@ pub struct ConnectArgs {
     #[arg(long)]
     pub no_graphics: bool,
 
+    /// A name used to identify the client.
+    #[arg(long)]
+    pub session_name: Option<String>,
+
     #[command(flatten)]
     pub global: GlobalArgs,
 }
@@ -73,6 +77,10 @@ pub struct AttachArgs {
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
     #[arg(long)]
     pub no_graphics: bool,
+
+    /// A name used to identify the client.
+    #[arg(long)]
+    pub session_name: Option<String>,
 
     #[command(flatten)]
     pub global: GlobalArgs,
