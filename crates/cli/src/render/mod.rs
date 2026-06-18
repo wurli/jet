@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use base64::Engine;
-use jet_core::events::{Event, InputRequest};
+use jet_core::events::{EventData, InputRequest};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -50,16 +50,16 @@ impl Renderer {
         self
     }
 
-    pub fn handle_event(&self, event: Event) -> Result<()> {
+    pub fn handle_event(&self, event: EventData) -> Result<()> {
         match event {
-            Event::Stream { name: _, text } => self.write_stream(&text)?,
-            Event::DisplayData { data } => self.render_data(&data)?,
-            Event::Error { traceback } => self.write(traceback.deref())?,
-            Event::Banner { text } => self.write(&text)?,
-            Event::Idle { parent_id } => {
+            EventData::Stream { name: _, text } => self.write_stream(&text)?,
+            EventData::DisplayData { data } => self.render_data(&data)?,
+            EventData::Error { traceback } => self.write(traceback.deref())?,
+            EventData::Banner { text } => self.write(&text)?,
+            EventData::Idle { parent_id } => {
                 let _ = self.idle_tx.send(parent_id.unwrap_or_default());
             }
-            Event::InputRequest {
+            EventData::InputRequest {
                 prompt,
                 password,
                 parent_id,
@@ -72,7 +72,7 @@ impl Renderer {
                     });
                 }
             }
-            Event::KernelExited | Event::Other => {}
+            EventData::KernelExited | EventData::Other => {}
         }
         Ok(())
     }
@@ -148,7 +148,7 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        r.handle_event(Event::Stream {
+        r.handle_event(EventData::Stream {
             name: "stdout".into(),
             text: "hello".into(),
         })
@@ -163,7 +163,7 @@ mod tests {
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        r.handle_event(Event::Stream {
+        r.handle_event(EventData::Stream {
             name: "stderr".into(),
             text: "oops".into(),
         })
@@ -178,7 +178,7 @@ mod tests {
         let writer: SharedWriter = captured;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let r = Renderer::new(false, tx, writer);
-        r.handle_event(Event::Idle {
+        r.handle_event(EventData::Idle {
             parent_id: Some("msg-1".into()),
         })
         .unwrap();

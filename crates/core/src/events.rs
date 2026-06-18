@@ -16,7 +16,7 @@ use jupyter_protocol::{ExecutionState, JupyterMessage, JupyterMessageContent, Me
 use serde_json::{Map, Value};
 
 #[derive(Debug)]
-pub enum Event {
+pub enum EventData {
     Stream {
         name: String,
         text: String,
@@ -65,21 +65,21 @@ pub enum Channel {
 }
 
 /// Convert a single message into an [`Event`].
-pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
+pub fn from_message(channel: Channel, msg: &JupyterMessage) -> EventData {
     let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
 
     match (&channel, &msg.content) {
-        (Channel::IoPub, JupyterMessageContent::StreamContent(sc)) => Event::Stream {
+        (Channel::IoPub, JupyterMessageContent::StreamContent(sc)) => EventData::Stream {
             name: match sc.name {
                 Stdio::Stdout => "stdout".into(),
                 Stdio::Stderr => "stderr".into(),
             },
             text: sc.text.clone(),
         },
-        (Channel::IoPub, JupyterMessageContent::DisplayData(dd)) => Event::DisplayData {
+        (Channel::IoPub, JupyterMessageContent::DisplayData(dd)) => EventData::DisplayData {
             data: media_to_value(&dd.data.content),
         },
-        (Channel::IoPub, JupyterMessageContent::ExecuteResult(er)) => Event::DisplayData {
+        (Channel::IoPub, JupyterMessageContent::ExecuteResult(er)) => EventData::DisplayData {
             data: media_to_value(&er.data.content),
         },
         (Channel::IoPub, JupyterMessageContent::ErrorOutput(err)) => {
@@ -93,24 +93,24 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             } else {
                 err.traceback.join("\n")
             };
-            Event::Error { traceback }
+            EventData::Error { traceback }
         }
-        (Channel::Shell, JupyterMessageContent::KernelInfoReply(reply)) => Event::Banner {
+        (Channel::Shell, JupyterMessageContent::KernelInfoReply(reply)) => EventData::Banner {
             text: reply.banner.clone(),
         },
-        (Channel::Stdin, JupyterMessageContent::InputRequest(req)) => Event::InputRequest {
+        (Channel::Stdin, JupyterMessageContent::InputRequest(req)) => EventData::InputRequest {
             prompt: req.prompt.clone(),
             password: req.password,
             parent_id,
         },
         (Channel::IoPub, JupyterMessageContent::Status(s)) => {
             if matches!(s.execution_state, ExecutionState::Idle) && !parent_id.is_none() {
-                Event::Idle { parent_id }
+                EventData::Idle { parent_id }
             } else {
-                Event::Other
+                EventData::Other
             }
         }
-        _ => Event::Other,
+        _ => EventData::Other,
     }
 }
 
@@ -212,7 +212,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg) {
-            Event::Stream { name, text } => {
+            EventData::Stream { name, text } => {
                 assert_eq!(name, "stdout");
                 assert_eq!(text, "hi");
             }
@@ -231,7 +231,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg) {
-            Event::DisplayData { data } => {
+            EventData::DisplayData { data } => {
                 assert_eq!(data["text/plain"], "x");
             }
             other => panic!("expected DisplayData, got {other:?}"),
@@ -247,7 +247,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg) {
-            Event::Error { traceback } => assert_eq!(traceback, "line1\nline2"),
+            EventData::Error { traceback } => assert_eq!(traceback, "line1\nline2"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
@@ -261,7 +261,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg) {
-            Event::Error { traceback } => assert_eq!(traceback, "Error:\n! boom"),
+            EventData::Error { traceback } => assert_eq!(traceback, "Error:\n! boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
@@ -275,7 +275,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg) {
-            Event::Error { traceback } => assert_eq!(traceback, "RuntimeError: boom"),
+            EventData::Error { traceback } => assert_eq!(traceback, "RuntimeError: boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
@@ -303,7 +303,7 @@ mod tests {
         };
         let msg: JupyterMessage = reply.into();
         match from_message(Channel::Shell, &msg) {
-            Event::Banner { text } => assert_eq!(text, "hello"),
+            EventData::Banner { text } => assert_eq!(text, "hello"),
             other => panic!("expected Banner, got {other:?}"),
         }
     }
@@ -313,7 +313,7 @@ mod tests {
         let msg: JupyterMessage = Status::idle().into();
         let msg = with_parent(msg, "abc");
         match from_message(Channel::IoPub, &msg) {
-            Event::Idle { parent_id } => assert_eq!(parent_id, Some("abc".into())),
+            EventData::Idle { parent_id } => assert_eq!(parent_id, Some("abc".into())),
             other => panic!("expected Idle, got {other:?}"),
         }
     }
@@ -322,13 +322,19 @@ mod tests {
     fn busy_status_is_other() {
         let msg: JupyterMessage = Status::busy().into();
         let msg = with_parent(msg, "abc");
-        assert!(matches!(from_message(Channel::IoPub, &msg), Event::Other));
+        assert!(matches!(
+            from_message(Channel::IoPub, &msg),
+            EventData::Other
+        ));
     }
 
     #[test]
     fn idle_without_parent_is_other() {
         let msg: JupyterMessage = Status::idle().into();
-        assert!(matches!(from_message(Channel::IoPub, &msg), Event::Other));
+        assert!(matches!(
+            from_message(Channel::IoPub, &msg),
+            EventData::Other
+        ));
     }
 
     #[test]
@@ -340,7 +346,7 @@ mod tests {
         .into();
         let msg = with_parent(msg, "exec-1");
         match from_message(Channel::Stdin, &msg) {
-            Event::InputRequest {
+            EventData::InputRequest {
                 prompt,
                 password,
                 parent_id,

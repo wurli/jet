@@ -1,7 +1,7 @@
 //! Kernel lifecycle: start, attach, shutdown, interrupt, list.
 
 use anyhow::Context;
-use jet_core::events::{Channel, Event, from_message, raw_msg_type_and_content};
+use jet_core::events::{Channel, EventData, from_message, raw_msg_type_and_content};
 use jet_core::jupyter_protocol::{JupyterMessage, KernelInfoRequest};
 use jet_core::kernel::{Kernel, KernelSpec};
 use mlua::prelude::*;
@@ -208,7 +208,7 @@ fn spawn_stdin_loop(
 /// signal; everything else becomes a `Content` frame keyed by parent_id.
 fn dispatch(router: &FrameRouter, channel: Channel, msg: &JupyterMessage) {
     let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
-    if let Event::Idle { parent_id } = from_message(channel, msg) {
+    if let EventData::Idle { parent_id } = from_message(channel, msg) {
         router.dispatch(
             None,
             Frame::Idle {
