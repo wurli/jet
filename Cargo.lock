@@ -648,7 +648,6 @@ dependencies = [
  "anyhow",
  "base64",
  "clap",
- "env_logger",
  "jet_core",
  "libc",
  "log",
@@ -665,6 +664,7 @@ name = "jet_core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "env_logger",
  "hex",
  "jupyter-protocol",
  "jupyter-zmq-client",

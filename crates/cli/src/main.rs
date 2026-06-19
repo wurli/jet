@@ -19,6 +19,7 @@ mod cli;
 mod render;
 
 use cli::{Args, AttachArgs, Command, ConnectArgs};
+use jet_core::logger::init_logger;
 use render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
 
 enum WaitResult {
@@ -130,16 +131,6 @@ async fn wait_for_idle(
             },
         }
     }
-}
-
-fn init_logger(log_file: Option<&std::path::Path>) {
-    let Some(path) = log_file else { return };
-    let Ok(file) = std::fs::File::create(path) else {
-        return;
-    };
-    let _ = env_logger::Builder::from_default_env()
-        .target(env_logger::Target::Pipe(Box::new(file)))
-        .try_init();
 }
 
 #[tokio::main]

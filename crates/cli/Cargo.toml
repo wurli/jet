@@ -13,7 +13,6 @@ jet_core.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 clap.workspace = true
-env_logger.workspace = true
 libc.workspace = true
 log.workspace = true
 rand.workspace = true

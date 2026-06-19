@@ -452,6 +452,7 @@ fn default_temp_path() -> PathBuf {
 }
 
 fn make_session_id(name: Option<&str>) -> String {
+    log::info!("Generated new session name: {:?}", name);
     // 'jet' is a special value which won't be printed in the CLI. Other values will be printed,
     // which is useful for showing when another client (e.g. an agent) is interacting with the
     // kernel.

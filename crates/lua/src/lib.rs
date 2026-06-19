@@ -24,6 +24,7 @@ use api::stdin::provide_stdin;
 
 #[mlua::lua_module]
 fn jet(lua: &Lua) -> LuaResult<LuaTable> {
+    jet_core::logger::init_logger(Some(std::path::Path::new("jet-lua.log")));
     register(lua)
 }
 
@@ -36,8 +37,14 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("attach", lua.create_function(attach)?)?;
     exports.set("shutdown_kernel", lua.create_function(shutdown_kernel)?)?;
     exports.set("interrupt", lua.create_function(interrupt)?)?;
-    exports.set("list_running_kernels", lua.create_function(list_running_kernels)?)?;
-    exports.set("list_available_kernels", lua.create_function(list_available_kernels)?)?;
+    exports.set(
+        "list_running_kernels",
+        lua.create_function(list_running_kernels)?,
+    )?;
+    exports.set(
+        "list_available_kernels",
+        lua.create_function(list_available_kernels)?,
+    )?;
     exports.set("execute_code", lua.create_function(execute_code)?)?;
     exports.set("is_complete", lua.create_function(is_complete)?)?;
     exports.set("get_completions", lua.create_function(get_completions)?)?;
