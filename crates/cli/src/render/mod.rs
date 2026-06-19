@@ -90,6 +90,11 @@ impl Renderer {
             session_name.map(|s| s.to_string())
         };
 
+        log::info!(
+            "Handling event: {:?} (own_session={is_own_session})",
+            event.data
+        );
+
         match event.data {
             EventData::ExecuteInput { code } => {
                 // Skip the kernel's iopub echo of *our own* input —
@@ -99,24 +104,19 @@ impl Renderer {
                 // leading `\n` drops us to a fresh line so we don't
                 // collide with rustyline's prompt.
                 if !is_own_session {
-                    match session_name {
-                        Some(name) => self.write_line(&format!(
-                            "\r{}> {code}",
-                            ansi::dim(&format!("[{name}]"))
-                        ))?,
-                        None => self.write_line(&format!("\r> {code}"))?,
-                    }
+                    self.write("\r", None)?;
+                    self.write_line(&format!("> {code}"), prefix.as_deref())?
                 }
             }
-            EventData::DisplayData { data } => self.render_data(&data)?,
+            EventData::DisplayData { data } => self.render_data(&data, prefix.as_deref())?,
             EventData::Stream { name: _, text } => {
-                self.write_prefixed(&text, prefix.as_deref())?;
+                self.write(&text, prefix.as_deref())?;
             }
             EventData::Error { traceback } => {
-                self.write_prefixed(&traceback, prefix.as_deref())?;
+                self.write(&traceback, prefix.as_deref())?;
                 self.ensure_newline()?;
             }
-            EventData::Banner { text } => self.write_line(&text)?,
+            EventData::Banner { text } => self.write_line(&text, None)?,
             EventData::Idle { parent_id } => {
                 // When *another* session's execution finishes, rustyline's
                 // prompt is no longer where it last drew it (we've written
@@ -150,12 +150,12 @@ impl Renderer {
         Ok(())
     }
 
-    /// Write a chunk to the terminal, inserting `[prefix] ` at the start
-    /// of every new line. Honours streaming boundaries: if the previous
-    /// write ended without a newline, the next call continues the same
-    /// line (no extra prefix); a chunk that ends with `\n` leaves the
-    /// next call expecting to start a new line.
-    fn write_prefixed(&self, text: &str, prefix: Option<&str>) -> Result<()> {
+    /// Write a chunk to the terminal, optionally inserting `[prefix] ` at
+    /// the start of every new line. Honours streaming boundaries: if the
+    /// previous write ended without a newline, the next call continues
+    /// the same line (no extra prefix); a chunk that ends with `\n`
+    /// leaves the next call expecting to start a new line.
+    fn write(&self, text: &str, prefix: Option<&str>) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
@@ -193,22 +193,22 @@ impl Renderer {
         Ok(())
     }
 
-    /// Write a complete line (appends a newline if missing). Resets the
-    /// streaming state to "at line start" so subsequent stream output is
-    /// re-prefixed.
-    fn write_line(&self, text: &str) -> Result<()> {
+    /// Write a complete line (appends a newline if missing), optionally
+    /// prefixed. Resets the streaming state to "at line start" so
+    /// subsequent stream output is re-prefixed.
+    fn write_line(&self, text: &str, prefix: Option<&str>) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        if text.ends_with('\n') {
-            write!(w, "{text}")?;
-        } else {
-            writeln!(w, "{text}")?;
+        let needs_newline = !text.ends_with('\n');
+        self.write(text, prefix)?;
+        if needs_newline {
+            let mut w = self.writer.lock().unwrap();
+            let mut at_start = self.at_line_start.lock().unwrap();
+            writeln!(w)?;
+            *at_start = true;
+            w.flush()?;
         }
-        *at_start = true;
-        w.flush()?;
         Ok(())
     }
 
@@ -223,7 +223,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn render_data(&self, data: &Value) -> Result<()> {
+    fn render_data(&self, data: &Value, prefix: Option<&str>) -> Result<()> {
         if !data.is_object() {
             return Ok(());
         }
@@ -251,13 +251,13 @@ impl Renderer {
                     .decode(image_data)
                     .map(|b| b.len())
                     .unwrap_or(0);
-                self.write_line(&format!("[image/png {len} bytes]"))?;
+                self.write_line(&format!("[image/png {len} bytes]"), None)?;
                 return Ok(());
             }
         };
 
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
-            self.write_line(t)?;
+            self.write(t, prefix)?;
             return Ok(());
         }
 
