@@ -9,7 +9,8 @@ local function get_lib_extension()
 end
 
 -- local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/')
-local base_path = debug.getinfo(1).source:match("@?(.*/)") .. "../../../target/release/"
+local base_path = debug.getinfo(1).source:match("@?(.*/)") .. "../../../target/debug/"
+vim.notify("WARNING: using debug build")
 local lib_name = "jet_lua"
 local entry_symbol = "luaopen_jet"
 local lib_extension = get_lib_extension()
