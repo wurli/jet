@@ -12,7 +12,9 @@
 //! routing without depending on the optional `JupyterMessage::channel`
 //! field (which is `None` for ZMQ transports).
 
-use jupyter_protocol::{ExecutionState, JupyterMessage, JupyterMessageContent, MediaType, Stdio};
+use jupyter_protocol::{
+    ExecutionState, IsCompleteReplyStatus, JupyterMessage, JupyterMessageContent, MediaType, Stdio,
+};
 use serde_json::{Map, Value};
 
 #[derive(Debug)]
@@ -47,6 +49,11 @@ pub enum EventData {
     ExecuteInput {
         code: String,
     },
+    IsComplete {
+        parent_id: Option<String>,
+        status: IsCompleteReplyStatus,
+        indent: String,
+    },
     /// The kernel has gone away. Emitted by the reader task when its socket
     /// returns an error or the child process exits — not from a wire frame.
     KernelExited,
@@ -60,6 +67,15 @@ pub struct InputRequest {
     pub prompt: String,
     pub password: bool,
     pub parent_id: String,
+}
+
+/// Forwarded by consumers of [`EventData::IsComplete`] so the REPL can
+/// match the reply against the request it sent and decide whether to
+/// execute or keep accumulating input.
+pub struct IsCompleteReplyMsg {
+    pub parent_id: String,
+    pub status: IsCompleteReplyStatus,
+    pub indent: String,
 }
 
 /// Which ZMQ channel a message arrived on. We keep our own enum rather
@@ -113,6 +129,11 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
         }
         (Channel::Shell, JupyterMessageContent::KernelInfoReply(reply)) => EventData::Banner {
             text: reply.banner.clone(),
+        },
+        (Channel::Shell, JupyterMessageContent::IsCompleteReply(reply)) => EventData::IsComplete {
+            parent_id,
+            status: reply.status.clone(),
+            indent: reply.indent.clone(),
         },
         (Channel::Stdin, JupyterMessageContent::InputRequest(req)) => EventData::InputRequest {
             prompt: req.prompt.clone(),

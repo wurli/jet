@@ -10,8 +10,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Parser;
-use jet_core::events::{Channel, InputRequest, from_message};
-use jet_core::jupyter_protocol::{ExecuteRequest, InputReply, JupyterMessage, KernelInfoRequest};
+use jet_core::events::{Channel, InputRequest, IsCompleteReplyMsg, from_message};
+use jet_core::jupyter_protocol::{
+    ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
+    KernelInfoRequest,
+};
 use jet_core::kernel::Kernel;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -103,6 +106,30 @@ fn nix_pipe() -> std::io::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
             std::os::fd::OwnedFd::from_raw_fd(fds[0]),
             std::os::fd::OwnedFd::from_raw_fd(fds[1]),
         ))
+    }
+}
+
+/// Wait for the IsCompleteReply matching `target`. Returns `None` on
+/// timeout or channel close — caller treats that as "execute anyway".
+async fn wait_for_is_complete(
+    rx: &mut UnboundedReceiver<IsCompleteReplyMsg>,
+    target: &str,
+    timeout: Duration,
+) -> Option<IsCompleteReplyMsg> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return None;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(remaining) => return None,
+            r = rx.recv() => match r {
+                Some(reply) if reply.parent_id == target => return Some(reply),
+                Some(_) => continue,
+                None => return None,
+            },
+        }
     }
 }
 
@@ -214,9 +241,12 @@ async fn drive_repl(
 
     let (idle_tx, mut idle_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel::<InputRequest>();
+    let (is_complete_tx, mut is_complete_rx) =
+        tokio::sync::mpsc::unbounded_channel::<IsCompleteReplyMsg>();
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
     let renderer = Renderer::new(render_graphics, idle_tx, writer)
         .with_input_tx(input_tx)
+        .with_is_complete_tx(is_complete_tx)
         .with_own_session_name(session_name.clone());
 
     // Channels carrying messages FROM the REPL TO the per-channel writer
@@ -446,42 +476,104 @@ async fn drive_repl(
 
     let mut rl = Some(rustyline::DefaultEditor::new()?);
     loop {
-        let mut prompt_rl = rl.take().expect("editor present at top of loop");
-        let prompt = "> ".to_string();
-        let read = tokio::task::spawn_blocking(move || {
-            let result = prompt_rl.readline(&prompt);
-            (prompt_rl, result)
-        });
-        let line = tokio::select! {
-            _ = pipes.closed.notified() => {
-                eprintln!("{}", ansi::red("[jet] kernel exited"));
-                shutdown.notify_waiters();
-                std::process::exit(0);
-            }
-            joined = read => {
-                let (returned_rl, result) = joined?;
-                rl = Some(returned_rl);
-                match result {
-                    Ok(l) => l,
-                    Err(rustyline::error::ReadlineError::Eof) => break,
-                    Err(rustyline::error::ReadlineError::Interrupted) => continue,
-                    Err(e) => {
-                        eprintln!("[jet] readline: {e}");
-                        break;
+        // Accumulate lines until the kernel says the buffer is a
+        // complete unit of code. The first prompt is `> `; continuation
+        // prompts are `+ `, with the kernel-suggested indent
+        // pre-filled into the editor.
+        let mut buffer = String::new();
+        // Continuation prompt for the next line, set from the kernel's
+        // IsCompleteReply.indent. Per the Jupyter spec, that field is the
+        // full continuation prompt (any leading marker plus whitespace),
+        // so we render it verbatim instead of prepending our own.
+        let mut next_indent: Option<String> = None;
+        let code = 'accumulate: loop {
+            let mut prompt_rl = rl.take().expect("editor present at top of loop");
+            let prompt = match &next_indent {
+                None => "> ".to_string(),
+                Some(s) => s.clone(),
+            };
+            let read = tokio::task::spawn_blocking(move || {
+                let result = prompt_rl.readline(&prompt);
+                (prompt_rl, result)
+            });
+            let line = tokio::select! {
+                _ = pipes.closed.notified() => {
+                    eprintln!("{}", ansi::red("[jet] kernel exited"));
+                    shutdown.notify_waiters();
+                    std::process::exit(0);
+                }
+                joined = read => {
+                    let (returned_rl, result) = joined?;
+                    rl = Some(returned_rl);
+                    match result {
+                        Ok(l) => l,
+                        Err(rustyline::error::ReadlineError::Eof) => {
+                            if buffer.is_empty() {
+                                shutdown.notify_waiters();
+                                return Ok(());
+                            }
+                            // ^D inside an in-progress block: discard.
+                            break 'accumulate None;
+                        }
+                        Err(rustyline::error::ReadlineError::Interrupted) => {
+                            // ^C abandons the in-progress block.
+                            break 'accumulate None;
+                        }
+                        Err(e) => {
+                            eprintln!("[jet] readline: {e}");
+                            return Ok(());
+                        }
                     }
                 }
+            };
+            if buffer.is_empty() && line.trim().is_empty() {
+                continue;
+            }
+            if !buffer.is_empty() {
+                buffer.push('\n');
+            }
+            buffer.push_str(&line);
+
+            // Ask the kernel whether what we have so far is a complete
+            // unit. Treat Complete / Invalid / Unknown as "go ahead and
+            // execute" — for Invalid the kernel will surface the syntax
+            // error, and Unknown means the kernel can't tell, in which
+            // case the spec recommends executing.
+            let req: JupyterMessage = IsCompleteRequest {
+                code: buffer.clone(),
+            }
+            .into();
+            let req_id = req.header.msg_id.clone();
+            let _ = pipes.shell_tx.send(req);
+            let reply =
+                wait_for_is_complete(&mut is_complete_rx, &req_id, Duration::from_secs(5)).await;
+            match reply.map(|r| (r.status, r.indent)) {
+                Some((IsCompleteReplyStatus::Incomplete, indent)) => {
+                    let mut p = if indent.is_empty() {
+                        "+".to_string()
+                    } else {
+                        indent
+                    };
+                    if !p.ends_with(' ') {
+                        p.push(' ');
+                    }
+                    next_indent = Some(p);
+                    continue;
+                }
+                _ => break 'accumulate Some(buffer),
             }
         };
-        if line.trim().is_empty() {
+
+        let Some(code) = code else {
             continue;
-        }
+        };
         let _ = rl
             .as_mut()
             .expect("editor returned from blocking task")
-            .add_history_entry(&line);
+            .add_history_entry(&code);
 
         let req: JupyterMessage = ExecuteRequest {
-            code: line,
+            code,
             silent: false,
             store_history: true,
             user_expressions: None,
@@ -568,7 +660,4 @@ async fn drive_repl(
             }
         }
     }
-
-    shutdown.notify_waiters();
-    Ok(())
 }

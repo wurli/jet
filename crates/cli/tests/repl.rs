@@ -734,3 +734,204 @@ fn input_request_prompts_user_and_replies() {
         "kernel did not echo input value back; output:\n{final_out}"
     );
 }
+
+/// Spawn jet under a pty, return (child, writer, output buffer, reader thread).
+/// Waits for the first `> ` prompt before returning so callers don't race
+/// the banner.
+fn spawn_jet_pty(
+    kernel_json: &std::path::Path,
+) -> (
+    Box<dyn portable_pty::Child + Send + Sync>,
+    Box<dyn std::io::Write + Send>,
+    std::sync::Arc<std::sync::Mutex<String>>,
+    std::thread::JoinHandle<()>,
+    Box<dyn portable_pty::MasterPty + Send>,
+) {
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+    use std::io::Read;
+
+    let pty = native_pty_system();
+    let pair = pty
+        .openpty(PtySize {
+            rows: 40,
+            cols: 120,
+            ..Default::default()
+        })
+        .expect("openpty");
+
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let mut cmd = CommandBuilder::new(bin);
+    cmd.args(["connect", kernel_json.to_str().unwrap()]);
+    cmd.cwd(std::env::current_dir().expect("cwd"));
+    let child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
+    drop(pair.slave);
+
+    let mut reader = pair.master.try_clone_reader().expect("clone reader");
+    let writer = pair.master.take_writer().expect("take writer");
+
+    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let output_clone = output.clone();
+    let reader_handle = std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
+                    output_clone.lock().unwrap().push_str(&s);
+                }
+            }
+        }
+    });
+
+    let banner_deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < banner_deadline {
+        if output.lock().unwrap().contains("> ") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    (child, writer, output, reader_handle, pair.master)
+}
+
+fn wait_for_substr(
+    output: &std::sync::Arc<std::sync::Mutex<String>>,
+    needle: &str,
+    timeout: Duration,
+) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if output.lock().unwrap().contains(needle) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+/// A complete one-liner executes immediately — no continuation prompt
+/// appears and the result lands.
+#[test]
+#[serial_test::serial]
+fn complete_one_liner_executes_without_continuation() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+
+    use std::io::Write;
+    let (mut child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
+
+    // Mark the start of post-banner output so we don't false-positive
+    // on the leading `> ` prompt.
+    let before_send = output.lock().unwrap().len();
+
+    writer.write_all(b"1+1\n").expect("write code");
+    writer.flush().expect("flush");
+
+    assert!(
+        wait_for_substr(&output, "2", Duration::from_secs(15)),
+        "did not see '2' result; output:\n{}",
+        output.lock().unwrap()
+    );
+
+    // The slice after our input should not contain a continuation prompt.
+    let s = output.lock().unwrap().clone();
+    let tail = &s[before_send..];
+    assert!(
+        !tail.contains("\n+ "),
+        "complete code should not show a '+ ' continuation prompt; tail:\n{tail}"
+    );
+
+    let _ = writer.write_all(&[0x04]);
+    let _ = writer.flush();
+    drop(writer);
+    let _ = child.wait();
+    drop(master);
+    let _ = reader_handle.join();
+}
+
+/// Incomplete code triggers a continuation prompt; finishing the block
+/// with a blank line then executes it.
+#[test]
+#[serial_test::serial]
+fn incomplete_code_prompts_for_continuation_then_executes() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+
+    use std::io::Write;
+    let (mut child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
+
+    // First line of a function definition — ipykernel reports
+    // `incomplete` with a 4-space indent.
+    let before_send = output.lock().unwrap().len();
+    writer.write_all(b"def f():\n").expect("write line 1");
+    writer.flush().expect("flush");
+
+    // We should see a `+ ` continuation prompt appear after the first
+    // line. Look in the tail so we don't match the initial `> ` prompt.
+    let saw_continuation = {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut hit = false;
+        while Instant::now() < deadline {
+            let s = output.lock().unwrap().clone();
+            if s.len() > before_send && s[before_send..].contains("+ ") {
+                hit = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        hit
+    };
+    assert!(
+        saw_continuation,
+        "expected a '+ ' continuation prompt after incomplete first line; output:\n{}",
+        output.lock().unwrap()
+    );
+
+    // Body line. rustyline echoes the typed bytes literally (it doesn't
+    // re-add the kernel-suggested indent), so write 4 spaces ourselves.
+    writer
+        .write_all(b"    return 42\n")
+        .expect("write body line");
+    writer.flush().expect("flush");
+
+    // Blank line ends the def — buffer becomes `def f():\n    return 42\n`,
+    // which ipykernel reports `complete`.
+    writer.write_all(b"\n").expect("write blank");
+    writer.flush().expect("flush");
+
+    // Now actually call the function and check the result lands.
+    writer.write_all(b"f()\n").expect("write call");
+    writer.flush().expect("flush");
+
+    assert!(
+        wait_for_substr(&output, "42", Duration::from_secs(15)),
+        "did not see '42' from f() call; output:\n{}",
+        output.lock().unwrap()
+    );
+
+    let _ = writer.write_all(&[0x04]);
+    let _ = writer.flush();
+    drop(writer);
+    let _ = child.wait();
+    drop(master);
+    let _ = reader_handle.join();
+}

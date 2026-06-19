@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use base64::Engine;
-use jet_core::events::{Event, EventData, InputRequest};
+use jet_core::events::{Event, EventData, InputRequest, IsCompleteReplyMsg};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -28,6 +28,7 @@ pub struct Renderer {
     pub render_graphics: bool,
     pub idle_tx: mpsc::UnboundedSender<String>,
     pub input_tx: Option<mpsc::UnboundedSender<InputRequest>>,
+    pub is_complete_tx: Option<mpsc::UnboundedSender<IsCompleteReplyMsg>>,
     writer: SharedWriter,
     // The session name passed via --session-name (None or "jet" if not
     // set). Output that originated from this same session is shown
@@ -51,6 +52,7 @@ impl Renderer {
             render_graphics,
             idle_tx,
             input_tx: None,
+            is_complete_tx: None,
             writer,
             own_session_name: None,
             at_line_start: Arc::new(Mutex::new(true)),
@@ -64,6 +66,11 @@ impl Renderer {
 
     pub fn with_input_tx(mut self, tx: mpsc::UnboundedSender<InputRequest>) -> Self {
         self.input_tx = Some(tx);
+        self
+    }
+
+    pub fn with_is_complete_tx(mut self, tx: mpsc::UnboundedSender<IsCompleteReplyMsg>) -> Self {
+        self.is_complete_tx = Some(tx);
         self
     }
 
@@ -142,6 +149,19 @@ impl Renderer {
                         prompt,
                         password,
                         parent_id: parent_id.unwrap_or_default(),
+                    });
+                }
+            }
+            EventData::IsComplete {
+                parent_id,
+                status,
+                indent,
+            } => {
+                if let Some(tx) = &self.is_complete_tx {
+                    let _ = tx.send(IsCompleteReplyMsg {
+                        parent_id: parent_id.unwrap_or_default(),
+                        status,
+                        indent,
                     });
                 }
             }
