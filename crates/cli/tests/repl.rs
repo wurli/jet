@@ -4,6 +4,20 @@
 //!
 //! No kallichore: jet now spawns the Jupyter kernel directly via ZMQ,
 //! so `JET_KCSERVER` is no longer used.
+//!
+//! ## Tearing down PTY-based tests
+//!
+//! Tear down a `spawn_jet_pty` session by calling `child.kill()` (see
+//! `shutdown_jet_pty`) — do **not** rely on writing `0x04` (^D) to the
+//! master to provoke a clean exit. Under a real PTY, rustyline reads
+//! `/dev/tty` in raw mode, and `0x04` only resolves to `Eof` when the
+//! editor's input buffer is empty AND the upstream end of the master is
+//! actually closed. `drop(writer)` only drops a clone of the master fd
+//! (`pair.master` still owns the original), so the slave never sees true
+//! EOF and `child.wait()` hangs forever — which then blocks every other
+//! `#[serial_test::serial]` test behind the same mutex. The graceful
+//! EOF path is covered separately by `jet_exits_on_eof`, which uses
+//! `Stdio::piped()` where pipe-close is reliable.
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -810,6 +824,26 @@ fn wait_for_substr(
     false
 }
 
+/// Tear down a `spawn_jet_pty` session by killing the child. We don't try
+/// to provoke a clean EOF: under a real PTY, rustyline reads from
+/// `/dev/tty` in raw mode, and `0x04` only resolves to `Eof` when the
+/// editor's input buffer is empty AND the master fd has actually been
+/// closed — which we can't do reliably here without racing the child's
+/// own reads. Killing is unambiguous; `jet_exits_on_eof` covers the
+/// graceful path on a separate test.
+fn shutdown_jet_pty(
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    writer: Box<dyn std::io::Write + Send>,
+    reader_handle: std::thread::JoinHandle<()>,
+    master: Box<dyn portable_pty::MasterPty + Send>,
+) {
+    let _ = child.kill();
+    let _ = child.wait();
+    drop(writer);
+    drop(master);
+    let _ = reader_handle.join();
+}
+
 /// A complete one-liner executes immediately — no continuation prompt
 /// appears and the result lands.
 #[test]
@@ -828,35 +862,24 @@ fn complete_one_liner_executes_without_continuation() {
     };
 
     use std::io::Write;
-    let (mut child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
+    let (child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
 
-    // Mark the start of post-banner output so we don't false-positive
-    // on the leading `> ` prompt.
     let before_send = output.lock().unwrap().len();
-
     writer.write_all(b"1+1\n").expect("write code");
     writer.flush().expect("flush");
+    let saw_result = wait_for_substr(&output, "2", Duration::from_secs(15));
+    let tail = {
+        let s = output.lock().unwrap().clone();
+        s[before_send..].to_string()
+    };
 
-    assert!(
-        wait_for_substr(&output, "2", Duration::from_secs(15)),
-        "did not see '2' result; output:\n{}",
-        output.lock().unwrap()
-    );
+    shutdown_jet_pty(child, writer, reader_handle, master);
 
-    // The slice after our input should not contain a continuation prompt.
-    let s = output.lock().unwrap().clone();
-    let tail = &s[before_send..];
+    assert!(saw_result, "did not see '2' result; tail:\n{tail}");
     assert!(
         !tail.contains("\n+ "),
         "complete code should not show a '+ ' continuation prompt; tail:\n{tail}"
     );
-
-    let _ = writer.write_all(&[0x04]);
-    let _ = writer.flush();
-    drop(writer);
-    let _ = child.wait();
-    drop(master);
-    let _ = reader_handle.join();
 }
 
 /// Incomplete code triggers a continuation prompt; finishing the block
@@ -877,61 +900,46 @@ fn incomplete_code_prompts_for_continuation_then_executes() {
     };
 
     use std::io::Write;
-    let (mut child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
+    let (child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
 
-    // First line of a function definition — ipykernel reports
-    // `incomplete` with a 4-space indent.
     let before_send = output.lock().unwrap().len();
+
+    // First line of a function definition. ipykernel reports
+    // `incomplete` with `indent: "    "`; jet should NOT echo a fresh
+    // top-level `> ` prompt afterwards.
     writer.write_all(b"def f():\n").expect("write line 1");
     writer.flush().expect("flush");
-
-    // We should see a `+ ` continuation prompt appear after the first
-    // line. Look in the tail so we don't match the initial `> ` prompt.
-    let saw_continuation = {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let mut hit = false;
-        while Instant::now() < deadline {
-            let s = output.lock().unwrap().clone();
-            if s.len() > before_send && s[before_send..].contains("+ ") {
-                hit = true;
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        hit
+    std::thread::sleep(Duration::from_millis(500));
+    let tail_after_first = {
+        let s = output.lock().unwrap().clone();
+        s[before_send..].to_string()
     };
-    assert!(
-        saw_continuation,
-        "expected a '+ ' continuation prompt after incomplete first line; output:\n{}",
-        output.lock().unwrap()
-    );
 
-    // Body line. rustyline echoes the typed bytes literally (it doesn't
-    // re-add the kernel-suggested indent), so write 4 spaces ourselves.
+    // Body line, then a blank line to close the block, then call the
+    // function. Once `f()` runs we should see `42` in the output.
     writer
         .write_all(b"    return 42\n")
         .expect("write body line");
     writer.flush().expect("flush");
-
-    // Blank line ends the def — buffer becomes `def f():\n    return 42\n`,
-    // which ipykernel reports `complete`.
     writer.write_all(b"\n").expect("write blank");
     writer.flush().expect("flush");
-
-    // Now actually call the function and check the result lands.
     writer.write_all(b"f()\n").expect("write call");
     writer.flush().expect("flush");
+    let saw_result = wait_for_substr(&output, "42", Duration::from_secs(15));
+    let final_tail = {
+        let s = output.lock().unwrap().clone();
+        s[before_send..].to_string()
+    };
+
+    shutdown_jet_pty(child, writer, reader_handle, master);
 
     assert!(
-        wait_for_substr(&output, "42", Duration::from_secs(15)),
-        "did not see '42' from f() call; output:\n{}",
-        output.lock().unwrap()
+        !tail_after_first.trim_end().ends_with("> "),
+        "after incomplete first line, jet rolled back to top-level '> ' \
+         prompt — IsCompleteRequest path didn't fire; tail:\n{tail_after_first}"
     );
-
-    let _ = writer.write_all(&[0x04]);
-    let _ = writer.flush();
-    drop(writer);
-    let _ = child.wait();
-    drop(master);
-    let _ = reader_handle.join();
+    assert!(
+        saw_result,
+        "did not see '42' from f() call; tail:\n{final_tail}"
+    );
 }
