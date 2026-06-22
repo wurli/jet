@@ -50,9 +50,7 @@ pub async fn run_list(args: ListArgs) -> Result<()> {
         .collect();
 
     if args.json {
-        for s in &sessions {
-            println!("{}", serde_json::to_string(s)?);
-        }
+        println!("{}", serde_json::to_string_pretty(&sessions)?);
         return Ok(());
     }
 
