@@ -28,7 +28,8 @@ pub async fn pick_kernelspec() -> Result<Option<PathBuf>> {
             ]
         })
         .collect();
-    let idx = tokio::task::spawn_blocking(move || picker::pick("kernel", &rows)).await??;
+    let idx =
+        tokio::task::spawn_blocking(move || picker::pick("Start a new session:", &rows)).await??;
     Ok(idx.map(|i| specs[i].0.clone()))
 }
 
@@ -60,7 +61,9 @@ pub async fn pick_session() -> Result<Option<String>> {
             ]
         })
         .collect();
-    let idx = tokio::task::spawn_blocking(move || picker::pick("session", &rows)).await??;
+    let idx =
+        tokio::task::spawn_blocking(move || picker::pick("Connect to an existing session:", &rows))
+            .await??;
     Ok(idx.map(|i| sessions[i].id.clone()))
 }
 
