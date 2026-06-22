@@ -22,8 +22,8 @@ pub fn list_sessions_in(data_dir: &Path) -> Result<Vec<SessionMeta>> {
     if !data_dir.exists() {
         return Ok(Vec::new());
     }
-    let entries = std::fs::read_dir(data_dir)
-        .with_context(|| format!("reading {}", data_dir.display()))?;
+    let entries =
+        std::fs::read_dir(data_dir).with_context(|| format!("reading {}", data_dir.display()))?;
 
     let mut out = Vec::new();
     for entry in entries.flatten() {
@@ -50,13 +50,17 @@ pub async fn probe_open_sessions() -> Result<()> {
 pub async fn probe_open_sessions_in(data_dir: &Path) -> Result<()> {
     let metas = list_sessions_in(data_dir)?;
     let mut tasks: JoinSet<()> = JoinSet::new();
-    for meta in metas.into_iter().filter(|m| m.status == SessionStatus::Open) {
+    for meta in metas
+        .into_iter()
+        .filter(|m| m.status == SessionStatus::Open)
+    {
         let data_dir = data_dir.to_path_buf();
         tasks.spawn(async move {
             if probe_one(&data_dir, &meta).await {
                 return; // alive
             }
             // Dead — load the Session and flip it.
+            log::warn!("probe: session {} appears dead, marking closed", meta.id);
             match Session::open_in(&data_dir, &meta.id) {
                 Ok(mut s) => s.mark_closed(),
                 Err(e) => log::warn!("probe: failed to reopen {}: {e}", meta.id),
@@ -106,10 +110,7 @@ mod tests {
 
     #[test]
     fn empty_when_dir_missing() {
-        let p = std::env::temp_dir().join(format!(
-            "jet-sessions-nope-{:x}",
-            rand::random::<u64>()
-        ));
+        let p = std::env::temp_dir().join(format!("jet-sessions-nope-{:x}", rand::random::<u64>()));
         assert!(list_sessions_in(&p).unwrap().is_empty());
     }
 
@@ -189,7 +190,12 @@ mod tests {
         let listed = list_sessions_in(&data).unwrap();
         assert_eq!(listed.len(), 2);
         for m in &listed {
-            assert_eq!(m.status, SessionStatus::Closed, "{} not flipped: {m:?}", m.id);
+            assert_eq!(
+                m.status,
+                SessionStatus::Closed,
+                "{} not flipped: {m:?}",
+                m.id
+            );
             assert!(m.closed_at.is_some());
         }
         std::fs::remove_dir_all(&data).ok();

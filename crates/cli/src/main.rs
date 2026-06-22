@@ -23,8 +23,20 @@ mod render;
 
 use cli::{Args, AttachArgs, Command, ConnectArgs, ListArgs, StatusFilter};
 use jet_core::logger::init_logger;
-use jet_core::session::{SessionStatus, list_sessions};
+use jet_core::session::{Session, SessionStatus, list_sessions};
 use render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
+
+/// Reopen the session and flip it to Closed. Best-effort: called from
+/// liveness watchers when the kernel becomes unreachable, so a missing
+/// or unreadable session.json (e.g. attach by --connection-file with no
+/// session id) is silently ignored.
+fn mark_session_closed(session_id: &Option<String>) {
+    let Some(id) = session_id else { return };
+    match Session::open(id) {
+        Ok(mut s) => s.mark_closed(),
+        Err(e) => log::warn!("failed to reopen session {id} to mark closed: {e}"),
+    }
+}
 
 enum WaitResult {
     Idle,
@@ -167,12 +179,17 @@ async fn main() -> Result<()> {
     match args.command {
         Command::Connect(c) => run_connect(c).await,
         Command::Attach(c) => run_attach(c).await,
-        Command::List(c) => run_list(c),
+        Command::List(c) => run_list(c).await,
     }
 }
 
-fn run_list(args: ListArgs) -> Result<()> {
+async fn run_list(args: ListArgs) -> Result<()> {
     init_logger(args.global.log.as_deref());
+
+    // Flip any Open sessions whose kernel has gone away to Closed before
+    // we read the list. Otherwise a kernel that exited while no jet
+    // process was attached (or crashed) stays falsely Open on disk.
+    jet_core::session::probe_open_sessions().await?;
 
     let cwd = std::env::current_dir()?;
     let sessions: Vec<_> = list_sessions()?
@@ -199,9 +216,9 @@ fn run_list(args: ListArgs) -> Result<()> {
                 SessionStatus::Open => "open",
                 SessionStatus::Closed => "closed",
             };
-            println!("{}  {}  {}", s.name, s.created_at, st);
+            println!("{}  {}  {}  {}", s.id, s.name, s.created_at, st);
         } else {
-            println!("{}  {}", s.name, s.created_at);
+            println!("{}  {}  {}", s.id, s.name, s.created_at);
         }
     }
     Ok(())
@@ -250,7 +267,14 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     }
 
     let render_graphics = !args.no_graphics;
-    drive_repl(&mut kernel, render_graphics, args.session_name).await?;
+    let session_id = session.meta().id.clone();
+    drive_repl(
+        &mut kernel,
+        render_graphics,
+        args.session_name,
+        Some(session_id),
+    )
+    .await?;
 
     if args.persist {
         kernel.detach();
@@ -263,9 +287,17 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 
 async fn run_attach(args: AttachArgs) -> Result<()> {
     init_logger(args.global.log.as_deref());
-    let mut kernel = Kernel::attach(&args.connection_file, args.session_name.as_deref()).await?;
+    let (conn_path, session_id) = match (args.session_id, args.connection_file) {
+        (Some(id), None) => {
+            let path = jet_core::session::Session::open(&id)?.connection_file_path();
+            (path, Some(id))
+        }
+        (None, Some(path)) => (path, None),
+        _ => unreachable!("clap ArgGroup enforces exactly one of session_id / --connection-file"),
+    };
+    let mut kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
     let render_graphics = !args.no_graphics;
-    drive_repl(&mut kernel, render_graphics, args.session_name).await?;
+    drive_repl(&mut kernel, render_graphics, args.session_name, session_id).await?;
     // Attach mode never kills the kernel; we just disconnect.
     Ok(())
 }
@@ -277,7 +309,11 @@ async fn drive_repl(
     kernel: &mut Kernel,
     render_graphics: bool,
     session_name: Option<String>,
+    session_id: Option<String>,
 ) -> Result<()> {
+    // Cloned into each liveness watcher; on a death signal they mark
+    // the session closed before notifying the REPL loop.
+    let session_id = Arc::new(session_id);
     if render_graphics {
         warn_if_passthrough_off();
     }
@@ -326,6 +362,7 @@ async fn drive_repl(
         let mut hb = kernel.channels.take_heartbeat()?;
         let closed_for_hb = closed.clone();
         let shutdown_for_hb = shutdown.clone();
+        let session_id_for_hb = session_id.clone();
         tokio::spawn(async move {
             let mut consecutive_timeouts = 0;
             loop {
@@ -338,6 +375,7 @@ async fn drive_repl(
                             }
                             Ok(Err(e)) => {
                                 log::info!("heartbeat error: {e} — kernel gone");
+                                mark_session_closed(&session_id_for_hb);
                                 closed_for_hb.notify_one();
                                 return;
                             }
@@ -346,6 +384,7 @@ async fn drive_repl(
                                 log::warn!("heartbeat timeout ({consecutive_timeouts})");
                                 if consecutive_timeouts >= 2 {
                                     log::info!("heartbeat: kernel unresponsive, declaring dead");
+                                    mark_session_closed(&session_id_for_hb);
                                     closed_for_hb.notify_one();
                                     return;
                                 }
@@ -363,6 +402,7 @@ async fn drive_repl(
     if let Some(pid) = kernel.child_pid() {
         let closed_for_watcher = closed.clone();
         let shutdown_for_watcher = shutdown.clone();
+        let session_id_for_watcher = session_id.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -380,6 +420,7 @@ async fn drive_repl(
                         // r < 0  → ECHILD: tokio already reaped, child gone.
                         if r != 0 {
                             log::info!("kernel pid {pid} exited (waitpid -> {r})");
+                            mark_session_closed(&session_id_for_watcher);
                             closed_for_watcher.notify_one();
                             return;
                         }
@@ -394,6 +435,7 @@ async fn drive_repl(
     let renderer_shell = renderer.clone();
     let closed_shell = closed.clone();
     let shutdown_shell = shutdown.clone();
+    let session_id_shell = session_id.clone();
     tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -402,6 +444,7 @@ async fn drive_repl(
                     Some(msg) => {
                         if let Err(e) = shell.send(msg).await {
                             log::error!("shell send: {e}");
+                            mark_session_closed(&session_id_shell);
                             closed_shell.notify_one();
                             return;
                         }
@@ -416,6 +459,7 @@ async fn drive_repl(
                     }
                     Err(e) => {
                         log::warn!("shell recv: {e}");
+                        mark_session_closed(&session_id_shell);
                         closed_shell.notify_one();
                         return;
                     }
@@ -429,6 +473,7 @@ async fn drive_repl(
     let renderer_iopub = renderer.clone();
     let closed_iopub = closed.clone();
     let shutdown_iopub = shutdown.clone();
+    let session_id_iopub = session_id.clone();
     tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -441,6 +486,7 @@ async fn drive_repl(
                     }
                     Err(e) => {
                         log::warn!("iopub recv: {e}");
+                        mark_session_closed(&session_id_iopub);
                         closed_iopub.notify_one();
                         return;
                     }
@@ -454,6 +500,7 @@ async fn drive_repl(
     let renderer_stdin = renderer.clone();
     let closed_stdin = closed.clone();
     let shutdown_stdin = shutdown.clone();
+    let session_id_stdin = session_id.clone();
     tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -462,6 +509,7 @@ async fn drive_repl(
                     Some(msg) => {
                         if let Err(e) = stdin_sock.send(msg).await {
                             log::error!("stdin send: {e}");
+                            mark_session_closed(&session_id_stdin);
                             closed_stdin.notify_one();
                             return;
                         }
@@ -476,6 +524,7 @@ async fn drive_repl(
                     }
                     Err(e) => {
                         log::warn!("stdin recv: {e}");
+                        mark_session_closed(&session_id_stdin);
                         closed_stdin.notify_one();
                         return;
                     }
