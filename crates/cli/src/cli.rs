@@ -19,14 +19,21 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Spawn a Jupyter kernel and open a REPL on it.
+    #[command(alias = "c")]
     Connect(ConnectArgs),
 
     /// Attach a REPL to a kernel that's already running, identified by its
     /// connection file. The kernel keeps running after you exit.
+    #[command(alias = "a")]
     Attach(AttachArgs),
 
     /// List sessions in the jet data dir.
-    List(ListArgs),
+    #[command(alias = "ls")]
+    ListSessions(ListArgs),
+
+    /// List Jupyter kernelspecs discovered on this machine.
+    #[command(alias = "lk")]
+    ListKernels(ListKernelsArgs),
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -56,6 +63,16 @@ pub struct ListArgs {
 }
 
 #[derive(Parser, Debug)]
+pub struct ListKernelsArgs {
+    /// Emit kernelspec paths as a JSON array.
+    #[arg(long)]
+    pub json: bool,
+
+    #[command(flatten)]
+    pub global: GlobalArgs,
+}
+
+#[derive(Parser, Debug)]
 pub struct GlobalArgs {
     /// File to write logs to. If unset, logging is disabled.
     /// Log level is controlled with `RUST_LOG` (e.g. `RUST_LOG=jet=trace`).
@@ -67,10 +84,11 @@ pub struct GlobalArgs {
 pub struct ConnectArgs {
     /// Path to a Jupyter `kernel.json` kernelspec. Argv and language are
     /// taken from the spec; `{connection_file}` placeholders are
-    /// substituted with the path we generate.
+    /// substituted with the path we generate. If omitted, an interactive
+    /// picker is shown over the kernels discovered on disk (same set as
+    /// `jet list-kernels`).
     /// Example: jet connect ~/Library/Jupyter/kernels/ark/kernel.json
-    #[arg(required = true)]
-    pub kernelspec: PathBuf,
+    pub kernelspec: Option<PathBuf>,
 
     /// Override the location of the kernel connection file. Defaults to
     /// `<session-dir>/connection-file.json` inside the jet data dir.
