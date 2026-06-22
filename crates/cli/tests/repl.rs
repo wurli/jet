@@ -439,7 +439,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
     // Attach + quit().
     use std::io::Write;
     let mut attach = Command::new(bin)
-        .args(["attach", &conn_str])
+        .args(["attach", "--connection-file", &conn_str])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -629,7 +629,7 @@ fn detach_and_attach_round_trip() {
     // Attach: read x back. Wait until we see "42" in jet's output.
     let out = drive(
         bin,
-        &["attach", &conn_str],
+        &["attach", "--connection-file", &conn_str],
         "print(x)\n",
         Some("42"),
         Duration::from_secs(10),
@@ -1105,7 +1105,7 @@ fn session_left_open_with_persist() {
     std::thread::sleep(Duration::from_millis(500));
 
     let status = Command::new(bin)
-        .args(["list", "--status", "all", "--all-dirs"])
+        .args(["list-sessions", "--status", "all", "--all-dirs"])
         .env("XDG_DATA_HOME", &xdg)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
