@@ -19,7 +19,17 @@ pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
         .collect();
 
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&paths)?);
+        let objs: Vec<_> = paths
+            .iter()
+            .map(|p| {
+                let spec = std::fs::read(p)
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+                    .unwrap_or(serde_json::Value::Null);
+                serde_json::json!({ "path": p, "spec": spec })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&objs)?);
     } else {
         for path in &paths {
             println!("{}", path.display());
