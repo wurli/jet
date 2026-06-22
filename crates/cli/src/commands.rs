@@ -57,15 +57,24 @@ pub async fn run_list(args: ListArgs) -> Result<()> {
     }
 
     let show_status = matches!(args.status, StatusFilter::All);
+    let id_w = sessions.iter().map(|s| s.id.len()).max().unwrap_or(0);
+    let name_w = sessions.iter().map(|s| s.name.len()).max().unwrap_or(0);
+    let created_w = sessions.iter().map(|s| s.created_at.len()).max().unwrap_or(0);
     for s in &sessions {
         if show_status {
             let st = match s.status {
                 SessionStatus::Open => "open",
                 SessionStatus::Closed => "closed",
             };
-            println!("{}  {}  {}  {}", s.id, s.name, s.created_at, st);
+            println!(
+                "{:<id_w$}  {:<name_w$}  {:<created_w$}  {}",
+                s.id, s.name, s.created_at, st,
+            );
         } else {
-            println!("{}  {}  {}", s.id, s.name, s.created_at);
+            println!(
+                "{:<id_w$}  {:<name_w$}  {}",
+                s.id, s.name, s.created_at,
+            );
         }
     }
     Ok(())
