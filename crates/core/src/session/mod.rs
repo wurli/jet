@@ -10,5 +10,5 @@ pub mod session;
 pub mod sessions;
 
 pub use dir::jet_data_dir;
-pub use session::{CreateParams, Session, SessionMeta};
-pub use sessions::{list_sessions, list_sessions_in};
+pub use session::{CreateParams, Session, SessionMeta, SessionStatus};
+pub use sessions::{list_sessions, list_sessions_in, probe_open_sessions, probe_open_sessions_in};

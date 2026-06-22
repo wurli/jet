@@ -289,10 +289,12 @@ fn jet_exits_when_kernel_quits() {
         }
     };
     let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
 
     use std::io::Write;
     let mut child = Command::new(bin)
         .args(["connect", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -319,8 +321,18 @@ fn jet_exits_when_kernel_quits() {
     if !exited {
         let _ = child.kill();
         let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&xdg);
         panic!("jet did not exit within 10s after the kernel quit");
     }
+
+    // After jet noticed the kernel exit, the session should be marked closed.
+    let meta = read_only_session(&xdg);
+    assert_eq!(
+        meta["status"], "closed",
+        "kernel-quit path did not mark session closed: {meta}"
+    );
+    assert!(meta["closed_at"].is_string(), "closed_at missing: {meta}");
+    let _ = std::fs::remove_dir_all(&xdg);
 }
 
 /// Locate the user-installed ark R kernelspec, or `None` if it isn't
@@ -1084,9 +1096,29 @@ fn session_left_open_with_persist() {
     assert!(meta["closed_at"].is_null(), "closed_at set on persist: {meta}");
     assert!(meta["kernel_pid"].is_number(), "kernel_pid missing: {meta}");
 
-    // Cleanup: the kernel is still running. Kill it best-effort.
+    // Kill the kernel. Then `jet list` (which probes) should flip the
+    // session to Closed even though jet never observed the death.
     let _ = std::process::Command::new("pkill")
         .args(["-9", "-f", "ipykernel_launcher"])
         .status();
+    // pkill is async; give the OS a beat to actually reap.
+    std::thread::sleep(Duration::from_millis(500));
+
+    let status = Command::new(bin)
+        .args(["list", "--status", "all", "--all-dirs"])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("run jet list");
+    assert!(status.success(), "jet list failed");
+
+    let after = read_only_session(&xdg);
+    assert_eq!(
+        after["status"], "closed",
+        "probe did not flip dead session to closed: {after}"
+    );
+    assert!(after["closed_at"].is_string());
+
     let _ = std::fs::remove_dir_all(&xdg);
 }

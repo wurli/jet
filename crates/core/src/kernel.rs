@@ -378,10 +378,12 @@ impl Kernel {
     }
 }
 
-/// Quick liveness check for an attach: TCP-connect to the shell port
-/// with a short timeout. Returns `Err` if the kernel's no longer
-/// listening, so `attach_or_spawn` can fall through to spawn.
-async fn probe_kernel_alive(info: &ConnectionInfo) -> Result<()> {
+/// Quick liveness check: TCP-connect to the shell port with a short
+/// timeout. Returns `Err` if the kernel's no longer listening, so
+/// `attach_or_spawn` can fall through to spawn — and so external
+/// probers (session list self-heal) can check liveness without
+/// constructing a full `Kernel`.
+pub async fn probe_kernel_alive(info: &ConnectionInfo) -> Result<()> {
     use jupyter_protocol::Transport;
     if !matches!(info.transport, Transport::TCP) {
         return Ok(());

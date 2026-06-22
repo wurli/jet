@@ -20,7 +20,7 @@ const SCHEMA_VERSION: u32 = 1;
 /// Inputs to [`Session::create`].
 pub struct CreateParams<'a> {
     pub lang: &'a str,
-    pub kernel_name: &'a str,
+    pub name: &'a str,
     pub kernelspec_path: &'a Path,
     pub working_dir: &'a Path,
 }
@@ -40,11 +40,11 @@ pub enum SessionStatus {
 /// migrate if you need to change the shape.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionMeta {
-    pub name: String,
+    pub id: String,
     pub created_at: String,
     pub working_dir: PathBuf,
     pub lang: String,
-    pub kernel_name: String,
+    pub name: String,
     pub kernelspec_path: PathBuf,
     /// Relative to the session dir.
     pub connection_file: String,
@@ -71,17 +71,17 @@ impl Session {
 
     /// Test/internal hook: create under an explicit data dir at a fixed instant.
     pub fn create_in(data_dir: &Path, params: CreateParams<'_>, now: SystemTime) -> Result<Session> {
-        let name = generate_session_name(now, params.lang, params.working_dir);
-        let dir = data_dir.join(&name);
+        let id = generate_session_name(now, params.lang, params.working_dir);
+        let dir = data_dir.join(&id);
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("creating session dir {}", dir.display()))?;
 
         let meta = SessionMeta {
-            name,
+            id,
             created_at: format_iso8601(now),
             working_dir: params.working_dir.to_path_buf(),
             lang: params.lang.to_string(),
-            kernel_name: params.kernel_name.to_string(),
+            name: params.name.to_string(),
             kernelspec_path: params.kernelspec_path.to_path_buf(),
             connection_file: CONNECTION_FILE.to_string(),
             status: SessionStatus::Open,
@@ -119,12 +119,12 @@ impl Session {
         }
     }
 
-    pub fn open(name: &str) -> Result<Session> {
-        Self::open_in(jet_data_dir()?.as_path(), name)
+    pub fn open(id: &str) -> Result<Session> {
+        Self::open_in(jet_data_dir()?.as_path(), id)
     }
 
-    pub fn open_in(data_dir: &Path, name: &str) -> Result<Session> {
-        let dir = data_dir.join(name);
+    pub fn open_in(data_dir: &Path, id: &str) -> Result<Session> {
+        let dir = data_dir.join(id);
         let meta = read_meta(&dir)?;
         Ok(Session { dir, meta })
     }
@@ -175,7 +175,7 @@ mod tests {
     fn sample_params<'a>(cwd: &'a Path) -> CreateParams<'a> {
         CreateParams {
             lang: "python",
-            kernel_name: "python3",
+            name: "python3",
             kernelspec_path: Path::new("/fake/kernels/python3/kernel.json"),
             working_dir: cwd,
         }
@@ -215,7 +215,7 @@ mod tests {
         sess.set_kernel_pid(12345);
         sess.mark_closed_at(t1);
 
-        let reopened = Session::open_in(&data, &sess.meta().name).unwrap();
+        let reopened = Session::open_in(&data, &sess.meta().id).unwrap();
         assert_eq!(reopened.meta().status, SessionStatus::Closed);
         assert_eq!(reopened.meta().closed_at.as_deref(), Some("2026-06-22T14:53:20Z"));
         assert_eq!(reopened.meta().kernel_pid, Some(12345));
@@ -228,7 +228,7 @@ mod tests {
         let cwd = PathBuf::from("/tmp/foo");
         let t = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
         let created = Session::create_in(&data, sample_params(&cwd), t).unwrap();
-        let opened = Session::open_in(&data, &created.meta().name).unwrap();
+        let opened = Session::open_in(&data, &created.meta().id).unwrap();
         assert_eq!(created.meta(), opened.meta());
         std::fs::remove_dir_all(&data).ok();
     }

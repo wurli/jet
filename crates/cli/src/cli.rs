@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::builder::styling::{AnsiColor, Styles};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().bold())
@@ -24,6 +24,35 @@ pub enum Command {
     /// Attach a REPL to a kernel that's already running, identified by its
     /// connection file. The kernel keeps running after you exit.
     Attach(AttachArgs),
+
+    /// List sessions in the jet data dir.
+    List(ListArgs),
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum StatusFilter {
+    Open,
+    Closed,
+    All,
+}
+
+#[derive(Parser, Debug)]
+pub struct ListArgs {
+    /// Which sessions to show.
+    #[arg(long, value_enum, default_value_t = StatusFilter::Open)]
+    pub status: StatusFilter,
+
+    /// Show sessions for every working directory. Default: only sessions
+    /// whose `working_dir` matches the current dir.
+    #[arg(long)]
+    pub all_dirs: bool,
+
+    /// Emit each session as a JSON object (one per line) with full metadata.
+    #[arg(long)]
+    pub json: bool,
+
+    #[command(flatten)]
+    pub global: GlobalArgs,
 }
 
 #[derive(Parser, Debug)]

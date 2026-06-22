@@ -21,8 +21,9 @@ use tokio::sync::mpsc::UnboundedReceiver;
 mod cli;
 mod render;
 
-use cli::{Args, AttachArgs, Command, ConnectArgs};
+use cli::{Args, AttachArgs, Command, ConnectArgs, ListArgs, StatusFilter};
 use jet_core::logger::init_logger;
+use jet_core::session::{SessionStatus, list_sessions};
 use render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
 
 enum WaitResult {
@@ -166,7 +167,44 @@ async fn main() -> Result<()> {
     match args.command {
         Command::Connect(c) => run_connect(c).await,
         Command::Attach(c) => run_attach(c).await,
+        Command::List(c) => run_list(c),
     }
+}
+
+fn run_list(args: ListArgs) -> Result<()> {
+    init_logger(args.global.log.as_deref());
+
+    let cwd = std::env::current_dir()?;
+    let sessions: Vec<_> = list_sessions()?
+        .into_iter()
+        .filter(|s| match args.status {
+            StatusFilter::Open => s.status == SessionStatus::Open,
+            StatusFilter::Closed => s.status == SessionStatus::Closed,
+            StatusFilter::All => true,
+        })
+        .filter(|s| args.all_dirs || s.working_dir == cwd)
+        .collect();
+
+    if args.json {
+        for s in &sessions {
+            println!("{}", serde_json::to_string(s)?);
+        }
+        return Ok(());
+    }
+
+    let show_status = matches!(args.status, StatusFilter::All);
+    for s in &sessions {
+        if show_status {
+            let st = match s.status {
+                SessionStatus::Open => "open",
+                SessionStatus::Closed => "closed",
+            };
+            println!("{}  {}  {}", s.name, s.created_at, st);
+        } else {
+            println!("{}  {}", s.name, s.created_at);
+        }
+    }
+    Ok(())
 }
 
 /// Sender half plumbed back to the REPL loop. Dropping all of these tells
@@ -190,10 +228,10 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     );
 
     let cwd = std::env::current_dir()?;
-    let kernel_name = spec.display_name.clone().unwrap_or_default();
+    let name = spec.display_name.clone().unwrap_or_default();
     let mut session = jet_core::session::Session::create(jet_core::session::CreateParams {
         lang: &spec.language,
-        kernel_name: &kernel_name,
+        name: &name,
         kernelspec_path: &args.kernelspec,
         working_dir: &cwd,
     })?;
@@ -205,7 +243,8 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
         .clone()
         .unwrap_or_else(|| session.connection_file_path());
 
-    let mut kernel = Kernel::attach_or_spawn(&spec, &conn_path, args.session_name.as_deref()).await?;
+    let mut kernel =
+        Kernel::attach_or_spawn(&spec, &conn_path, args.session_name.as_deref()).await?;
     if let Some(pid) = kernel.child_pid() {
         session.set_kernel_pid(pid);
     }
