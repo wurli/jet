@@ -14,10 +14,19 @@
 //! editor's input buffer is empty AND the upstream end of the master is
 //! actually closed. `drop(writer)` only drops a clone of the master fd
 //! (`pair.master` still owns the original), so the slave never sees true
-//! EOF and `child.wait()` hangs forever — which then blocks every other
-//! `#[serial_test::serial]` test behind the same mutex. The graceful
-//! EOF path is covered separately by `jet_exits_on_eof`, which uses
-//! `Stdio::piped()` where pipe-close is reliable.
+//! EOF and `child.wait()` hangs forever. The graceful EOF path is
+//! covered separately by `jet_exits_on_eof`, which uses `Stdio::piped()`
+//! where pipe-close is reliable.
+//!
+//! ## Parallelism
+//!
+//! Tests run in parallel (cargo's default). Each one isolates state by:
+//! - spawning jet with `XDG_DATA_HOME=scratch_xdg_dir()` so session
+//!   storage is per-test;
+//! - killing only its own kernel — by recorded pid where possible, else
+//!   `pkill -f <connection-file-path>` which is unique to the test.
+//! Don't reintroduce `pkill -f ark` / `pkill -f ipykernel_launcher` —
+//! those cross-kill concurrent tests.
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -55,6 +64,7 @@ fn ipykernel_available() -> bool {
 fn drive_jet_with_interrupt(
     code: &str,
     kernel_json: &std::path::Path,
+    xdg: &std::path::Path,
     busy_grace: Duration,
     timeout: Duration,
 ) -> Result<String> {
@@ -73,6 +83,7 @@ fn drive_jet_with_interrupt(
     let bin = env!("CARGO_BIN_EXE_jet");
     let mut cmd = CommandBuilder::new(bin);
     cmd.args(["connect", kernel_json.to_str().unwrap()]);
+    cmd.env("XDG_DATA_HOME", xdg);
     cmd.cwd(std::env::current_dir()?);
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
@@ -141,7 +152,6 @@ fn drive_jet_with_interrupt(
 }
 
 #[test]
-#[serial_test::serial]
 fn ctrl_c_interrupts_running_kernel_in_repl() {
     // ark on SIGINT exits, which surfaces the bug clearly: if ^C from the
     // tty propagates to the kernel's process group, the kernel dies and
@@ -155,13 +165,16 @@ fn ctrl_c_interrupts_running_kernel_in_repl() {
         return;
     }
 
+    let xdg = scratch_xdg_dir();
     let out = drive_jet_with_interrupt(
         "Sys.sleep(30)\n",
         &ark_kernel,
+        &xdg,
         Duration::from_secs(2),
         Duration::from_secs(15),
     )
     .expect("drive_jet_with_interrupt");
+    let _ = std::fs::remove_dir_all(&xdg);
 
     assert!(
         out.contains("^C"),
@@ -175,7 +188,6 @@ fn ctrl_c_interrupts_running_kernel_in_repl() {
 }
 
 #[test]
-#[serial_test::serial]
 fn jet_exits_on_eof() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -189,9 +201,11 @@ fn jet_exits_on_eof() {
         }
     };
     let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
 
     let mut child = Command::new(bin)
         .args(["connect", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -204,13 +218,17 @@ fn jet_exits_on_eof() {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         match child.try_wait() {
-            Ok(Some(_)) => return,
+            Ok(Some(_)) => {
+                let _ = std::fs::remove_dir_all(&xdg);
+                return;
+            }
             Ok(None) => std::thread::sleep(Duration::from_millis(100)),
             Err(e) => panic!("try_wait failed: {e}"),
         }
     }
     let _ = child.kill();
     let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&xdg);
     panic!("jet did not exit within 10s after stdin closed");
 }
 
@@ -220,7 +238,6 @@ fn jet_exits_on_eof() {
 /// Simulate the same shape with `os._exit(0)` on ipykernel — it skips
 /// the normal shutdown handshake, so no idle ever arrives.
 #[test]
-#[serial_test::serial]
 fn jet_exits_when_kernel_dies_mid_execute() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -234,10 +251,12 @@ fn jet_exits_when_kernel_dies_mid_execute() {
         }
     };
     let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
 
     use std::io::Write;
     let mut child = Command::new(bin)
         .args(["connect", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -263,6 +282,7 @@ fn jet_exits_when_kernel_dies_mid_execute() {
         }
     }
     drop(stdin);
+    let _ = std::fs::remove_dir_all(&xdg);
     if !exited {
         let _ = child.kill();
         let _ = child.wait();
@@ -275,7 +295,6 @@ fn jet_exits_when_kernel_dies_mid_execute() {
 }
 
 #[test]
-#[serial_test::serial]
 fn jet_exits_when_kernel_quits() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -347,17 +366,18 @@ fn ark_kernelspec() -> Option<std::path::PathBuf> {
 /// spawn path the waitpid watcher catches this; this test guards that
 /// path. (`jet_exits_when_kernel_quits` covers Python+ipykernel.)
 #[test]
-#[serial_test::serial]
 fn jet_exits_when_r_kernel_quits_spawn() {
     let Some(kernel_json) = ark_kernelspec() else {
         skip("ark kernelspec not found");
         return;
     };
     let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
 
     use std::io::Write;
     let mut child = Command::new(bin)
         .args(["connect", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -381,6 +401,7 @@ fn jet_exits_when_r_kernel_quits_spawn() {
         }
     }
     drop(stdin);
+    let _ = std::fs::remove_dir_all(&xdg);
     if !exited {
         let _ = child.kill();
         let _ = child.wait();
@@ -394,7 +415,6 @@ fn jet_exits_when_r_kernel_quits_spawn() {
 /// indefinitely because ZMQ DEALER/SUB reads on a closed peer never
 /// error.
 #[test]
-#[serial_test::serial]
 fn jet_exits_when_r_kernel_quits_attach() {
     let Some(kernel_json) = ark_kernelspec() else {
         skip("ark kernelspec not found");
@@ -402,6 +422,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
     };
     let bin = env!("CARGO_BIN_EXE_jet");
 
+    let xdg = scratch_xdg_dir();
     let conn = std::env::temp_dir().join(format!(
         "jet-attach-quit-test-{:x}.json",
         rand::thread_rng().r#gen::<u64>()
@@ -419,6 +440,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
                 "--persist",
                 kernel_json.to_str().unwrap(),
             ])
+            .env("XDG_DATA_HOME", &xdg)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -440,6 +462,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
     use std::io::Write;
     let mut attach = Command::new(bin)
         .args(["attach", "--connection-file", &conn_str])
+        .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -466,12 +489,15 @@ fn jet_exits_when_r_kernel_quits_attach() {
     }
     drop(stdin);
     let _ = std::fs::remove_file(&conn);
+    let _ = std::fs::remove_dir_all(&xdg);
     if !exited {
         let _ = attach.kill();
         let _ = attach.wait();
-        // Also try to clear any straggler kernel.
+        // Also try to clear any straggler kernel — scope by connection
+        // file path so we don't cross-kill other ark tests running in
+        // parallel.
         let _ = std::process::Command::new("pkill")
-            .args(["-9", "-f", "ark"])
+            .args(["-9", "-f", &conn_str])
             .status();
         panic!(
             "jet did not exit within 20s after R kernel quit() on attach path \
@@ -507,7 +533,6 @@ fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
 /// connection file and read the variable back. Round-trips state through
 /// a kernel that survived past jet's exit.
 #[test]
-#[serial_test::serial]
 fn detach_and_attach_round_trip() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -532,6 +557,7 @@ fn detach_and_attach_round_trip() {
     fn drive(
         bin: &str,
         args: &[&str],
+        xdg: &std::path::Path,
         code: &str,
         expected: Option<&str>,
         timeout: Duration,
@@ -548,6 +574,7 @@ fn detach_and_attach_round_trip() {
         for a in args {
             cmd.arg(a);
         }
+        cmd.env("XDG_DATA_HOME", xdg);
         cmd.cwd(std::env::current_dir().expect("cwd"));
         let mut child = pair.slave.spawn_command(cmd).expect("spawn");
         drop(pair.slave);
@@ -604,6 +631,7 @@ fn detach_and_attach_round_trip() {
 
     let bin = env!("CARGO_BIN_EXE_jet");
     let conn_str = conn.to_string_lossy().to_string();
+    let xdg = scratch_xdg_dir();
 
     // Connect+persist: set x = 42, exit jet. We don't wait on a return
     // prompt — readline goes back to "> " whether or not the cell ran;
@@ -617,6 +645,7 @@ fn detach_and_attach_round_trip() {
             "--persist",
             kernel_json.to_str().unwrap(),
         ],
+        &xdg,
         "x = 42\n",
         None,
         Duration::from_secs(3),
@@ -630,6 +659,7 @@ fn detach_and_attach_round_trip() {
     let out = drive(
         bin,
         &["attach", "--connection-file", &conn_str],
+        &xdg,
         "print(x)\n",
         Some("42"),
         Duration::from_secs(10),
@@ -640,15 +670,16 @@ fn detach_and_attach_round_trip() {
     );
 
     // Cleanup: the kernel is still running. waitpid won't help — we
-    // don't own it. Best-effort kill via pgrep.
+    // don't own it. Best-effort kill via pgrep on the connection file
+    // path — the only argv string guaranteed unique to this kernel.
     let _ = std::process::Command::new("pkill")
-        .args(["-9", "-f", "ipykernel_launcher"])
+        .args(["-9", "-f", &conn_str])
         .status();
     let _ = std::fs::remove_file(&conn);
+    let _ = std::fs::remove_dir_all(&xdg);
 }
 
 #[test]
-#[serial_test::serial]
 fn input_request_prompts_user_and_replies() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -665,6 +696,7 @@ fn input_request_prompts_user_and_replies() {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use std::io::{Read, Write};
 
+    let xdg = scratch_xdg_dir();
     let pty = native_pty_system();
     let pair = pty
         .openpty(PtySize {
@@ -677,6 +709,7 @@ fn input_request_prompts_user_and_replies() {
     let bin = env!("CARGO_BIN_EXE_jet");
     let mut cmd = CommandBuilder::new(bin);
     cmd.args(["connect", kernel_json.to_str().unwrap()]);
+    cmd.env("XDG_DATA_HOME", &xdg);
     cmd.cwd(std::env::current_dir().expect("cwd"));
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
@@ -749,10 +782,11 @@ fn input_request_prompts_user_and_replies() {
 
     let _ = writer.write_all(&[0x04]);
     let _ = writer.flush();
-    drop(writer);
     let _ = child.wait();
+    drop(writer);
     drop(pair.master);
     let _ = reader_handle.join();
+    let _ = std::fs::remove_dir_all(&xdg);
 
     let final_out = output.lock().unwrap().clone();
     assert!(
@@ -766,6 +800,7 @@ fn input_request_prompts_user_and_replies() {
 /// the banner.
 fn spawn_jet_pty(
     kernel_json: &std::path::Path,
+    xdg: &std::path::Path,
 ) -> (
     Box<dyn portable_pty::Child + Send + Sync>,
     Box<dyn std::io::Write + Send>,
@@ -788,6 +823,7 @@ fn spawn_jet_pty(
     let bin = env!("CARGO_BIN_EXE_jet");
     let mut cmd = CommandBuilder::new(bin);
     cmd.args(["connect", kernel_json.to_str().unwrap()]);
+    cmd.env("XDG_DATA_HOME", xdg);
     cmd.cwd(std::env::current_dir().expect("cwd"));
     let child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
@@ -859,7 +895,6 @@ fn shutdown_jet_pty(
 /// A complete one-liner executes immediately — no continuation prompt
 /// appears and the result lands.
 #[test]
-#[serial_test::serial]
 fn complete_one_liner_executes_without_continuation() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -874,7 +909,8 @@ fn complete_one_liner_executes_without_continuation() {
     };
 
     use std::io::Write;
-    let (child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
+    let xdg = scratch_xdg_dir();
+    let (child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json, &xdg);
 
     let before_send = output.lock().unwrap().len();
     writer.write_all(b"1+1\n").expect("write code");
@@ -886,6 +922,7 @@ fn complete_one_liner_executes_without_continuation() {
     };
 
     shutdown_jet_pty(child, writer, reader_handle, master);
+    let _ = std::fs::remove_dir_all(&xdg);
 
     assert!(saw_result, "did not see '2' result; tail:\n{tail}");
     assert!(
@@ -897,7 +934,6 @@ fn complete_one_liner_executes_without_continuation() {
 /// Incomplete code triggers a continuation prompt; finishing the block
 /// with a blank line then executes it.
 #[test]
-#[serial_test::serial]
 fn incomplete_code_prompts_for_continuation_then_executes() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -912,7 +948,8 @@ fn incomplete_code_prompts_for_continuation_then_executes() {
     };
 
     use std::io::Write;
-    let (child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json);
+    let xdg = scratch_xdg_dir();
+    let (child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json, &xdg);
 
     let before_send = output.lock().unwrap().len();
 
@@ -944,6 +981,7 @@ fn incomplete_code_prompts_for_continuation_then_executes() {
     };
 
     shutdown_jet_pty(child, writer, reader_handle, master);
+    let _ = std::fs::remove_dir_all(&xdg);
 
     assert!(
         !tail_after_first.trim_end().ends_with("> "),
@@ -990,7 +1028,6 @@ fn read_only_session(xdg: &std::path::Path) -> serde_json::Value {
 /// Graceful exit (no --persist) should leave the session marked closed
 /// and the kernel_pid recorded.
 #[test]
-#[serial_test::serial]
 fn session_marked_closed_on_graceful_exit() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -1047,7 +1084,6 @@ fn session_marked_closed_on_graceful_exit() {
 
 /// With --persist, the session stays open and the kernel keeps running.
 #[test]
-#[serial_test::serial]
 fn session_left_open_with_persist() {
     if !ipykernel_available() {
         skip("ipykernel not installed");
@@ -1096,12 +1132,18 @@ fn session_left_open_with_persist() {
     assert!(meta["closed_at"].is_null(), "closed_at set on persist: {meta}");
     assert!(meta["kernel_pid"].is_number(), "kernel_pid missing: {meta}");
 
-    // Kill the kernel. Then `jet list` (which probes) should flip the
-    // session to Closed even though jet never observed the death.
-    let _ = std::process::Command::new("pkill")
-        .args(["-9", "-f", "ipykernel_launcher"])
-        .status();
-    // pkill is async; give the OS a beat to actually reap.
+    // Kill the kernel by its recorded pid. Then `jet list` (which
+    // probes) should flip the session to Closed even though jet never
+    // observed the death. We deliberately avoid `pkill -f
+    // ipykernel_launcher` here — under parallel test execution, that
+    // pattern would cross-kill any other concurrent Python-kernel test.
+    let kernel_pid = meta["kernel_pid"]
+        .as_i64()
+        .expect("kernel_pid recorded") as i32;
+    unsafe {
+        libc::kill(kernel_pid, libc::SIGKILL);
+    }
+    // kill is async; give the OS a beat to actually reap.
     std::thread::sleep(Duration::from_millis(500));
 
     let status = Command::new(bin)
