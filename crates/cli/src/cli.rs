@@ -27,11 +27,11 @@ pub enum Command {
     #[command(alias = "a")]
     Attach(AttachArgs),
 
-    /// List sessions in the jet data dir.
+    /// List Jupyter sessions tracked by jet.
     #[command(alias = "ls")]
     ListSessions(ListArgs),
 
-    /// List Jupyter kernelspecs discovered on this machine.
+    /// List Jupyter kernels discoverable on disk.
     #[command(alias = "lk")]
     ListKernels(ListKernelsArgs),
 }
