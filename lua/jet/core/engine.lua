@@ -208,9 +208,27 @@ end
 -- ---@alias Jet.Callback.IsComplete.Result { status: Jet.KernelStatus, type: Jet.MsgType.IsCompleteReply?, data: Jet.Msg.IsCompleteReply? }
 -- ---@alias Jet.Kernel.Id string
 -- ---@alias Jet.Kernel.Spec.Path string
---
--- ---@source ../../../src/lib.rs
--- ---@type Jet.Engine
+
+---@class jet.kernel.response
+---@field status "busy" | "pending"
+---@field type string
+---@field data table
+
+---@alias jet.kernel.callback fun(): jet.kernel.response?
+
+---@class jet.engine
+---@field connect fun(spec_path: string, connection_file: string?, session_name: string?): string, table
+---@field attach fun(connection_file: string?, session_name: string?): string, table
+---@field shutdown_kernel fun(session_id: string)
+---@field interrupt fun(session_id: string)
+---@field list_running_kernels fun(): table
+---@field list_available_kernels fun(): table
+---@field execute_code fun(session_id: string, code: string, user_expression: table?): jet.kernel.callback
+---@field is_complete fun(session_id: string, code: string): jet.kernel.callback
+---@field get_completions fun(session_id: string, code: string): table?
+---@field comm_open fun(session_id: string, comm_id: string, data: table): string, jet.kernel.callback
+---@field comm_send fun(session_id: string, comm_id: string, data: table): jet.kernel.callback
+---@field provide_stdin fun(session_id: string, parent_msg_id: string, value: string)
 local out = loader()
 
 return out
