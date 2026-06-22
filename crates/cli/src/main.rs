@@ -313,19 +313,35 @@ async fn pick_session() -> Result<Option<String>> {
     }
 
     // inquire's Select returns the chosen option by value, so prefix each
-    // label with the id and split it back out after picking.
+    // label with the id and split it back out after picking. Pad each
+    // column to its max so columns align.
+    let id_w = sessions.iter().map(|s| s.id.chars().count()).max().unwrap_or(0);
+    let name_w = sessions.iter().map(|s| s.name.chars().count()).max().unwrap_or(0);
     let labels: Vec<String> = sessions
         .iter()
-        .map(|s| format!("{}  {}  {}", s.id, s.name, s.created_at))
+        .map(|s| {
+            format!(
+                "{:<id_w$}  {:<name_w$}  {}",
+                s.id, s.name, s.created_at,
+                id_w = id_w,
+                name_w = name_w,
+            )
+        })
         .collect();
 
     let picked = tokio::task::spawn_blocking(move || {
-        inquire::Select::new("session", labels).prompt()
+        use inquire::ui::{Color, RenderConfig, StyleSheet, Styled};
+        let cfg = RenderConfig::default()
+            .with_selected_option(Some(StyleSheet::new().with_fg(Color::DarkCyan)))
+            .with_highlighted_option_prefix(Styled::new("›").with_fg(Color::DarkCyan));
+        inquire::Select::new("session", labels)
+            .with_render_config(cfg)
+            .prompt()
     })
     .await?;
 
     match picked {
-        Ok(line) => Ok(line.split("  ").next().map(str::to_string)),
+        Ok(line) => Ok(line.split("  ").next().map(|s| s.trim().to_string())),
         Err(inquire::InquireError::OperationCanceled)
         | Err(inquire::InquireError::OperationInterrupted) => Ok(None),
         Err(e) => Err(e.into()),
