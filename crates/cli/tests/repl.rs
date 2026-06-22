@@ -396,7 +396,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
     ));
     let conn_str = conn.to_string_lossy().to_string();
 
-    // Spawn detached: get a kernel that survives jet exiting.
+    // Spawn persisted: get a kernel that survives jet exiting.
     {
         use std::io::Write;
         let mut child = Command::new(bin)
@@ -404,14 +404,14 @@ fn jet_exits_when_r_kernel_quits_attach() {
                 "connect",
                 "--connection-file",
                 &conn_str,
-                "--detach",
+                "--persist",
                 kernel_json.to_str().unwrap(),
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .expect("spawn jet (detach)");
+            .expect("spawn jet (persist)");
         std::thread::sleep(Duration::from_secs(3));
         let mut stdin = child.stdin.take().expect("stdin piped");
         // ^D to exit jet without quitting the kernel.
@@ -421,7 +421,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
     }
     assert!(
         conn.exists(),
-        "connection file {conn_str} should still exist after --detach"
+        "connection file {conn_str} should still exist after --persist"
     );
 
     // Attach + quit().
@@ -491,7 +491,7 @@ fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
     Ok(path)
 }
 
-/// Connect with `--detach`, set a variable, exit. Then `attach` to the
+/// Connect with `--persist`, set a variable, exit. Then `attach` to the
 /// connection file and read the variable back. Round-trips state through
 /// a kernel that survived past jet's exit.
 #[test]
@@ -593,7 +593,7 @@ fn detach_and_attach_round_trip() {
     let bin = env!("CARGO_BIN_EXE_jet");
     let conn_str = conn.to_string_lossy().to_string();
 
-    // Connect+detach: set x = 42, exit jet. We don't wait on a return
+    // Connect+persist: set x = 42, exit jet. We don't wait on a return
     // prompt — readline goes back to "> " whether or not the cell ran;
     // a fixed grace period is more reliable than a substring match.
     let _ = drive(
@@ -602,7 +602,7 @@ fn detach_and_attach_round_trip() {
             "connect",
             "--connection-file",
             &conn_str,
-            "--detach",
+            "--persist",
             kernel_json.to_str().unwrap(),
         ],
         "x = 42\n",
@@ -611,7 +611,7 @@ fn detach_and_attach_round_trip() {
     );
     assert!(
         conn.exists(),
-        "connection file {conn_str} should still exist after --detach"
+        "connection file {conn_str} should still exist after --persist"
     );
 
     // Attach: read x back. Wait until we see "42" in jet's output.

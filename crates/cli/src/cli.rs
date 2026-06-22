@@ -43,17 +43,15 @@ pub struct ConnectArgs {
     #[arg(required = true)]
     pub kernelspec: PathBuf,
 
-    /// Where to write the kernel connection file. Defaults to a tempfile
-    /// that is cleaned up on exit. With `--detach`, the kernel outlives
-    /// jet and you'll need this path (or a stable one of your choosing)
-    /// to reattach later.
+    /// Override the location of the kernel connection file. Defaults to
+    /// `<session-dir>/connection-file.json` inside the jet data dir.
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
 
     /// Leave the spawned kernel running after jet exits, so a later `jet
-    /// attach <connection-file>` can reuse it. Requires `--connection-file`.
-    #[arg(long, requires = "connection_file")]
-    pub detach: bool,
+    /// attach <connection-file>` can reuse it.
+    #[arg(long)]
+    pub persist: bool,
 
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
     #[arg(long)]
@@ -70,7 +68,7 @@ pub struct ConnectArgs {
 #[derive(Parser, Debug)]
 pub struct AttachArgs {
     /// Path to the connection file written by an earlier `jet connect
-    /// --detach`. Identifies the kernel and carries its HMAC key.
+    /// --persist`. Identifies the kernel and carries its HMAC key.
     #[arg(required = true)]
     pub connection_file: PathBuf,
 

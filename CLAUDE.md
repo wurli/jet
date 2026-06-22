@@ -20,7 +20,7 @@ inline in the terminal using the kitty graphics protocol.
   plots).
 - Renders `image/png` outputs via kitty graphics in unicode-placeholder
   mode, so images survive tmux pane switches and scrolling.
-- Supports `--detach` (keep kernel running after jet exits) and
+- Supports `--persist` (keep kernel running after jet exits) and
   `jet attach <connection-file>` (reconnect to a previously-detached
   kernel from a fresh process).
 
@@ -77,11 +77,11 @@ cargo run -- connect ~/Library/Jupyter/kernels/python3/kernel.json
 # R (ark)
 cargo run -- connect ~/Library/Jupyter/kernels/ark/kernel.json
 
-# Detach + reattach
-cargo run -- connect --detach --connection-file /tmp/my-kernel.json \
-  ~/Library/Jupyter/kernels/python3/kernel.json
-# (later, in any shell)
-cargo run -- attach /tmp/my-kernel.json
+# Persist + reattach. --connection-file is optional; without it,
+# the connection file is written to the session dir under $XDG_DATA_HOME/jet.
+cargo run -- connect --persist ~/Library/Jupyter/kernels/python3/kernel.json
+# (jet prints the connection file path on exit; pass that to attach)
+cargo run -- attach <printed-path>
 ```
 
 ## Tests

@@ -189,29 +189,29 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
         spec.argv,
     );
 
-    let conn_path = match (args.connection_file.clone(), args.detach) {
-        (Some(p), _) => Some(p),
-        (None, false) => None,
-        _ => unreachable!(),
-    };
+    let cwd = std::env::current_dir()?;
+    let kernel_name = spec.display_name.clone().unwrap_or_default();
+    let session = jet_core::session::Session::create(jet_core::session::CreateParams {
+        lang: &spec.language,
+        kernel_name: &kernel_name,
+        kernelspec_path: &args.kernelspec,
+        working_dir: &cwd,
+    })?;
 
-    let mut kernel = if let Some(ref path) = conn_path {
-        Kernel::attach_or_spawn(&spec, path, args.session_name.as_deref()).await?
-    } else {
-        Kernel::spawn(&spec, conn_path.clone(), args.session_name.as_deref()).await?
-    };
+    // --connection-file overrides where the connection file is written;
+    // otherwise it lives inside the session dir.
+    let conn_path = args
+        .connection_file
+        .clone()
+        .unwrap_or_else(|| session.connection_file_path());
+
+    let mut kernel = Kernel::attach_or_spawn(&spec, &conn_path, args.session_name.as_deref()).await?;
 
     let render_graphics = !args.no_graphics;
     drive_repl(&mut kernel, render_graphics, args.session_name).await?;
 
-    if args.detach {
+    if args.persist {
         kernel.detach();
-        if let Some(p) = conn_path {
-            eprintln!(
-                "[jet] kernel detached. reattach with: jet attach {}",
-                p.display()
-            );
-        }
     } else {
         let _ = kernel.shutdown().await;
     }
