@@ -3,7 +3,7 @@
 //! docs: <https://jupyter-client.readthedocs.io/en/latest/kernels.html#kernel-specs>
 //! schema: <https://github.com/jupyter/enhancement-proposals/blob/master/105-kernelspec-spec/kernelspec.schema.json>
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -79,14 +79,15 @@ impl KernelSpec {
             .collect()
     }
 
-    /// Jupyter kernels live in well-known directories on disk:
+    /// Jupyter kernels live in well-known directories on disk, in
+    /// descending priority:
     ///
-    /// - `$JUPYTER_PATH/kernels` (highest priority)
-    /// - `~/.local/share/jupyter/kernels` (Linux)
+    /// - `$JUPYTER_PATH/kernels`
+    /// - `$XDG_DATA_HOME/jupyter/kernels` (defaults to `~/.local/share/...` on Linux)
     /// - `~/Library/Jupyter/kernels` (Mac)
     /// - `{sys.prefix}/share/jupyter/kernels` (Python)
-    /// - `/usr/share/jupyter/kernels`, `/usr/local/share/jupyter/kernels`
     /// - `$CONDA_PREFIX/share/jupyter/kernels`
+    /// - `/usr/local/share/jupyter/kernels`, `/usr/share/jupyter/kernels`
     ///
     /// Windows is not supported yet.
     pub fn discover_specs() -> Vec<PathBuf> {
@@ -99,8 +100,14 @@ impl KernelSpec {
             }
         }
 
-        if let Some(home) = std::env::var_os("HOME") {
+        // Linux user dir: XDG_DATA_HOME if set, else $HOME/.local/share.
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+            dirs.push(PathBuf::from(xdg).join("jupyter/kernels"));
+        } else if let Some(home) = std::env::var_os("HOME") {
             dirs.push(PathBuf::from(&home).join(".local/share/jupyter/kernels"));
+        }
+        // Mac user dir.
+        if let Some(home) = std::env::var_os("HOME") {
             dirs.push(PathBuf::from(&home).join("Library/Jupyter/kernels"));
         }
 
@@ -109,25 +116,32 @@ impl KernelSpec {
         // discovered that way start up against the wrong interpreter
         // unless the venv is already activated, in which case `python3`
         // resolves correctly via PATH.
-        for py_cmd in ["python3", "python"] {
-            if let Some(sys_prefix) = get_sys_prefix(py_cmd) {
-                dirs.push(sys_prefix.join("share/jupyter/kernels"));
-            }
+        if let Some(sys_prefix) = ["python3", "python"].into_iter().find_map(get_sys_prefix) {
+            dirs.push(sys_prefix.join("share/jupyter/kernels"));
         }
-
-        dirs.push("/usr/share/jupyter/kernels".into());
-        dirs.push("/usr/local/share/jupyter/kernels".into());
 
         if let Some(var) = std::env::var_os("CONDA_PREFIX") {
             dirs.push(PathBuf::from(var).join("share/jupyter/kernels"));
         }
 
-        dirs.sort();
-        dirs.dedup();
+        dirs.push("/usr/local/share/jupyter/kernels".into());
+        dirs.push("/usr/share/jupyter/kernels".into());
+
+        // Dedup preserving first occurrence so JUPYTER_PATH wins over a
+        // colliding system path.
+        let mut seen = HashSet::new();
+        dirs.retain(|d| seen.insert(d.clone()));
 
         dirs.into_iter()
-            .filter_map(|dir| read_dir(dir).ok())
-            .flat_map(|entries| entries.flatten())
+            .flat_map(|dir| match read_dir(&dir) {
+                Ok(entries) => entries.collect::<Vec<_>>(),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+                Err(e) => {
+                    log::warn!("skipping kernel dir {}: {e}", dir.display());
+                    Vec::new()
+                }
+            })
+            .flatten()
             .map(|entry| entry.path().join("kernel.json"))
             .filter(|path| path.exists())
             .collect()
