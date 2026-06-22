@@ -191,7 +191,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let cwd = std::env::current_dir()?;
     let kernel_name = spec.display_name.clone().unwrap_or_default();
-    let session = jet_core::session::Session::create(jet_core::session::CreateParams {
+    let mut session = jet_core::session::Session::create(jet_core::session::CreateParams {
         lang: &spec.language,
         kernel_name: &kernel_name,
         kernelspec_path: &args.kernelspec,
@@ -206,6 +206,9 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
         .unwrap_or_else(|| session.connection_file_path());
 
     let mut kernel = Kernel::attach_or_spawn(&spec, &conn_path, args.session_name.as_deref()).await?;
+    if let Some(pid) = kernel.child_pid() {
+        session.set_kernel_pid(pid);
+    }
 
     let render_graphics = !args.no_graphics;
     drive_repl(&mut kernel, render_graphics, args.session_name).await?;
@@ -214,6 +217,7 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
         kernel.detach();
     } else {
         let _ = kernel.shutdown().await;
+        session.mark_closed();
     }
     Ok(())
 }

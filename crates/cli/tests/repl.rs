@@ -943,3 +943,150 @@ fn incomplete_code_prompts_for_continuation_then_executes() {
         "did not see '42' from f() call; tail:\n{final_tail}"
     );
 }
+
+fn scratch_xdg_dir() -> std::path::PathBuf {
+    let p = std::env::temp_dir().join(format!(
+        "jet-xdg-test-{:x}",
+        rand::thread_rng().r#gen::<u64>()
+    ));
+    std::fs::create_dir_all(&p).unwrap();
+    p
+}
+
+/// Find the single session subdir under `<xdg>/jet/` and parse its
+/// session.json. Panics if there isn't exactly one.
+fn read_only_session(xdg: &std::path::Path) -> serde_json::Value {
+    let jet_dir = xdg.join("jet");
+    let mut subdirs: Vec<std::path::PathBuf> = std::fs::read_dir(&jet_dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", jet_dir.display()))
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    assert_eq!(
+        subdirs.len(),
+        1,
+        "expected exactly one session subdir under {}, got {subdirs:?}",
+        jet_dir.display()
+    );
+    let dir = subdirs.pop().unwrap();
+    let bytes = std::fs::read(dir.join("session.json"))
+        .unwrap_or_else(|e| panic!("read session.json: {e}"));
+    serde_json::from_slice(&bytes).expect("parse session.json")
+}
+
+/// Graceful exit (no --persist) should leave the session marked closed
+/// and the kernel_pid recorded.
+#[test]
+#[serial_test::serial]
+fn session_marked_closed_on_graceful_exit() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
+
+    let mut child = Command::new(bin)
+        .args(["connect", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    std::thread::sleep(Duration::from_secs(3));
+    drop(child.stdin.take()); // EOF → graceful exit
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut exited = false;
+    while Instant::now() < deadline {
+        if let Ok(Some(_)) = child.try_wait() {
+            exited = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&xdg);
+        panic!("jet did not exit within 15s");
+    }
+
+    let meta = read_only_session(&xdg);
+    assert_eq!(meta["status"], "closed", "session not marked closed: {meta}");
+    assert!(meta["closed_at"].is_string(), "closed_at missing: {meta}");
+    assert!(meta["kernel_pid"].is_number(), "kernel_pid missing: {meta}");
+    assert_eq!(meta["lang"], "python");
+    let conn_path = std::path::PathBuf::from(meta["working_dir"].as_str().unwrap());
+    assert!(conn_path.is_absolute());
+
+    let _ = std::fs::remove_dir_all(&xdg);
+}
+
+/// With --persist, the session stays open and the kernel keeps running.
+#[test]
+#[serial_test::serial]
+fn session_left_open_with_persist() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
+
+    let mut child = Command::new(bin)
+        .args(["connect", "--persist", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    std::thread::sleep(Duration::from_secs(3));
+    drop(child.stdin.take());
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut exited = false;
+    while Instant::now() < deadline {
+        if let Ok(Some(_)) = child.try_wait() {
+            exited = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&xdg);
+        panic!("jet did not exit within 15s");
+    }
+
+    let meta = read_only_session(&xdg);
+    assert_eq!(meta["status"], "open", "session unexpectedly closed: {meta}");
+    assert!(meta["closed_at"].is_null(), "closed_at set on persist: {meta}");
+    assert!(meta["kernel_pid"].is_number(), "kernel_pid missing: {meta}");
+
+    // Cleanup: the kernel is still running. Kill it best-effort.
+    let _ = std::process::Command::new("pkill")
+        .args(["-9", "-f", "ipykernel_launcher"])
+        .status();
+    let _ = std::fs::remove_dir_all(&xdg);
+}

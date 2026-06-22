@@ -25,6 +25,17 @@ pub struct CreateParams<'a> {
     pub working_dir: &'a Path,
 }
 
+/// Lifecycle of a session. `Open` means the kernel should be reachable;
+/// `Closed` means it exited cleanly. Sessions that crashed will still
+/// read as `Open` until something (a future `jet list` probe, etc.)
+/// notices the kernel is gone and updates the file.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionStatus {
+    Open,
+    Closed,
+}
+
 /// Contents of `session.json`. Kept stable; bump `schema_version` and
 /// migrate if you need to change the shape.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -37,6 +48,12 @@ pub struct SessionMeta {
     pub kernelspec_path: PathBuf,
     /// Relative to the session dir.
     pub connection_file: String,
+    pub status: SessionStatus,
+    /// ISO8601 UTC, set when status transitions to Closed.
+    pub closed_at: Option<String>,
+    /// OS pid of the kernel process, recorded at spawn. None for attached
+    /// sessions (we don't own the child).
+    pub kernel_pid: Option<u32>,
     pub jet_version: String,
     pub schema_version: u32,
 }
@@ -67,11 +84,39 @@ impl Session {
             kernel_name: params.kernel_name.to_string(),
             kernelspec_path: params.kernelspec_path.to_path_buf(),
             connection_file: CONNECTION_FILE.to_string(),
+            status: SessionStatus::Open,
+            closed_at: None,
+            kernel_pid: None,
             jet_version: env!("CARGO_PKG_VERSION").to_string(),
             schema_version: SCHEMA_VERSION,
         };
         write_meta(&dir, &meta)?;
         Ok(Session { dir, meta })
+    }
+
+    /// Record the kernel's OS pid. Rewrites session.json. Best-effort:
+    /// a write failure is logged but not returned, so caller doesn't
+    /// have to error out of the spawn flow on a metadata-only hiccup.
+    pub fn set_kernel_pid(&mut self, pid: u32) {
+        self.meta.kernel_pid = Some(pid);
+        if let Err(e) = write_meta(&self.dir, &self.meta) {
+            log::warn!("session: failed to record kernel pid: {e}");
+        }
+    }
+
+    /// Mark the session as closed. Rewrites session.json with
+    /// `status=closed` and `closed_at=now`. Best-effort.
+    pub fn mark_closed(&mut self) {
+        self.mark_closed_at(SystemTime::now());
+    }
+
+    /// Test/internal hook: mark closed at a fixed instant.
+    pub fn mark_closed_at(&mut self, now: SystemTime) {
+        self.meta.status = SessionStatus::Closed;
+        self.meta.closed_at = Some(format_iso8601(now));
+        if let Err(e) = write_meta(&self.dir, &self.meta) {
+            log::warn!("session: failed to record closed status: {e}");
+        }
     }
 
     pub fn open(name: &str) -> Result<Session> {
@@ -153,7 +198,27 @@ mod tests {
         assert_eq!(sess.meta().working_dir, cwd);
         assert_eq!(sess.meta().created_at, "2026-06-22T14:03:11Z");
         assert_eq!(sess.meta().schema_version, SCHEMA_VERSION);
+        assert_eq!(sess.meta().status, SessionStatus::Open);
+        assert_eq!(sess.meta().closed_at, None);
+        assert_eq!(sess.meta().kernel_pid, None);
 
+        std::fs::remove_dir_all(&data).ok();
+    }
+
+    #[test]
+    fn mark_closed_persists() {
+        let data = tempdir("close");
+        let cwd = PathBuf::from("/tmp/foo");
+        let t0 = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
+        let t1 = UNIX_EPOCH + Duration::from_secs(1_782_140_000);
+        let mut sess = Session::create_in(&data, sample_params(&cwd), t0).unwrap();
+        sess.set_kernel_pid(12345);
+        sess.mark_closed_at(t1);
+
+        let reopened = Session::open_in(&data, &sess.meta().name).unwrap();
+        assert_eq!(reopened.meta().status, SessionStatus::Closed);
+        assert_eq!(reopened.meta().closed_at.as_deref(), Some("2026-06-22T14:53:20Z"));
+        assert_eq!(reopened.meta().kernel_pid, Some(12345));
         std::fs::remove_dir_all(&data).ok();
     }
 
