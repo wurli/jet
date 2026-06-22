@@ -27,7 +27,7 @@ pub fn warn_if_passthrough_off() {
     eprintln!(
         "{}",
         super::ansi::yellow(
-            "[jet] warning: tmux `allow-passthrough` is off. \
+            "Warning: tmux `allow-passthrough` is off. \
              Kitty graphics will not render inline.\n\
              Enable it in this pane:    tmux set -p allow-passthrough all\n\
              Or globally in your config: set -g allow-passthrough on"

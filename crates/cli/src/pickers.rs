@@ -12,7 +12,7 @@ use jet_core::session::{SessionStatus, SessionStore};
 pub async fn pick_kernelspec() -> Result<Option<PathBuf>> {
     let specs = jet_core::kernel_spec::KernelSpec::find_valid();
     if specs.is_empty() {
-        eprintln!("[jet] no kernelspecs found on disk");
+        eprintln!("No kernelspecs found on disk");
         return Ok(None);
     }
 
@@ -46,7 +46,7 @@ pub async fn pick_session() -> Result<Option<String>> {
         .collect();
 
     if sessions.is_empty() {
-        eprintln!("[jet] no open sessions in {}", cwd.display());
+        eprintln!("No open sessions in {}", cwd.display());
         return Ok(None);
     }
 

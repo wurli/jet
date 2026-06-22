@@ -259,10 +259,7 @@ impl Renderer {
                     }
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
-                        eprintln!(
-                            "{}",
-                            ansi::yellow(&format!("[jet] kitty render failed: {e}"))
-                        );
+                        eprintln!("{}", ansi::yellow(&format!("Image render failed: {e}")));
                         return Ok(());
                     }
                 }

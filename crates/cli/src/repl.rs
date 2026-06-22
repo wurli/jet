@@ -472,7 +472,7 @@ pub async fn drive_repl(
             });
             let line = tokio::select! {
                 _ = pipes.closed.notified() => {
-                    eprintln!("{}", ansi::red("[jet] kernel exited"));
+                    eprintln!("{}", ansi::red("Kernel exited"));
                     shutdown.notify_waiters();
                     std::process::exit(0);
                 }
@@ -494,7 +494,7 @@ pub async fn drive_repl(
                             break 'accumulate None;
                         }
                         Err(e) => {
-                            eprintln!("[jet] readline: {e}");
+                            eprintln!("Readline: {e}");
                             return Ok(());
                         }
                     }
@@ -571,12 +571,12 @@ pub async fn drive_repl(
                             _ = pipes.closed.notified() => return WaitResult::Closed,
                             _ = intr_rx.recv() => {
                                 if let Err(e) = kernel.interrupt().await {
-                                    eprintln!("{}", ansi::red(&format!("[jet] interrupt failed: {e}")));
+                                    eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
                                 }
                             }
                             _ = sigint.recv() => {
                                 if let Err(e) = kernel.interrupt().await {
-                                    eprintln!("{}", ansi::red(&format!("[jet] interrupt failed: {e}")));
+                                    eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
                                 }
                             }
                         }
@@ -604,7 +604,7 @@ pub async fn drive_repl(
                         Err(rustyline::error::ReadlineError::Eof)
                         | Err(rustyline::error::ReadlineError::Interrupted) => String::new(),
                         Err(e) => {
-                            eprintln!("[jet] readline (input_request): {e}");
+                            eprintln!("Readline (input_request): {e}");
                             String::new()
                         }
                     };
@@ -626,7 +626,7 @@ pub async fn drive_repl(
             WaitResult::Input(_) => unreachable!("handled above"),
             WaitResult::Timeout => {
                 log::warn!("timeout waiting for kernel idle (msg_id={msg_id})");
-                eprintln!("{}", ansi::yellow("[jet] timeout waiting for kernel"));
+                eprintln!("{}", ansi::yellow("Timeout waiting for kernel"));
             }
             WaitResult::Closed => {
                 shutdown.notify_waiters();
