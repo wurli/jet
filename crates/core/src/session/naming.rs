@@ -95,11 +95,7 @@ pub fn generate_session_name(now: SystemTime, lang: &str, cwd: &Path) -> String 
         .map(sanitize_basename)
         .unwrap_or_default();
     let id = random_id();
-    if basename.is_empty() {
-        format!("{ts}_{lang_clean}_{id}")
-    } else {
-        format!("{ts}_{lang_clean}-{basename}_{id}")
-    }
+    format!("{ts}_{lang_clean}_{basename}_{id}")
 }
 
 fn sanitize_lang(input: &str) -> String {
