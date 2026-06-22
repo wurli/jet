@@ -4,7 +4,6 @@
 //! `jet` owns the kernel process directly; runtimed's `jupyter-zmq-client`
 //! handles the wire protocol and HMAC signing.
 
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -19,43 +18,10 @@ use jupyter_zmq_client::{
     peer_identity_for_session,
 };
 use rand::Rng;
-use serde::Deserialize;
 use tokio::process::{Child, Command};
 
 use crate::connection_file;
-
-/// Per the Jupyter kernelspec: how the kernel expects to be interrupted.
-/// `Signal` (default) means SIGINT; `Message` means an `interrupt_request`
-/// on the control channel.
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum InterruptMode {
-    #[default]
-    Signal,
-    Message,
-}
-
-/// A parsed Jupyter `kernel.json` kernelspec.
-#[derive(Debug, Deserialize)]
-pub struct KernelSpec {
-    pub argv: Vec<String>,
-    pub language: String,
-    #[serde(default)]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-    #[serde(default)]
-    pub interrupt_mode: InterruptMode,
-}
-
-impl KernelSpec {
-    pub fn load(path: &Path) -> Result<Self> {
-        let bytes = std::fs::read(path)
-            .with_context(|| format!("reading kernelspec at {}", path.display()))?;
-        serde_json::from_slice(&bytes)
-            .with_context(|| format!("parsing kernelspec at {}", path.display()))
-    }
-}
+pub use crate::kernel_spec::{InterruptMode, KernelSpec};
 
 /// RAII guard for the kernel process. Drop kills + waits unless `detach`
 /// has been called. Matches the old `kallichore::server::ChildGuard`

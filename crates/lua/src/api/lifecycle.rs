@@ -255,7 +255,7 @@ pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 /// standard Jupyter directories.
 pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let table = lua.create_table()?;
-    for (path, spec) in discover_kernelspecs() {
+    for (path, spec) in KernelSpec::find_valid() {
         let entry = lua.create_table()?;
         entry.set("language", spec.language)?;
         if let Some(d) = spec.display_name {
@@ -265,34 +265,4 @@ pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
         table.set(path.to_string_lossy().to_string(), entry)?;
     }
     Ok(table)
-}
-
-fn discover_kernelspecs() -> Vec<(PathBuf, KernelSpec)> {
-    let mut roots: Vec<PathBuf> = Vec::new();
-    if let Ok(home) = std::env::var("HOME") {
-        let h = PathBuf::from(home);
-        roots.push(h.join("Library/Jupyter/kernels"));
-        roots.push(h.join(".local/share/jupyter/kernels"));
-        roots.push(h.join(".jupyter/kernels"));
-    }
-    roots.push(PathBuf::from("/usr/local/share/jupyter/kernels"));
-    roots.push(PathBuf::from("/usr/share/jupyter/kernels"));
-
-    let mut out = Vec::new();
-    for root in roots {
-        let Ok(entries) = std::fs::read_dir(&root) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let kj = entry.path().join("kernel.json");
-            if !kj.exists() {
-                continue;
-            }
-            match KernelSpec::load(&kj) {
-                Ok(s) => out.push((kj, s)),
-                Err(e) => log::debug!("skipping {kj:?}: {e}"),
-            }
-        }
-    }
-    out
 }
