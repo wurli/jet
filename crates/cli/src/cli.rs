@@ -95,11 +95,12 @@ pub struct ConnectArgs {
 }
 
 #[derive(Parser, Debug)]
-#[command(group(clap::ArgGroup::new("target").required(true).args(["session_id", "connection_file"])))]
+#[command(group(clap::ArgGroup::new("target").args(["session_id", "connection_file"])))]
 pub struct AttachArgs {
     /// Session id (directory name under the jet data dir) to attach to.
     /// Look these up with `jet list`. Mutually exclusive with
-    /// `--connection-file`.
+    /// `--connection-file`. If neither is given, an interactive picker
+    /// is shown over open sessions in the current working directory.
     pub session_id: Option<String>,
 
     /// Path to a connection file written by an earlier `jet connect

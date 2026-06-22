@@ -294,6 +294,44 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
     Ok(())
 }
 
+/// Interactive picker over open sessions in the current working directory.
+/// Returns `Ok(None)` if the user cancels (Esc / ^C) or there's nothing
+/// to attach to.
+async fn pick_session() -> Result<Option<String>> {
+    let store = SessionStore::default()?;
+    store.probe_open().await?;
+    let cwd = std::env::current_dir()?;
+    let sessions: Vec<_> = store
+        .list()?
+        .into_iter()
+        .filter(|s| s.status == SessionStatus::Open && s.working_dir == cwd)
+        .collect();
+
+    if sessions.is_empty() {
+        eprintln!("[jet] no open sessions in {}", cwd.display());
+        return Ok(None);
+    }
+
+    // inquire's Select returns the chosen option by value, so prefix each
+    // label with the id and split it back out after picking.
+    let labels: Vec<String> = sessions
+        .iter()
+        .map(|s| format!("{}  {}  {}", s.id, s.name, s.created_at))
+        .collect();
+
+    let picked = tokio::task::spawn_blocking(move || {
+        inquire::Select::new("session", labels).prompt()
+    })
+    .await?;
+
+    match picked {
+        Ok(line) => Ok(line.split("  ").next().map(str::to_string)),
+        Err(inquire::InquireError::OperationCanceled)
+        | Err(inquire::InquireError::OperationInterrupted) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 async fn run_attach(args: AttachArgs) -> Result<()> {
     init_logger(args.global.log.as_deref());
     let (conn_path, session_id) = match (args.session_id, args.connection_file) {
@@ -302,7 +340,16 @@ async fn run_attach(args: AttachArgs) -> Result<()> {
             (path, Some(id))
         }
         (None, Some(path)) => (path, None),
-        _ => unreachable!("clap ArgGroup enforces exactly one of session_id / --connection-file"),
+        (None, None) => {
+            let Some(id) = pick_session().await? else {
+                return Ok(());
+            };
+            let path = SessionStore::default()?.open(&id)?.connection_file_path();
+            (path, Some(id))
+        }
+        (Some(_), Some(_)) => {
+            unreachable!("clap ArgGroup forbids passing both session_id and --connection-file")
+        }
     };
     let mut kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
     let render_graphics = !args.no_graphics;
