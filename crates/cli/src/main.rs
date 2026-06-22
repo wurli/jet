@@ -23,7 +23,7 @@ mod render;
 
 use cli::{Args, AttachArgs, Command, ConnectArgs, ListArgs, StatusFilter};
 use jet_core::logger::init_logger;
-use jet_core::session::{Session, SessionStatus, list_sessions};
+use jet_core::session::{SessionStatus, SessionStore};
 use render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
 
 /// Reopen the session and flip it to Closed. Best-effort: called from
@@ -32,7 +32,14 @@ use render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
 /// session id) is silently ignored.
 fn mark_session_closed(session_id: &Option<String>) {
     let Some(id) = session_id else { return };
-    match Session::open(id) {
+    let store = match SessionStore::default() {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("failed to resolve data dir to mark session {id} closed: {e}");
+            return;
+        }
+    };
+    match store.open(id) {
         Ok(mut s) => s.mark_closed(),
         Err(e) => log::warn!("failed to reopen session {id} to mark closed: {e}"),
     }
@@ -189,10 +196,12 @@ async fn run_list(args: ListArgs) -> Result<()> {
     // Flip any Open sessions whose kernel has gone away to Closed before
     // we read the list. Otherwise a kernel that exited while no jet
     // process was attached (or crashed) stays falsely Open on disk.
-    jet_core::session::probe_open_sessions().await?;
+    let store = SessionStore::default()?;
+    store.probe_open().await?;
 
     let cwd = std::env::current_dir()?;
-    let sessions: Vec<_> = list_sessions()?
+    let sessions: Vec<_> = store
+        .list()?
         .into_iter()
         .filter(|s| match args.status {
             StatusFilter::Open => s.status == SessionStatus::Open,
@@ -246,12 +255,12 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let cwd = std::env::current_dir()?;
     let name = spec.display_name.clone().unwrap_or_default();
-    let mut session = jet_core::session::Session::create(jet_core::session::CreateParams {
-        lang: &spec.language,
-        name: &name,
-        kernelspec_path: &args.kernelspec,
-        working_dir: &cwd,
-    })?;
+    let mut session = SessionStore::default()?.create(
+        &spec.language,
+        &name,
+        &args.kernelspec,
+        &cwd,
+    )?;
 
     // --connection-file overrides where the connection file is written;
     // otherwise it lives inside the session dir.
@@ -289,7 +298,7 @@ async fn run_attach(args: AttachArgs) -> Result<()> {
     init_logger(args.global.log.as_deref());
     let (conn_path, session_id) = match (args.session_id, args.connection_file) {
         (Some(id), None) => {
-            let path = jet_core::session::Session::open(&id)?.connection_file_path();
+            let path = SessionStore::default()?.open(&id)?.connection_file_path();
             (path, Some(id))
         }
         (None, Some(path)) => (path, None),

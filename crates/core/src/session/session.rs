@@ -1,34 +1,24 @@
 //! Per-session directory + metadata.
 //!
-//! A `Session` owns one subdir of [`jet_data_dir`] containing:
+//! A `Session` owns one subdir of the data dir, containing:
 //! - `session.json` — [`SessionMeta`] serialized
 //! - `connection-file.json` — written by the kernel layer (not here)
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use super::dir::jet_data_dir;
 use super::naming::{format_iso8601, generate_session_name};
 
-const SESSION_JSON: &str = "session.json";
+pub(super) const SESSION_JSON: &str = "session.json";
 const CONNECTION_FILE: &str = "connection-file.json";
-const SCHEMA_VERSION: u32 = 1;
-
-/// Inputs to [`Session::create`].
-pub struct CreateParams<'a> {
-    pub lang: &'a str,
-    pub name: &'a str,
-    pub kernelspec_path: &'a Path,
-    pub working_dir: &'a Path,
-}
 
 /// Lifecycle of a session. `Open` means the kernel should be reachable;
 /// `Closed` means it exited cleanly. Sessions that crashed will still
-/// read as `Open` until something (a future `jet list` probe, etc.)
-/// notices the kernel is gone and updates the file.
+/// read as `Open` until [`super::probe_open_sessions`] notices the
+/// kernel is gone and flips them.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionStatus {
@@ -36,8 +26,7 @@ pub enum SessionStatus {
     Closed,
 }
 
-/// Contents of `session.json`. Kept stable; bump `schema_version` and
-/// migrate if you need to change the shape.
+/// Contents of `session.json`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionMeta {
     pub id: String,
@@ -54,8 +43,6 @@ pub struct SessionMeta {
     /// OS pid of the kernel process, recorded at spawn. None for attached
     /// sessions (we don't own the child).
     pub kernel_pid: Option<u32>,
-    pub jet_version: String,
-    pub schema_version: u32,
 }
 
 #[derive(Debug)]
@@ -65,72 +52,61 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn create(params: CreateParams<'_>) -> Result<Session> {
-        Self::create_in(jet_data_dir()?.as_path(), params, SystemTime::now())
-    }
-
-    /// Test/internal hook: create under an explicit data dir at a fixed instant.
-    pub fn create_in(data_dir: &Path, params: CreateParams<'_>, now: SystemTime) -> Result<Session> {
-        let id = generate_session_name(now, params.lang, params.working_dir);
+    pub(super) fn create(
+        data_dir: &Path,
+        lang: &str,
+        name: &str,
+        kernelspec_path: &Path,
+        working_dir: &Path,
+        now: SystemTime,
+    ) -> Result<Session> {
+        let id = generate_session_name(now, lang, working_dir);
         let dir = data_dir.join(&id);
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("creating session dir {}", dir.display()))?;
 
-        let meta = SessionMeta {
-            id,
-            created_at: format_iso8601(now),
-            working_dir: params.working_dir.to_path_buf(),
-            lang: params.lang.to_string(),
-            name: params.name.to_string(),
-            kernelspec_path: params.kernelspec_path.to_path_buf(),
-            connection_file: CONNECTION_FILE.to_string(),
-            status: SessionStatus::Open,
-            closed_at: None,
-            kernel_pid: None,
-            jet_version: env!("CARGO_PKG_VERSION").to_string(),
-            schema_version: SCHEMA_VERSION,
+        let session = Session {
+            meta: SessionMeta {
+                id,
+                created_at: format_iso8601(now),
+                working_dir: working_dir.to_path_buf(),
+                lang: lang.to_string(),
+                name: name.to_string(),
+                kernelspec_path: kernelspec_path.to_path_buf(),
+                connection_file: CONNECTION_FILE.to_string(),
+                status: SessionStatus::Open,
+                closed_at: None,
+                kernel_pid: None,
+            },
+            dir,
         };
-        write_meta(&dir, &meta)?;
-        Ok(Session { dir, meta })
+        session.persist()?;
+        Ok(session)
     }
 
-    /// Record the kernel's OS pid. Rewrites session.json. Best-effort:
-    /// a write failure is logged but not returned, so caller doesn't
-    /// have to error out of the spawn flow on a metadata-only hiccup.
-    pub fn set_kernel_pid(&mut self, pid: u32) {
-        self.meta.kernel_pid = Some(pid);
-        if let Err(e) = write_meta(&self.dir, &self.meta) {
-            log::warn!("session: failed to record kernel pid: {e}");
-        }
-    }
-
-    /// Mark the session as closed. Rewrites session.json with
-    /// `status=closed` and `closed_at=now`. Best-effort.
-    pub fn mark_closed(&mut self) {
-        self.mark_closed_at(SystemTime::now());
-    }
-
-    /// Test/internal hook: mark closed at a fixed instant.
-    pub fn mark_closed_at(&mut self, now: SystemTime) {
-        self.meta.status = SessionStatus::Closed;
-        self.meta.closed_at = Some(format_iso8601(now));
-        if let Err(e) = write_meta(&self.dir, &self.meta) {
-            log::warn!("session: failed to record closed status: {e}");
-        }
-    }
-
-    pub fn open(id: &str) -> Result<Session> {
-        Self::open_in(jet_data_dir()?.as_path(), id)
-    }
-
-    pub fn open_in(data_dir: &Path, id: &str) -> Result<Session> {
+    pub(super) fn open(data_dir: &Path, id: &str) -> Result<Session> {
         let dir = data_dir.join(id);
         let meta = read_meta(&dir)?;
         Ok(Session { dir, meta })
     }
 
-    pub fn dir(&self) -> &Path {
-        &self.dir
+    /// Record the kernel's OS pid. Best-effort: a write failure is
+    /// logged but not returned, so the caller doesn't have to error out
+    /// of the spawn flow on a metadata-only hiccup.
+    pub fn set_kernel_pid(&mut self, pid: u32) {
+        self.meta.kernel_pid = Some(pid);
+        self.persist_best_effort("record kernel pid");
+    }
+
+    /// Mark the session as closed. Best-effort (see [`Self::set_kernel_pid`]).
+    pub fn mark_closed(&mut self) {
+        self.mark_closed_at(SystemTime::now());
+    }
+
+    pub(super) fn mark_closed_at(&mut self, now: SystemTime) {
+        self.meta.status = SessionStatus::Closed;
+        self.meta.closed_at = Some(format_iso8601(now));
+        self.persist_best_effort("record closed status");
     }
 
     pub fn meta(&self) -> &SessionMeta {
@@ -140,104 +116,100 @@ impl Session {
     pub fn connection_file_path(&self) -> PathBuf {
         self.dir.join(&self.meta.connection_file)
     }
+
+    fn persist(&self) -> Result<()> {
+        let path = self.dir.join(SESSION_JSON);
+        let json = serde_json::to_vec_pretty(&self.meta)
+            .with_context(|| format!("serializing {}", path.display()))?;
+        std::fs::write(&path, json).with_context(|| format!("writing {}", path.display()))?;
+        Ok(())
+    }
+
+    fn persist_best_effort(&self, what: &str) {
+        if let Err(e) = self.persist() {
+            log::warn!("session: failed to {what}: {e}");
+        }
+    }
 }
 
 pub(super) fn read_meta(dir: &Path) -> Result<SessionMeta> {
     let path = dir.join(SESSION_JSON);
-    let bytes = std::fs::read(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    serde_json::from_slice(&bytes)
-        .with_context(|| format!("parsing {}", path.display()))
-}
-
-fn write_meta(dir: &Path, meta: &SessionMeta) -> Result<()> {
-    let path = dir.join(SESSION_JSON);
-    let json = serde_json::to_vec_pretty(meta).map_err(|e| anyhow!("serialize session.json: {e}"))?;
-    std::fs::write(&path, json).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
+    let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_slice(&bytes).with_context(|| format!("parsing {}", path.display()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
-    use std::time::UNIX_EPOCH;
+    use std::time::{Duration, UNIX_EPOCH};
+    use tempfile::TempDir;
 
-    fn tempdir(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "jet-session-test-{tag}-{:x}",
-            rand::random::<u64>()
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        p
-    }
-
-    fn sample_params<'a>(cwd: &'a Path) -> CreateParams<'a> {
-        CreateParams {
-            lang: "python",
-            name: "python3",
-            kernelspec_path: Path::new("/fake/kernels/python3/kernel.json"),
-            working_dir: cwd,
-        }
+    fn create(dir: &Path, cwd: &Path, now: SystemTime) -> Result<Session> {
+        Session::create(
+            dir,
+            "python",
+            "python3",
+            Path::new("/fake/kernels/python3/kernel.json"),
+            cwd,
+            now,
+        )
     }
 
     #[test]
     fn create_writes_session_json() {
-        let data = tempdir("create");
+        let data = TempDir::new().unwrap();
         let cwd = PathBuf::from("/Users/x/Repos/jet");
         let t = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
-        let sess = Session::create_in(&data, sample_params(&cwd), t).unwrap();
+        let sess = create(data.path(), &cwd, t).unwrap();
 
-        assert!(sess.dir().exists());
-        assert!(sess.dir().join("session.json").exists());
+        assert!(sess.connection_file_path().parent().unwrap().exists());
+        assert!(sess
+            .connection_file_path()
+            .parent()
+            .unwrap()
+            .join("session.json")
+            .exists());
         assert_eq!(
-            sess.connection_file_path(),
-            sess.dir().join("connection-file.json")
+            sess.connection_file_path().file_name().unwrap(),
+            "connection-file.json"
         );
         assert_eq!(sess.meta().lang, "python");
         assert_eq!(sess.meta().working_dir, cwd);
         assert_eq!(sess.meta().created_at, "2026-06-22T14:03:11Z");
-        assert_eq!(sess.meta().schema_version, SCHEMA_VERSION);
         assert_eq!(sess.meta().status, SessionStatus::Open);
         assert_eq!(sess.meta().closed_at, None);
         assert_eq!(sess.meta().kernel_pid, None);
-
-        std::fs::remove_dir_all(&data).ok();
     }
 
     #[test]
     fn mark_closed_persists() {
-        let data = tempdir("close");
+        let data = TempDir::new().unwrap();
         let cwd = PathBuf::from("/tmp/foo");
         let t0 = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
         let t1 = UNIX_EPOCH + Duration::from_secs(1_782_140_000);
-        let mut sess = Session::create_in(&data, sample_params(&cwd), t0).unwrap();
+        let mut sess = create(data.path(), &cwd, t0).unwrap();
         sess.set_kernel_pid(12345);
         sess.mark_closed_at(t1);
 
-        let reopened = Session::open_in(&data, &sess.meta().id).unwrap();
+        let reopened = Session::open(data.path(), &sess.meta().id).unwrap();
         assert_eq!(reopened.meta().status, SessionStatus::Closed);
         assert_eq!(reopened.meta().closed_at.as_deref(), Some("2026-06-22T14:53:20Z"));
         assert_eq!(reopened.meta().kernel_pid, Some(12345));
-        std::fs::remove_dir_all(&data).ok();
     }
 
     #[test]
     fn open_round_trips() {
-        let data = tempdir("open");
-        let cwd = PathBuf::from("/tmp/foo");
+        let data = TempDir::new().unwrap();
         let t = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
-        let created = Session::create_in(&data, sample_params(&cwd), t).unwrap();
-        let opened = Session::open_in(&data, &created.meta().id).unwrap();
+        let created = create(data.path(), Path::new("/tmp/foo"), t).unwrap();
+        let opened = Session::open(data.path(), &created.meta().id).unwrap();
         assert_eq!(created.meta(), opened.meta());
-        std::fs::remove_dir_all(&data).ok();
     }
 
     #[test]
     fn open_missing_errors() {
-        let data = tempdir("missing");
-        let err = Session::open_in(&data, "nope").unwrap_err();
+        let data = TempDir::new().unwrap();
+        let err = Session::open(data.path(), "nope").unwrap_err();
         assert!(format!("{err:#}").contains("session.json"));
-        std::fs::remove_dir_all(&data).ok();
     }
 }

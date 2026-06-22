@@ -1,14 +1,12 @@
 //! Per-session on-disk layout: data dir, session subdirs, `session.json`.
 //!
-//! Naming: `<timestamp>_<lang>-<basename>_<id>` under
-//! [`jet_data_dir`]. History recording (sqlite) is intentionally not
-//! here yet — added later as `history.rs`.
+//! Naming: `<timestamp>_<lang>-<basename>_<id>` under the data dir
+//! (`$XDG_DATA_HOME/jet`, falling back to `$HOME/.local/share/jet`).
 
-pub mod dir;
-pub mod naming;
-pub mod session;
-pub mod sessions;
+mod dir;
+mod naming;
+mod session;
+mod store;
 
-pub use dir::jet_data_dir;
-pub use session::{CreateParams, Session, SessionMeta, SessionStatus};
-pub use sessions::{list_sessions, list_sessions_in, probe_open_sessions, probe_open_sessions_in};
+pub use session::{Session, SessionMeta, SessionStatus};
+pub use store::{SessionStore, list_sessions, probe_open_sessions};
