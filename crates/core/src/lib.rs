@@ -9,6 +9,7 @@ pub mod connection_file;
 pub mod events;
 pub mod kernel;
 pub mod logger;
+pub mod session;
 
 pub use jupyter_protocol;
 pub use jupyter_zmq_client;
