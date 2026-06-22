@@ -1,8 +1,9 @@
 //! Session name generation: `<timestamp>_<lang>-<basename>_<id>`.
 
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
+use chrono::{DateTime, Local, Utc};
 use rand::Rng;
 
 const MAX_BASENAME: usize = 20;
@@ -14,55 +15,13 @@ const MAX_BASENAME: usize = 20;
 /// DST fall-back and cross-timezone moves can introduce out-of-order
 /// neighbors — acceptable for an at-a-glance label.
 pub fn format_timestamp(now: SystemTime) -> String {
-    let secs = now
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let (y, mo, d, h, mi, s) = unix_to_ymdhms(secs, Tz::Local);
-    format!("{y:04}-{mo:02}-{d:02}_{h:02}{mi:02}{s:02}")
+    DateTime::<Local>::from(now).format("%Y-%m-%d_%H%M%S").to_string()
 }
 
 /// ISO8601 form of the same instant: `YYYY-MM-DDTHH:MM:SSZ`. For the
 /// `created_at` field of session.json (human-readable, still UTC).
 pub fn format_iso8601(now: SystemTime) -> String {
-    let secs = now
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let (y, mo, d, h, mi, s) = unix_to_ymdhms(secs, Tz::Utc);
-    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
-}
-
-#[derive(Copy, Clone)]
-enum Tz {
-    Local,
-    Utc,
-}
-
-/// Civil date breakdown via libc `localtime_r` / `gmtime_r`. Falls back
-/// to all-zeros if libc somehow says no (it won't on the platforms we
-/// support, but we don't want a crash for a label).
-fn unix_to_ymdhms(secs: i64, tz: Tz) -> (i32, u32, u32, u32, u32, u32) {
-    let t: libc::time_t = secs as libc::time_t;
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    // SAFETY: each call writes a full `tm` into our stack buffer; we don't share it.
-    let ok = unsafe {
-        match tz {
-            Tz::Local => !libc::localtime_r(&t, &mut tm).is_null(),
-            Tz::Utc => !libc::gmtime_r(&t, &mut tm).is_null(),
-        }
-    };
-    if !ok {
-        return (1970, 1, 1, 0, 0, 0);
-    }
-    (
-        tm.tm_year + 1900,
-        (tm.tm_mon + 1) as u32,
-        tm.tm_mday as u32,
-        tm.tm_hour as u32,
-        tm.tm_min as u32,
-        tm.tm_sec as u32,
-    )
+    DateTime::<Utc>::from(now).format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 /// Sanitize the cwd basename for use in a session dir name. Lowercase,
@@ -124,7 +83,7 @@ fn sanitize_lang(input: &str) -> String {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::time::Duration;
+    use std::time::{Duration, UNIX_EPOCH};
 
     #[test]
     fn iso8601_format_is_utc() {
