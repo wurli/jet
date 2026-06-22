@@ -19,6 +19,7 @@ use jet_core::kernel::Kernel;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 mod cli;
+mod picker;
 mod render;
 
 use cli::{Args, AttachArgs, Command, ConnectArgs, ListArgs, StatusFilter};
@@ -255,12 +256,8 @@ async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let cwd = std::env::current_dir()?;
     let name = spec.display_name.clone().unwrap_or_default();
-    let mut session = SessionStore::default()?.create(
-        &spec.language,
-        &name,
-        &args.kernelspec,
-        &cwd,
-    )?;
+    let mut session =
+        SessionStore::default()?.create(&spec.language, &name, &args.kernelspec, &cwd)?;
 
     // --connection-file overrides where the connection file is written;
     // otherwise it lives inside the session dir.
@@ -312,40 +309,18 @@ async fn pick_session() -> Result<Option<String>> {
         return Ok(None);
     }
 
-    // inquire's Select returns the chosen option by value, so prefix each
-    // label with the id and split it back out after picking. Pad each
-    // column to its max so columns align.
-    let id_w = sessions.iter().map(|s| s.id.chars().count()).max().unwrap_or(0);
-    let name_w = sessions.iter().map(|s| s.name.chars().count()).max().unwrap_or(0);
-    let labels: Vec<String> = sessions
+    let rows: Vec<Vec<picker::Cell>> = sessions
         .iter()
         .map(|s| {
-            format!(
-                "{:<id_w$}  {:<name_w$}  {}",
-                s.id, s.name, s.created_at,
-                id_w = id_w,
-                name_w = name_w,
-            )
+            vec![
+                picker::Cell::dim(&s.id),
+                picker::Cell::plain(&s.name),
+                picker::Cell::plain(&s.created_at),
+            ]
         })
         .collect();
-
-    let picked = tokio::task::spawn_blocking(move || {
-        use inquire::ui::{Color, RenderConfig, StyleSheet, Styled};
-        let cfg = RenderConfig::default()
-            .with_selected_option(Some(StyleSheet::new().with_fg(Color::DarkCyan)))
-            .with_highlighted_option_prefix(Styled::new("›").with_fg(Color::DarkCyan));
-        inquire::Select::new("session", labels)
-            .with_render_config(cfg)
-            .prompt()
-    })
-    .await?;
-
-    match picked {
-        Ok(line) => Ok(line.split("  ").next().map(|s| s.trim().to_string())),
-        Err(inquire::InquireError::OperationCanceled)
-        | Err(inquire::InquireError::OperationInterrupted) => Ok(None),
-        Err(e) => Err(e.into()),
-    }
+    let idx = tokio::task::spawn_blocking(move || picker::pick("session", &rows)).await??;
+    Ok(idx.map(|i| sessions[i].id.clone()))
 }
 
 async fn run_attach(args: AttachArgs) -> Result<()> {
