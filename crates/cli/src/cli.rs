@@ -40,6 +40,18 @@ pub enum Command {
     Stop(StopArgs),
 }
 
+impl Command {
+    pub fn global(&self) -> &GlobalArgs {
+        match self {
+            Command::Connect(c) => &c.global,
+            Command::Attach(c) => &c.global,
+            Command::ListSessions(c) => &c.global,
+            Command::ListKernels(c) => &c.global,
+            Command::Stop(c) => &c.global,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum StatusFilter {
     Open,

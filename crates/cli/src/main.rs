@@ -20,6 +20,7 @@ use cli::{Args, Command};
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    jet_core::logger::init_logger(args.command.global().log.as_deref());
     match args.command {
         Command::Connect(c) => commands::run_connect(c).await,
         Command::Attach(c) => commands::run_attach(c).await,

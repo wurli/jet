@@ -3,7 +3,6 @@
 use anyhow::Result;
 
 use jet_core::kernel::Kernel;
-use jet_core::logger::init_logger;
 use jet_core::session::{SessionStatus, SessionStore};
 
 use crate::cli::{AttachArgs, ConnectArgs, ListArgs, ListKernelsArgs, StatusFilter, StopArgs};
@@ -11,8 +10,6 @@ use crate::pickers::{pick_kernelspec, pick_session};
 use crate::repl::drive_repl;
 
 pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
-    init_logger(args.global.log.as_deref());
-
     let paths: Vec<_> = jet_core::kernel_spec::KernelSpec::find_valid()
         .into_iter()
         .map(|(p, _)| p)
@@ -39,8 +36,6 @@ pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
 }
 
 pub async fn run_list(args: ListArgs) -> Result<()> {
-    init_logger(args.global.log.as_deref());
-
     // Flip any Open sessions whose kernel has gone away to Closed before
     // we read the list. Otherwise a kernel that exited while no jet
     // process was attached (or crashed) stays falsely Open on disk.
@@ -90,8 +85,6 @@ pub async fn run_list(args: ListArgs) -> Result<()> {
 }
 
 pub async fn run_connect(args: ConnectArgs) -> Result<()> {
-    init_logger(args.global.log.as_deref());
-
     let kernelspec = match args.kernelspec {
         Some(p) => p,
         None => match pick_kernelspec().await? {
@@ -196,7 +189,6 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
 }
 
 pub async fn run_stop(args: StopArgs) -> Result<()> {
-    init_logger(args.global.log.as_deref());
     let conn_path = match (args.session_id, args.connection_file) {
         (Some(id), None) => SessionStore::default()?.open(&id)?.connection_file_path(),
         (None, Some(path)) => path,
