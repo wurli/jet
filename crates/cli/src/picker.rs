@@ -43,8 +43,13 @@ impl Cell {
 
 /// Show a fuzzy-filterable picker. Each row is rendered as its cells
 /// joined with two spaces, with cells padded to their column's max
-/// width. Returns the index of the chosen row, or `None` on cancel.
-pub fn pick(prompt: &str, rows: &[Vec<Cell>]) -> Result<Option<usize>> {
+/// width. Returns the index of the chosen row in the original slice,
+/// or `None` on cancel.
+///
+/// If `sort_by` is `Some(col)`, rows are displayed sorted by that
+/// column's text (rows missing that column sort last). The returned
+/// index still refers to the caller's input order.
+pub fn pick(prompt: &str, rows: &[Vec<Cell>], sort_by: Option<usize>) -> Result<Option<usize>> {
     if rows.is_empty() {
         return Ok(None);
     }
@@ -60,7 +65,24 @@ pub fn pick(prompt: &str, rows: &[Vec<Cell>]) -> Result<Option<usize>> {
         })
         .collect();
 
-    let labels: Vec<String> = rows.iter().map(|r| format_row(r, &widths)).collect();
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    if let Some(col) = sort_by {
+        order.sort_by(|&a, &b| {
+            let ka = rows[a].get(col).map(|c| c.text.as_str());
+            let kb = rows[b].get(col).map(|c| c.text.as_str());
+            match (ka, kb) {
+                (Some(a), Some(b)) => a.cmp(b),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        });
+    }
+
+    let labels: Vec<String> = order
+        .iter()
+        .map(|&i| format_row(&rows[i], &widths))
+        .collect();
 
     let cfg = RenderConfig::default()
         .with_selected_option(Some(StyleSheet::new().with_fg(Color::DarkCyan)))
@@ -71,7 +93,7 @@ pub fn pick(prompt: &str, rows: &[Vec<Cell>]) -> Result<Option<usize>> {
         .prompt();
 
     match picked {
-        Ok(line) => Ok(labels.iter().position(|l| l == &line)),
+        Ok(line) => Ok(labels.iter().position(|l| l == &line).map(|i| order[i])),
         Err(inquire::InquireError::OperationCanceled)
         | Err(inquire::InquireError::OperationInterrupted) => Ok(None),
         Err(e) => Err(e.into()),
