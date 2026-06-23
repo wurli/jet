@@ -126,10 +126,11 @@ pub struct AttachArgs {
     pub session_id: Option<String>,
 
     /// Path to a connection file, e.g. written by an earlier `jet connect --persist`. Use this to attach to a kernel that wasn't tracked as a jet session. Mutually exclusive with the positional `session_id`.
-    // Downside vs `session_id`: if the kernel dies during the attached
-    // REPL, we can't flip the matching session.json to Closed (no id to
-    // resolve). The session stays Open on disk until the next `jet list`
-    // runs its `probe_open` self-heal.
+    // If the path resolves to a tracked session (via
+    // `SessionStore::find_by_connection_file`), behavior matches passing
+    // `session_id` directly. For untracked paths there's no id to flip,
+    // so a kernel death during the REPL leaves session.json (if any)
+    // Open until the next `jet list` runs its `probe_open` self-heal.
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
 

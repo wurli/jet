@@ -48,6 +48,22 @@ impl SessionStore {
         Session::open(&self.dir, id)
     }
 
+    /// Reverse-lookup: find the session whose `connection_file_path()`
+    /// matches `path`. Paths are canonicalized on both sides so symlinks
+    /// and `..` normalize away; missing files fall back to a plain `==`
+    /// compare. Returns `Ok(None)` if no session matches.
+    pub fn find_by_connection_file(&self, path: &Path) -> Result<Option<Session>> {
+        let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        for meta in self.list()? {
+            let candidate = self.dir.join(&meta.id).join(&meta.connection_file);
+            let canonical = std::fs::canonicalize(&candidate).unwrap_or(candidate);
+            if canonical == target {
+                return Ok(Some(self.open(&meta.id)?));
+            }
+        }
+        Ok(None)
+    }
+
     /// Scan the data dir and return metadata for every session whose
     /// `session.json` parses. Malformed/missing entries are silently
     /// skipped. Empty vec if the dir doesn't exist.

@@ -119,8 +119,13 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
         .unwrap_or_else(|| session.connection_file_path());
 
     if conn_path.exists() {
+        let store = SessionStore::default()?;
+        let reattach = match store.find_by_connection_file(&conn_path)? {
+            Some(s) => format!("jet attach {}", s.meta().id),
+            None => format!("jet attach --connection-file {}", conn_path.display()),
+        };
         anyhow::bail!(
-            "connection file already exists at {0}: remove it or run `jet attach --connection-file {0}` to reconnect",
+            "connection file already exists at {}: remove it or run `{reattach}` to reconnect",
             conn_path.display(),
         );
     }
@@ -157,7 +162,15 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
             let path = SessionStore::default()?.open(&id)?.connection_file_path();
             (path, Some(id))
         }
-        (None, Some(path)) => (path, None),
+        (None, Some(path)) => {
+            // Best-effort: if the path lives inside a tracked session,
+            // recover the id so `mark_session_closed` works on kernel death.
+            let id = SessionStore::default()
+                .ok()
+                .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
+                .map(|s| s.meta().id.clone());
+            (path, id)
+        }
         (None, None) => {
             let Some(id) = pick_session("Connect to an existing session:").await? else {
                 // No session selected
