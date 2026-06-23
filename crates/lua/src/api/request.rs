@@ -14,11 +14,7 @@ use crate::runtime::{KernelHandle, get, rt};
 
 /// Common path: hand a message to the kernel session and wrap the
 /// resulting [`RequestStream`] in a Lua poll closure.
-fn shell_request(
-    lua: &Lua,
-    handle: &KernelHandle,
-    msg: JupyterMessage,
-) -> LuaResult<LuaFunction> {
+fn shell_request(lua: &Lua, handle: &KernelHandle, msg: JupyterMessage) -> LuaResult<LuaFunction> {
     let session = handle.clone();
     let stream = rt()
         .block_on(async move { session.lock().await.request(msg) })

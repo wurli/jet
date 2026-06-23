@@ -163,12 +163,13 @@ mod tests {
         let sess = create(data.path(), &cwd, t).unwrap();
 
         assert!(sess.connection_file_path().parent().unwrap().exists());
-        assert!(sess
-            .connection_file_path()
-            .parent()
-            .unwrap()
-            .join("session.json")
-            .exists());
+        assert!(
+            sess.connection_file_path()
+                .parent()
+                .unwrap()
+                .join("session.json")
+                .exists()
+        );
         assert_eq!(
             sess.connection_file_path().file_name().unwrap(),
             "connection-file.json"
@@ -193,7 +194,10 @@ mod tests {
 
         let reopened = Session::open(data.path(), &sess.meta().id).unwrap();
         assert_eq!(reopened.meta().status, SessionStatus::Closed);
-        assert_eq!(reopened.meta().closed_at.as_deref(), Some("2026-06-22T14:53:20Z"));
+        assert_eq!(
+            reopened.meta().closed_at.as_deref(),
+            Some("2026-06-22T14:53:20Z")
+        );
         assert_eq!(reopened.meta().kernel_pid, Some(12345));
     }
 

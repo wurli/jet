@@ -40,7 +40,10 @@ mod tests {
         let prev = std::env::var_os("XDG_DATA_HOME");
         unsafe { std::env::remove_var("XDG_DATA_HOME") };
         let got = jet_data_dir().unwrap();
-        assert!(got.ends_with("jet"), "expected path ending in 'jet', got {got:?}");
+        assert!(
+            got.ends_with("jet"),
+            "expected path ending in 'jet', got {got:?}"
+        );
         if let Some(v) = prev {
             unsafe { std::env::set_var("XDG_DATA_HOME", v) };
         }

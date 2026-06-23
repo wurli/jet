@@ -37,10 +37,7 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("stop", lua.create_function(shutdown_kernel)?)?;
     exports.set("interrupt", lua.create_function(interrupt)?)?;
     exports.set("list_sessions", lua.create_function(list_running_kernels)?)?;
-    exports.set(
-        "list_kernels",
-        lua.create_function(list_available_kernels)?,
-    )?;
+    exports.set("list_kernels", lua.create_function(list_available_kernels)?)?;
     exports.set("execute_code", lua.create_function(execute_code)?)?;
     exports.set("is_complete", lua.create_function(is_complete)?)?;
     exports.set("get_completions", lua.create_function(get_completions)?)?;

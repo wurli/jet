@@ -1116,7 +1116,10 @@ fn session_marked_closed_on_graceful_exit() {
     }
 
     let meta = read_only_session(&xdg);
-    assert_eq!(meta["status"], "closed", "session not marked closed: {meta}");
+    assert_eq!(
+        meta["status"], "closed",
+        "session not marked closed: {meta}"
+    );
     assert!(meta["closed_at"].is_string(), "closed_at missing: {meta}");
     assert!(meta["kernel_pid"].is_number(), "kernel_pid missing: {meta}");
     assert_eq!(meta["lang"], "python");
@@ -1172,8 +1175,14 @@ fn session_left_open_with_persist() {
     }
 
     let meta = read_only_session(&xdg);
-    assert_eq!(meta["status"], "open", "session unexpectedly closed: {meta}");
-    assert!(meta["closed_at"].is_null(), "closed_at set on persist: {meta}");
+    assert_eq!(
+        meta["status"], "open",
+        "session unexpectedly closed: {meta}"
+    );
+    assert!(
+        meta["closed_at"].is_null(),
+        "closed_at set on persist: {meta}"
+    );
     assert!(meta["kernel_pid"].is_number(), "kernel_pid missing: {meta}");
 
     // Kill the kernel by its recorded pid. Then `jet list` (which
@@ -1181,9 +1190,7 @@ fn session_left_open_with_persist() {
     // observed the death. We deliberately avoid `pkill -f
     // ipykernel_launcher` here — under parallel test execution, that
     // pattern would cross-kill any other concurrent Python-kernel test.
-    let kernel_pid = meta["kernel_pid"]
-        .as_i64()
-        .expect("kernel_pid recorded") as i32;
+    let kernel_pid = meta["kernel_pid"].as_i64().expect("kernel_pid recorded") as i32;
     unsafe {
         libc::kill(kernel_pid, libc::SIGKILL);
     }
@@ -1246,9 +1253,7 @@ fn jet_stop_shuts_down_persisted_kernel() {
     // record so we can verify the kernel actually dies (not just that
     // jet stop returned 0).
     let meta = read_only_session(&xdg);
-    let kernel_pid = meta["kernel_pid"]
-        .as_i64()
-        .expect("kernel_pid recorded") as i32;
+    let kernel_pid = meta["kernel_pid"].as_i64().expect("kernel_pid recorded") as i32;
     let conn = {
         let jet_dir = xdg.join("jet");
         let session_id = meta["id"].as_str().expect("session id");
@@ -1480,12 +1485,7 @@ fn execute_reads_code_from_stdin_when_positional_omitted() {
 
     use std::io::Write;
     let mut child = Command::new(bin)
-        .args([
-            "execute",
-            "--connection-file",
-            &conn_str,
-            "--no-graphics",
-        ])
+        .args(["execute", "--connection-file", &conn_str, "--no-graphics"])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

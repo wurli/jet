@@ -84,10 +84,7 @@ fn build_cdylib() -> PathBuf {
 /// extension must be `.so` even on macOS — luajit's loader doesn't care
 /// what kind of dylib it actually is.
 fn stage_module(dylib: &Path) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "jet-lua-stage-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("jet-lua-stage-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("mkdir stage");
     let staged = dir.join("jet.so");
     std::fs::copy(dylib, &staged).expect("copy cdylib");

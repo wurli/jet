@@ -27,10 +27,9 @@ pub async fn pick_kernelspec() -> Result<Option<PathBuf>> {
             ]
         })
         .collect();
-    let idx = tokio::task::spawn_blocking(move || {
-        picker::pick("Start a new session:", &rows, Some(1))
-    })
-    .await??;
+    let idx =
+        tokio::task::spawn_blocking(move || picker::pick("Start a new session:", &rows, Some(1)))
+            .await??;
     Ok(idx.map(|i| specs[i].0.clone()))
 }
 
@@ -62,7 +61,8 @@ pub async fn pick_sessions_multi(message: &str) -> Result<Vec<String>> {
 
 /// List open sessions in the current working directory and build picker
 /// rows. Returns `None` (after printing a hint) if there are none.
-async fn open_sessions_in_cwd() -> Result<Option<(Vec<jet_core::manager::SessionMeta>, Vec<Vec<picker::Cell>>)>> {
+async fn open_sessions_in_cwd()
+-> Result<Option<(Vec<jet_core::manager::SessionMeta>, Vec<Vec<picker::Cell>>)>> {
     let store = SessionStore::default()?;
     store.probe_open().await?;
     let cwd = std::env::current_dir()?;

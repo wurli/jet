@@ -166,8 +166,7 @@ impl Renderer {
                 // prompt over the in-flight output.
                 if !is_own_session {
                     self.busy_state.busy.store(true, Ordering::SeqCst);
-                    *self.busy_state.holder.lock().unwrap() =
-                        session_name.map(|s| s.to_string());
+                    *self.busy_state.holder.lock().unwrap() = session_name.map(|s| s.to_string());
                 }
             }
             EventData::InputRequest {

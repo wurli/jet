@@ -11,7 +11,9 @@ const MAX_BASENAME: usize = 20;
 /// ISO8601 UTC: `YYYY-MM-DDTHH:MM:SSZ`. Used for `created_at`/`closed_at`
 /// in `session.json`.
 pub(super) fn format_iso8601(now: SystemTime) -> String {
-    DateTime::<Utc>::from(now).format("%Y-%m-%dT%H:%M:%SZ").to_string()
+    DateTime::<Utc>::from(now)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 /// `<timestamp>_<lang>_<basename>_<id>`. If `basename` sanitizes to

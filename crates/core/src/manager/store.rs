@@ -20,7 +20,9 @@ pub struct SessionStore {
 impl SessionStore {
     /// `$XDG_DATA_HOME/jet`, falling back to `$HOME/.local/share/jet`.
     pub fn default() -> Result<Self> {
-        Ok(Self { dir: jet_data_dir()? })
+        Ok(Self {
+            dir: jet_data_dir()?,
+        })
     }
 
     pub fn at(dir: impl Into<PathBuf>) -> Self {
@@ -92,7 +94,10 @@ impl SessionStore {
     pub async fn probe_open(&self) -> Result<()> {
         let metas = self.list()?;
         let mut tasks: JoinSet<()> = JoinSet::new();
-        for meta in metas.into_iter().filter(|m| m.status == SessionStatus::Open) {
+        for meta in metas
+            .into_iter()
+            .filter(|m| m.status == SessionStatus::Open)
+        {
             let dir = self.dir.clone();
             tasks.spawn(async move {
                 if probe_one(&dir, &meta).await {
@@ -144,15 +149,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn create(store: &SessionStore, lang: &str, cwd: &Path, now: SystemTime) -> Session {
-        Session::create(
-            &store.dir,
-            lang,
-            "kernel",
-            Path::new("/k"),
-            cwd,
-            now,
-        )
-        .unwrap()
+        Session::create(&store.dir, lang, "kernel", Path::new("/k"), cwd, now).unwrap()
     }
 
     #[test]
@@ -206,7 +203,12 @@ mod tests {
         let listed = store.list().unwrap();
         assert_eq!(listed.len(), 2);
         for m in &listed {
-            assert_eq!(m.status, SessionStatus::Closed, "{} not flipped: {m:?}", m.id);
+            assert_eq!(
+                m.status,
+                SessionStatus::Closed,
+                "{} not flipped: {m:?}",
+                m.id
+            );
             assert!(m.closed_at.is_some());
         }
     }
