@@ -3,11 +3,25 @@ use std::path::PathBuf;
 use clap::builder::styling::{AnsiColor, Styles};
 use clap::{Parser, Subcommand, ValueEnum};
 
-const STYLES: Styles = Styles::styled()
+pub const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().bold())
     .usage(AnsiColor::Green.on_default().bold())
     .literal(AnsiColor::Cyan.on_default().bold())
     .placeholder(AnsiColor::Cyan.on_default());
+
+/// Exit with a clap-styled error attributed to `subcommand` (matching the
+/// format clap emits for built-in arg conflicts: usage line, hint, exit
+/// code 2). Use this for argument-shape checks that can't be expressed via
+/// `ArgGroup` — e.g. when positionals are ambiguous until resolved.
+pub fn conflict_exit(subcommand: &str, msg: impl Into<String>) -> ! {
+    use clap::CommandFactory;
+    use clap::error::ErrorKind;
+    let mut cmd = Args::command();
+    let sub = cmd
+        .find_subcommand_mut(subcommand)
+        .unwrap_or_else(|| panic!("subcommand `{subcommand}` exists"));
+    sub.error(ErrorKind::ArgumentConflict, msg.into()).exit();
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "jet", about = "A Jupyter Kernel REPL Driver", styles = STYLES)]
@@ -171,14 +185,22 @@ pub struct AttachArgs {
 #[derive(Parser, Debug)]
 pub struct ExecuteArgs {
     /// Session id (directory name under the jet data dir) to execute against.
-    /// Look these up with `jet list`. Required unless `--connection-file`
-    /// is given; if both are given the session id wins.
+    /// Look these up with `jet list`. Required unless `--connection-file` or
+    /// `--kernelspec` is given.
     pub session_id: Option<String>,
 
     /// Path to a connection file, e.g. written by an earlier `jet connect
-    /// --persist`. Alternative to the positional `session_id`.
+    /// --persist`. Alternative to the positional `session_id`. When combined
+    /// with `--kernelspec`, the file must not already exist — jet writes it
+    /// for the kernel it spawns.
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
+
+    /// Path to a Jupyter `kernel.json` kernelspec. When set, jet spawns a
+    /// fresh kernel for this execute and shuts it down on exit. Mutually
+    /// exclusive with the positional `session_id`.
+    #[arg(long)]
+    pub kernelspec: Option<PathBuf>,
 
     /// Code to execute. If omitted, read from stdin.
     pub code: Option<String>,

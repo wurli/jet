@@ -195,32 +195,88 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
     Ok(())
 }
 
+/// Where `jet execute` should get its kernel from.
+enum ExecuteTarget {
+    /// Attach to an already-running kernel.
+    Attach(std::path::PathBuf),
+    /// Spawn a fresh kernel for this execute and shut it down on exit.
+    Spawn {
+        kernelspec: std::path::PathBuf,
+        conn_path: Option<std::path::PathBuf>,
+    },
+}
+
+/// Resolve the target and the code-to-execute from `ExecuteArgs`.
+///
+/// Clap can't disambiguate positionals when one of them (`session_id`)
+/// is excluded by a flag (`--kernelspec`): with `--kernelspec K 'code'`
+/// clap fills `session_id="code"`. We handle that shift here. The valid
+/// shapes are:
+///
+///   - `session_id [code]`                       → Attach
+///   - `--connection-file P [code]`              → Attach
+///   - `session_id --connection-file P` (code)   → Attach, positional was code
+///   - `--kernelspec K [--connection-file P] [code]` → Spawn
+///   - `--kernelspec K session_id` (code)        → Spawn, positional was code
+fn resolve_execute_target(args: ExecuteArgs) -> Result<(ExecuteTarget, Option<String>)> {
+    let ExecuteArgs {
+        session_id,
+        connection_file,
+        kernelspec,
+        code,
+        ..
+    } = args;
+
+    if let Some(kernelspec) = kernelspec {
+        // Spawn mode. `session_id` is never valid here — but if the user
+        // also passed `code`, treat session_id as a real conflict; if
+        // not, clap just shifted code into session_id.
+        let code = match (session_id, code) {
+            (Some(_), Some(_)) => crate::cli::conflict_exit(
+                "execute",
+                "the argument '[SESSION_ID]' cannot be used with '--kernelspec <KERNELSPEC>'",
+            ),
+            (shifted, code) => code.or(shifted),
+        };
+        return Ok((
+            ExecuteTarget::Spawn {
+                kernelspec,
+                conn_path: connection_file,
+            },
+            code,
+        ));
+    }
+
+    // Attach mode.
+    match (session_id, connection_file, code) {
+        (Some(id), None, code) => Ok((
+            ExecuteTarget::Attach(SessionStore::default()?.open(&id)?.connection_file_path()),
+            code,
+        )),
+        (None, Some(path), code) => Ok((ExecuteTarget::Attach(path), code)),
+        // `--connection-file P shifted` → the positional was code, not session_id.
+        (Some(shifted), Some(path), None) => Ok((ExecuteTarget::Attach(path), Some(shifted))),
+        (Some(_), Some(_), Some(_)) => crate::cli::conflict_exit(
+            "execute",
+            "the argument '[SESSION_ID]' cannot be used with '--connection-file <CONNECTION_FILE>'",
+        ),
+        (None, None, _) => crate::cli::conflict_exit(
+            "execute",
+            "must provide one of '[SESSION_ID]', '--connection-file <CONNECTION_FILE>', \
+             or '--kernelspec <KERNELSPEC>'",
+        ),
+    }
+}
+
 pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     use std::io::Read;
     use std::sync::{Arc, Mutex};
 
-    use jet_core::jupyter_protocol::{ExecuteRequest, JupyterMessage};
+    use jet_core::jupyter_protocol::ExecuteRequest;
 
-    // When --connection-file is given, clap may have shifted positionals
-    // (filling session_id with what the user meant as code). Detect that
-    // and re-interpret: the lone positional is code.
-    let (conn_path, code_arg) = match (args.session_id, args.connection_file, args.code) {
-        (Some(id), None, code) => (
-            SessionStore::default()?.open(&id)?.connection_file_path(),
-            code,
-        ),
-        (Some(first), Some(path), None) => (path, Some(first)),
-        (None, Some(path), code) => (path, code),
-        (Some(_), Some(_), Some(_)) => {
-            anyhow::bail!(
-                "cannot pass both a session id and --connection-file together with code; \
-                 pick one target"
-            )
-        }
-        (None, None, _) => {
-            anyhow::bail!("must provide a session id or --connection-file")
-        }
-    };
+    let session_name = args.session_name.clone();
+    let no_graphics = args.no_graphics;
+    let (target, code_arg) = resolve_execute_target(args)?;
 
     let code = match code_arg {
         Some(c) => c,
@@ -235,37 +291,71 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
         }
     };
 
-    let kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
+    let (kernel, spawned) = match target {
+        ExecuteTarget::Attach(conn_path) => (
+            Kernel::attach(&conn_path, session_name.as_deref()).await?,
+            false,
+        ),
+        ExecuteTarget::Spawn {
+            kernelspec,
+            conn_path,
+        } => {
+            if let Some(p) = &conn_path
+                && p.exists()
+            {
+                anyhow::bail!(
+                    "connection file already exists at {}: remove it or attach to it instead",
+                    p.display(),
+                );
+            }
+            let spec = jet_core::kernel::KernelSpec::load(&kernelspec)?;
+            log::info!(
+                "spawning kernel for execute (language={}, argv={:?})",
+                spec.language,
+                spec.argv,
+            );
+            (
+                Kernel::spawn(&spec, conn_path, session_name.as_deref()).await?,
+                true,
+            )
+        }
+    };
 
-    let render_graphics = !args.no_graphics;
+    let render_graphics = !no_graphics;
     if render_graphics {
         crate::render::warn_if_passthrough_off();
     }
     let (idle_tx, _idle_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let writer: crate::render::SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
     let renderer = crate::render::Renderer::new(render_graphics, idle_tx, writer)
-        .with_own_session_name(args.session_name.clone());
+        .with_own_session_name(session_name);
 
     // KernelSession::start performs a kernel_info handshake — that's
     // the fast-fail probe that confirms the kernel is answering. We
     // don't install a sink, so the banner isn't rendered for execute.
     let (session, _info) = jet_core::client::Client::start(kernel).await?;
 
-    let req: JupyterMessage = ExecuteRequest {
-        code,
-        silent: false,
-        store_history: false,
-        user_expressions: None,
-        allow_stdin: false,
-        stop_on_error: true,
-    }
-    .into();
     session
-        .request(req)?
+        .request(
+            ExecuteRequest {
+                code,
+                silent: false,
+                store_history: false,
+                user_expressions: None,
+                allow_stdin: false,
+                stop_on_error: true,
+            }
+            .into(),
+        )?
         .drain_to_idle(|f| {
             renderer.handle_event(jet_core::events::from_message(f.channel, &f.message))
         })
         .await?;
+
+    if spawned {
+        let _ = session.shutdown().await;
+    }
+
     Ok(())
 }
 
@@ -293,6 +383,7 @@ pub async fn run_stop(args: StopArgs) -> Result<()> {
         match Kernel::attach(&path, args.session_name.as_deref()).await {
             Ok(mut kernel) => {
                 if let Err(e) = kernel.shutdown().await {
+                    // TODO: don't use session_id
                     eprintln!("shutdown failed for {}: {e}", kernel.session_id);
                     last_err = Some(e);
                 } else {
