@@ -182,7 +182,15 @@ impl KernelSession {
         let stdin_sock = kernel.channels.take_stdin()?;
 
         let sink: Sink = Arc::new(sink);
-        let (reply, info) = handshake(&mut shell, &mut iopub, &sink).await?;
+        let (reply, info) = match handshake(&mut shell, &mut iopub, &sink).await {
+            Ok(v) => v,
+            Err(e) => return Err(crate::kernel::enrich_startup_error(
+                e,
+                kernel.child_pid(),
+                kernel.child_alive(),
+                kernel.log_file_path.as_deref(),
+            )),
+        };
 
         // Feed the reply through the sink as the last step of the
         // handshake. By the time start_with_sink returns, the sink
@@ -441,6 +449,58 @@ async fn handshake(
     tokio::time::timeout(Duration::from_secs(10), wait)
         .await
         .map_err(|_| anyhow!("timed out waiting for kernel_info_reply"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::Kernel;
+
+    /// Unit-test the enrichment function directly with a synthetic
+    /// log file and a fake kernel handle. We don't drive a full
+    /// handshake here — zeromq-rs's 30s connect timeout against a
+    /// non-listening peer would dominate the test, and the
+    /// `enrich_startup_error` logic is what we actually want to
+    /// guard against regressing.
+    #[test]
+    fn enrich_includes_log_tail() {
+        let dir = std::env::temp_dir().join(format!(
+            "jet-enrich-unit-{:x}",
+            rand::random::<u64>(),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log_path = dir.join("conn.json.log");
+        std::fs::write(
+            &log_path,
+            "line one\nline two\nBROKEN_KERNEL_MARKER_xyz\nlast line\n",
+        )
+        .unwrap();
+
+        let kernel = Kernel::synthetic_for_test(None, Some(log_path));
+        let base = anyhow!("timed out waiting for kernel_info_reply");
+        let err = crate::kernel::enrich_startup_error(
+            base,
+            kernel.child_pid(),
+            kernel.child_alive(),
+            kernel.log_file_path.as_deref(),
+        );
+        let msg = format!("{err:#}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            msg.contains("timed out waiting for kernel_info_reply"),
+            "original error preserved; got: {msg}",
+        );
+        assert!(
+            msg.contains("BROKEN_KERNEL_MARKER_xyz"),
+            "stderr tail included; got: {msg}",
+        );
+        assert!(
+            msg.contains("kernel stderr"),
+            "stderr section header present; got: {msg}",
+        );
+    }
 }
 
 fn spawn_socket_loop(
