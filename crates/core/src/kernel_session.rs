@@ -47,17 +47,25 @@ enum RoutedFrame {
     Idle,
 }
 
+/// Out-of-band frame sink — anything not consumed by a registered
+/// request slot is handed here. Boxed so callers (e.g. the REPL) can
+/// thread their renderer in without exposing its type to core.
+type Sink = Arc<dyn Fn(Frame) + Send + Sync + 'static>;
+
 /// Demuxes kernel frames by `parent_msg_id`. Each in-flight request gets
 /// one slot; the reader tasks dispatch into it until they see a matching
-/// `status: idle`, which closes the slot.
+/// `status: idle`, which closes the slot. Frames with no matching slot
+/// fall through to the [`Sink`] passed at session start.
 struct FrameRouter {
     by_parent: Mutex<HashMap<String, XSender<RoutedFrame>>>,
+    sink: Sink,
 }
 
 impl FrameRouter {
-    fn new() -> Self {
+    fn new(sink: Sink) -> Self {
         Self {
             by_parent: Mutex::new(HashMap::new()),
+            sink,
         }
     }
 
@@ -71,29 +79,43 @@ impl FrameRouter {
         self.by_parent.lock().unwrap().remove(parent_msg_id);
     }
 
-    /// Route one parsed message. Idle for a registered parent closes the
-    /// slot; content for an unregistered parent (e.g. kernel-initiated
-    /// `comm_msg`) is dropped — no consumer for it at this layer.
+    /// Route one parsed message:
+    /// - Idle status with a matching registered parent closes that slot
+    ///   (terminal item for the request stream).
+    /// - Content frames with a matching registered parent go to the
+    ///   per-request slot.
+    /// - Everything (including Idle and per-request content) also goes
+    ///   to the global [`Sink`] — out-of-band consumers (the REPL's
+    ///   renderer) need to see every frame, not just unrouted ones.
     fn dispatch(&self, channel: Channel, msg: JupyterMessage) {
         let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
+        let is_idle = matches!(
+            from_message(channel, &msg).data,
+            EventData::Idle { .. },
+        );
 
-        // Idle is special: it's the per-request terminator.
-        if let EventData::Idle { parent_id: idle_parent } = from_message(channel, &msg).data {
-            if let Some(pid) = idle_parent {
-                if let Some(tx) = self.by_parent.lock().unwrap().remove(&pid) {
+        // Close out a matching per-request slot on Idle. We use the
+        // parent_header msg_id here rather than the EventData's
+        // already-extracted parent_id — they're the same field.
+        if is_idle {
+            if let Some(pid) = parent_id.as_deref() {
+                if let Some(tx) = self.by_parent.lock().unwrap().remove(pid) {
                     let _ = tx.send(RoutedFrame::Idle);
                 }
             }
-            return;
+        } else if let Some(pid) = parent_id.as_deref() {
+            // Content frame: clone into the per-request slot if any.
+            // The Frame still also goes to the global sink below.
+            let sender = self.by_parent.lock().unwrap().get(pid).cloned();
+            if let Some(tx) = sender {
+                let _ = tx.send(RoutedFrame::Frame(Frame {
+                    channel,
+                    message: msg.clone(),
+                }));
+            }
         }
 
-        let Some(pid) = parent_id else {
-            return;
-        };
-        let sender = self.by_parent.lock().unwrap().get(&pid).cloned();
-        if let Some(tx) = sender {
-            let _ = tx.send(RoutedFrame::Frame(Frame { channel, message: msg }));
-        }
+        (self.sink)(Frame { channel, message: msg });
     }
 }
 
@@ -120,7 +142,24 @@ impl KernelSession {
     /// `kernel_info_request` synchronously, and spawn the long-running
     /// reader/writer tasks. Returns the session and the kernel-info
     /// reply content as JSON (the runtimed reply struct, serialized).
-    pub async fn start(mut kernel: Kernel) -> Result<(Self, Value)> {
+    ///
+    /// Out-of-band frames (anything not consumed by a [`RequestStream`])
+    /// are dropped. Use [`KernelSession::start_with_sink`] to surface
+    /// them — the CLI REPL does this to feed every frame to its
+    /// renderer.
+    pub async fn start(kernel: Kernel) -> Result<(Self, Value)> {
+        Self::start_with_sink(kernel, |_| {}).await
+    }
+
+    /// Like [`KernelSession::start`] but every routed frame is also
+    /// handed to `sink`, including those that match a registered
+    /// per-request slot. Use when the consumer has a global view (a
+    /// renderer, a logger) that needs every frame regardless of which
+    /// request — if any — it belongs to.
+    pub async fn start_with_sink<F>(mut kernel: Kernel, sink: F) -> Result<(Self, Value)>
+    where
+        F: Fn(Frame) + Send + Sync + 'static,
+    {
         let mut shell = kernel.channels.take_shell()?;
         let iopub = kernel.channels.take_iopub()?;
         let stdin_sock = kernel.channels.take_stdin()?;
@@ -142,7 +181,8 @@ impl KernelSession {
 
         let (shell_tx, shell_rx) = unbounded_channel::<JupyterMessage>();
         let (stdin_tx, stdin_rx) = unbounded_channel::<JupyterMessage>();
-        let router = Arc::new(FrameRouter::new());
+        let sink: Sink = Arc::new(sink);
+        let router = Arc::new(FrameRouter::new(sink));
         let closed = Arc::new(Notify::new());
 
         spawn_shell_loop(shell, shell_rx, router.clone(), closed.clone());
@@ -203,6 +243,13 @@ impl KernelSession {
         &mut self.kernel
     }
 
+    /// Take the heartbeat connection out of the kernel. Used by the
+    /// REPL's attach-path liveness watcher; once taken, the session no
+    /// longer carries heartbeat, so callers must not call this twice.
+    pub fn take_heartbeat(&mut self) -> Result<crate::jupyter_zmq_client::ClientHeartbeatConnection> {
+        self.kernel.channels.take_heartbeat()
+    }
+
     /// Forward a ^C-equivalent to the kernel.
     pub async fn interrupt(&mut self) -> Result<()> {
         self.kernel.interrupt().await
@@ -212,6 +259,12 @@ impl KernelSession {
     /// the reader/writer tasks will tear down once their sockets close.
     pub async fn shutdown(mut self) -> Result<()> {
         self.kernel.shutdown().await
+    }
+
+    /// Mark the underlying kernel as detached — i.e. don't kill the
+    /// child when the session drops. Used by `--persist`.
+    pub fn detach(&mut self) {
+        self.kernel.detach();
     }
 }
 
