@@ -108,15 +108,24 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
     );
 
     let cwd = std::env::current_dir()?;
-    let name = spec.display_name.clone().unwrap_or_default();
-    let mut session = SessionStore::default()?.create(&spec.language, &name, &kernelspec, &cwd)?;
+    // `--connection-file` is an escape hatch for callers managing the
+    // file themselves (e.g. a parent process that wants to pin the
+    // path). In that mode we don't create a session.json — the session
+    // store only tracks kernels jet owns end-to-end.
+    let mut session = match args.connection_file.clone() {
+        None => Some(SessionStore::default()?.create(
+            &spec.language,
+            &spec.display_name.clone().unwrap_or_default(),
+            &kernelspec,
+            &cwd,
+        )?),
+        Some(_) => None,
+    };
 
-    // --connection-file overrides where the connection file is written;
-    // otherwise it lives inside the session dir.
     let conn_path = args
         .connection_file
         .clone()
-        .unwrap_or_else(|| session.connection_file_path());
+        .unwrap_or_else(|| session.as_ref().unwrap().connection_file_path());
 
     if conn_path.exists() {
         let store = SessionStore::default()?;
@@ -132,25 +141,21 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let mut kernel =
         Kernel::spawn(&spec, Some(conn_path.clone()), args.session_name.as_deref()).await?;
-    if let Some(pid) = kernel.child_pid() {
-        session.set_kernel_pid(pid);
+    if let (Some(pid), Some(s)) = (kernel.child_pid(), session.as_mut()) {
+        s.set_kernel_pid(pid);
     }
 
     let render_graphics = !args.no_graphics;
-    let session_id = session.meta().id.clone();
-    drive_repl(
-        &mut kernel,
-        render_graphics,
-        args.session_name,
-        Some(session_id),
-    )
-    .await?;
+    let session_id = session.as_ref().map(|s| s.meta().id.clone());
+    drive_repl(&mut kernel, render_graphics, args.session_name, session_id).await?;
 
     if args.persist {
         kernel.detach();
     } else {
         let _ = kernel.shutdown().await;
-        session.mark_closed();
+        if let Some(s) = session.as_mut() {
+            s.mark_closed();
+        }
     }
     Ok(())
 }

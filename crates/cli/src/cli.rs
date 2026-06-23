@@ -86,21 +86,23 @@ pub struct GlobalArgs {
 
 #[derive(Parser, Debug)]
 pub struct ConnectArgs {
-    /// Path to a Jupyter `kernel.json` kernelspec. Argv and language are
-    /// taken from the spec; `{connection_file}` placeholders are
-    /// substituted with the path we generate. If omitted, an interactive
-    /// picker is shown over the kernels discovered on disk (same set as
-    /// `jet list-kernels`).
-    /// Example: jet connect ~/Library/Jupyter/kernels/ark/kernel.json
+    /// Path to a Jupyter `kernel.json` kernelspec. Argv and language are taken from the spec;
+    /// `{connection_file}` placeholders are substituted with the path we generate. If
+    /// omitted, an interactive picker is shown over the kernels discovered on disk (same set
+    /// as `jet list-kernels`). Example: jet connect ~/Library/Jupyter/kernels/ark/kernel.json
     pub kernelspec: Option<PathBuf>,
 
     /// Override the location of the kernel connection file. Defaults to
-    /// `<session-dir>/connection-file.json` inside the jet data dir.
+    /// `<session-dir>/connection-file.json` inside the jet data dir. Passing this flag opts
+    /// out of session tracking — no session.json is written and `jet list` won't see the
+    /// kernel. Use when another process owns the connection file lifecycle.
+    // NOTE: in future we could support an `--adopt` flag which would symlink the connection
+    // file into the session dir.
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
 
-    /// Leave the spawned kernel running after jet exits, so a later `jet
-    /// attach <connection-file>` can reuse it.
+    /// Leave the spawned kernel running after jet exits, so a later `jet attach
+    /// <connection-file>` can reuse it.
     #[arg(long)]
     pub persist: bool,
 
@@ -125,7 +127,9 @@ pub struct AttachArgs {
     /// is shown over open sessions in the current working directory.
     pub session_id: Option<String>,
 
-    /// Path to a connection file, e.g. written by an earlier `jet connect --persist`. Use this to attach to a kernel that wasn't tracked as a jet session. Mutually exclusive with the positional `session_id`.
+    /// Path to a connection file, e.g. written by an earlier `jet connect --persist`. Use
+    /// this to attach to a kernel that wasn't tracked as a jet session. Mutually exclusive
+    /// with the positional `session_id`.
     // If the path resolves to a tracked session (via
     // `SessionStore::find_by_connection_file`), behavior matches passing
     // `session_id` directly. For untracked paths there's no id to flip,

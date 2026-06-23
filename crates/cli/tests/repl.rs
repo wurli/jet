@@ -1182,21 +1182,12 @@ fn jet_stop_shuts_down_persisted_kernel() {
     };
     let bin = env!("CARGO_BIN_EXE_jet");
     let xdg = scratch_xdg_dir();
-    let conn = std::env::temp_dir().join(format!(
-        "jet-stop-test-{:x}.json",
-        rand::thread_rng().r#gen::<u64>()
-    ));
-    let conn_str = conn.to_string_lossy().to_string();
 
-    // Spawn persisted: kernel survives jet's exit.
+    // Spawn persisted: kernel survives jet's exit. No --connection-file —
+    // that opts out of session tracking, which we need below to recover
+    // the kernel pid.
     let mut spawn = Command::new(bin)
-        .args([
-            "connect",
-            "--connection-file",
-            &conn_str,
-            "--persist",
-            kernel_json.to_str().unwrap(),
-        ])
+        .args(["connect", "--persist", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -1206,17 +1197,25 @@ fn jet_stop_shuts_down_persisted_kernel() {
     std::thread::sleep(Duration::from_secs(3));
     drop(spawn.stdin.take()); // EOF → jet exits, kernel keeps running
     let _ = spawn.wait();
-    assert!(
-        conn.exists(),
-        "connection file {conn_str} should still exist after --persist"
-    );
 
-    // Grab the kernel pid from the session record so we can verify it
-    // actually dies (not just that jet stop returned 0).
+    // Grab the kernel pid AND the connection file path from the session
+    // record so we can verify the kernel actually dies (not just that
+    // jet stop returned 0).
     let meta = read_only_session(&xdg);
     let kernel_pid = meta["kernel_pid"]
         .as_i64()
         .expect("kernel_pid recorded") as i32;
+    let conn = {
+        let jet_dir = xdg.join("jet");
+        let session_id = meta["id"].as_str().expect("session id");
+        let rel = meta["connection_file"].as_str().expect("connection_file");
+        jet_dir.join(session_id).join(rel)
+    };
+    let conn_str = conn.to_string_lossy().to_string();
+    assert!(
+        conn.exists(),
+        "connection file {conn_str} should still exist after --persist"
+    );
     // Sanity: pid is alive right now.
     assert_eq!(
         unsafe { libc::kill(kernel_pid, 0) },
@@ -1253,12 +1252,144 @@ fn jet_stop_shuts_down_persisted_kernel() {
             libc::kill(kernel_pid, libc::SIGKILL);
         }
     }
-    let _ = std::fs::remove_file(&conn);
     let _ = std::fs::remove_dir_all(&xdg);
 
     assert!(
         died,
         "kernel pid {kernel_pid} still alive 10s after `jet stop` — \
          shutdown_request was not delivered or kernel ignored it"
+    );
+}
+
+/// `jet connect --connection-file <path>` opts out of session tracking:
+/// no session.json is written and `jet list-sessions` shows nothing.
+#[test]
+fn connect_with_connection_file_skips_session_tracking() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
+    let conn = std::env::temp_dir().join(format!(
+        "jet-untracked-{:x}.json",
+        rand::thread_rng().r#gen::<u64>()
+    ));
+    let conn_str = conn.to_string_lossy().to_string();
+
+    let mut child = Command::new(bin)
+        .args([
+            "connect",
+            "--connection-file",
+            &conn_str,
+            kernel_json.to_str().unwrap(),
+        ])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    std::thread::sleep(Duration::from_secs(3));
+    drop(child.stdin.take());
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut exited = false;
+    while Instant::now() < deadline {
+        if let Ok(Some(_)) = child.try_wait() {
+            exited = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&xdg);
+        let _ = std::fs::remove_file(&conn);
+        panic!("jet did not exit within 15s");
+    }
+
+    // No session dir should have been created under <xdg>/jet/.
+    let jet_dir = xdg.join("jet");
+    let subdirs: Vec<_> = std::fs::read_dir(&jet_dir)
+        .map(|it| {
+            it.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect()
+        })
+        .unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&xdg);
+    let _ = std::fs::remove_file(&conn);
+
+    assert!(
+        subdirs.is_empty(),
+        "expected no session dirs under {} with --connection-file, got {subdirs:?}",
+        jet_dir.display(),
+    );
+}
+
+/// `jet connect` refuses to spawn if the target connection file already
+/// exists. Error message tells the user how to reconnect — by session id
+/// when the path resolves to a tracked session, by --connection-file
+/// otherwise.
+#[test]
+fn connect_refuses_if_connection_file_exists() {
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
+    let conn = std::env::temp_dir().join(format!(
+        "jet-collide-{:x}.json",
+        rand::thread_rng().r#gen::<u64>()
+    ));
+    // Pre-create the connection file so connect bails before kernel launch.
+    std::fs::write(&conn, b"{}").unwrap();
+    let conn_str = conn.to_string_lossy().to_string();
+
+    let out = Command::new(bin)
+        .args([
+            "connect",
+            "--connection-file",
+            &conn_str,
+            kernel_json.to_str().unwrap(),
+        ])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run jet connect");
+
+    let _ = std::fs::remove_file(&conn);
+    let _ = std::fs::remove_dir_all(&xdg);
+
+    assert!(
+        !out.status.success(),
+        "jet connect should have failed; stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("connection file already exists"),
+        "expected 'connection file already exists' in stderr, got: {stderr}",
+    );
+    // Untracked path → suggestion uses --connection-file form.
+    assert!(
+        stderr.contains("--connection-file"),
+        "expected --connection-file in reattach hint, got: {stderr}",
     );
 }
