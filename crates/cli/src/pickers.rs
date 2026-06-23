@@ -38,6 +38,31 @@ pub async fn pick_kernelspec() -> Result<Option<PathBuf>> {
 /// Returns `Ok(None)` if the user cancels (Esc / ^C) or there's nothing
 /// to attach to.
 pub async fn pick_session(message: &str) -> Result<Option<String>> {
+    let (sessions, rows) = match open_sessions_in_cwd().await? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+    let message = message.to_owned();
+    let idx = tokio::task::spawn_blocking(move || picker::pick(&message, &rows, None)).await??;
+    Ok(idx.map(|i| sessions[i].id.clone()))
+}
+
+/// Multi-select variant of [`pick_session`]. Returns the ids of every
+/// session the user toggled on (Space to toggle, Enter to confirm).
+/// Returns `Ok(vec![])` on cancel or empty selection.
+pub async fn pick_sessions_multi(message: &str) -> Result<Vec<String>> {
+    let (sessions, rows) = match open_sessions_in_cwd().await? {
+        Some(v) => v,
+        None => return Ok(vec![]),
+    };
+    let message = message.to_owned();
+    let idxs = tokio::task::spawn_blocking(move || picker::pick_multi(&message, &rows)).await??;
+    Ok(idxs.into_iter().map(|i| sessions[i].id.clone()).collect())
+}
+
+/// List open sessions in the current working directory and build picker
+/// rows. Returns `None` (after printing a hint) if there are none.
+async fn open_sessions_in_cwd() -> Result<Option<(Vec<jet_core::manager::SessionMeta>, Vec<Vec<picker::Cell>>)>> {
     let store = SessionStore::default()?;
     store.probe_open().await?;
     let cwd = std::env::current_dir()?;
@@ -62,7 +87,5 @@ pub async fn pick_session(message: &str) -> Result<Option<String>> {
             ]
         })
         .collect();
-    let message = message.to_owned();
-    let idx = tokio::task::spawn_blocking(move || picker::pick(&message, &rows, None)).await??;
-    Ok(idx.map(|i| sessions[i].id.clone()))
+    Ok(Some((sessions, rows)))
 }

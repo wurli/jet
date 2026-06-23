@@ -100,6 +100,47 @@ pub fn pick(prompt: &str, rows: &[Vec<Cell>], sort_by: Option<usize>) -> Result<
     }
 }
 
+/// Multi-select variant of [`pick`]. Same row formatting; user toggles
+/// rows with Space and confirms with Enter. Returns indices into the
+/// caller's input slice (caller-order preserved). Returns `Ok(vec![])`
+/// on cancel.
+pub fn pick_multi(prompt: &str, rows: &[Vec<Cell>]) -> Result<Vec<usize>> {
+    if rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let widths: Vec<usize> = (0..cols)
+        .map(|c| {
+            rows.iter()
+                .filter_map(|r| r.get(c))
+                .map(|cell| cell.text.chars().count())
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+
+    let labels: Vec<String> = rows.iter().map(|r| format_row(r, &widths)).collect();
+
+    let cfg = RenderConfig::default()
+        .with_selected_option(Some(StyleSheet::new().with_fg(Color::DarkCyan)))
+        .with_highlighted_option_prefix(Styled::new("›").with_fg(Color::DarkCyan));
+
+    let picked = inquire::MultiSelect::new(prompt, labels.clone())
+        .with_render_config(cfg)
+        .prompt();
+
+    match picked {
+        Ok(chosen) => Ok(chosen
+            .into_iter()
+            .filter_map(|line| labels.iter().position(|l| l == &line))
+            .collect()),
+        Err(inquire::InquireError::OperationCanceled)
+        | Err(inquire::InquireError::OperationInterrupted) => Ok(vec![]),
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn format_row(cells: &[Cell], widths: &[usize]) -> String {
     let mut out = String::new();
     for (i, cell) in cells.iter().enumerate() {

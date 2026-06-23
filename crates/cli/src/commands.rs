@@ -8,7 +8,7 @@ use jet_core::manager::{SessionStatus, SessionStore};
 use crate::cli::{
     AttachArgs, ConnectArgs, ExecuteArgs, ListArgs, ListKernelsArgs, StatusFilter, StopArgs,
 };
-use crate::pickers::{pick_kernelspec, pick_session};
+use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::drive_repl;
 
 pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
@@ -258,26 +258,51 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     .into();
     session
         .request(req)?
-        .drain_to_idle(|f| renderer.handle_event(jet_core::events::from_message(f.channel, &f.message)))
+        .drain_to_idle(|f| {
+            renderer.handle_event(jet_core::events::from_message(f.channel, &f.message))
+        })
         .await?;
     Ok(())
 }
 
 pub async fn run_stop(args: StopArgs) -> Result<()> {
-    let conn_path = match (args.session_id, args.connection_file) {
-        (Some(id), None) => SessionStore::default()?.open(&id)?.connection_file_path(),
-        (None, Some(path)) => path,
+    let conn_paths: Vec<std::path::PathBuf> = match (args.session_id, args.connection_file) {
+        (Some(id), None) => vec![SessionStore::default()?.open(&id)?.connection_file_path()],
+        (None, Some(path)) => vec![path],
         (None, None) => {
-            let Some(id) = pick_session("Shutdown a running kernel:").await? else {
-                // No session selected
+            let ids = pick_sessions_multi("Shutdown running kernels (space to toggle):").await?;
+            if ids.is_empty() {
                 return Ok(());
-            };
-            SessionStore::default()?.open(&id)?.connection_file_path()
+            }
+            let store = SessionStore::default()?;
+            ids.iter()
+                .map(|id| Ok(store.open(id)?.connection_file_path()))
+                .collect::<Result<Vec<_>>>()?
         }
         (Some(_), Some(_)) => {
             unreachable!("clap ArgGroup forbids passing both session_id and --connection-file")
         }
     };
-    let mut kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
-    kernel.shutdown().await
+
+    let mut last_err: Option<anyhow::Error> = None;
+    for path in conn_paths {
+        match Kernel::attach(&path, args.session_name.as_deref()).await {
+            Ok(mut kernel) => {
+                if let Err(e) = kernel.shutdown().await {
+                    eprintln!("shutdown failed for {}: {e}", kernel.session_id);
+                    last_err = Some(e);
+                } else {
+                    println!("Shut down kernel {}", kernel.session_id);
+                }
+            }
+            Err(e) => {
+                // eprintln!("attach failed for {}: {e}", kernel.session_id);
+                last_err = Some(e);
+            }
+        }
+    }
+    match last_err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
