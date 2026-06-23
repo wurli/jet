@@ -225,6 +225,10 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     let code = match code_arg {
         Some(c) => c,
         None => {
+            use std::io::IsTerminal;
+            if std::io::stdin().is_terminal() {
+                anyhow::bail!("no code given; pass it as an argument or pipe via stdin");
+            }
             let mut buf = String::new();
             std::io::stdin().read_to_string(&mut buf)?;
             buf
