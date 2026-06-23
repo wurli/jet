@@ -154,15 +154,19 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
 }
 
 pub async fn run_attach(args: AttachArgs) -> Result<()> {
-    init_logger(args.global.log.as_deref());
     let (conn_path, session_id) = match (args.session_id, args.connection_file) {
         (Some(id), None) => {
             let path = SessionStore::default()?.open(&id)?.connection_file_path();
             (path, Some(id))
         }
         (None, Some(path)) => {
-            // Best-effort: if the path lives inside a tracked session,
-            // recover the id so `mark_session_closed` works on kernel death.
+            // Best-effort: if the path lives inside a tracked session, recover the id so
+            // `mark_session_closed` works on kernel death.
+            // NOTE: right now jet's awareness of a session only influences whether the kernel
+            // is marked as closed on exit - but we have recovery even if the marker isn't set.
+            // However I expect we'll have more behaviour in the future which depends on
+            // session.json. Anyway this is an extreme edge-case, so probs not one to worry about
+            // much right now.
             let id = SessionStore::default()
                 .ok()
                 .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
