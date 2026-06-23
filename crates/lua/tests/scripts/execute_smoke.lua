@@ -26,7 +26,7 @@ while os.time() < deadline do
   end
 end
 
-jet.shutdown_kernel(kid)
+jet.stop(kid)
 
 assert(
   saw:find('2'),

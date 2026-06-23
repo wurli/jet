@@ -221,7 +221,7 @@ fn dispatch(router: &FrameRouter, channel: Channel, msg: &JupyterMessage) {
     router.dispatch(parent_id.as_deref(), Frame::Content { msg_type, content });
 }
 
-/// `jet.shutdown_kernel(session_id)`
+/// `jet.stop(session_id)`
 pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
     rt().block_on(async move { handle.kernel.lock().await.shutdown().await })
@@ -237,7 +237,7 @@ pub fn interrupt(_lua: &Lua, session_id: String) -> LuaResult<()> {
         .into_lua_err()
 }
 
-/// `jet.list_running_kernels()` — local registry only. Without a
+/// `jet.list_sessions()` — local registry only. Without a
 /// supervisor, jet_lua only knows about kernels it itself started or
 /// attached to in this process.
 pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
@@ -251,7 +251,7 @@ pub fn list_running_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     Ok(table)
 }
 
-/// `jet.list_available_kernels()` — kernelspecs discovered under the
+/// `jet.list_kernels()` — kernelspecs discovered under the
 /// standard Jupyter directories.
 pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let table = lua.create_table()?;

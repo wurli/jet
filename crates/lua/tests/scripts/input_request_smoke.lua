@@ -29,7 +29,7 @@ while os.time() < deadline do
   end
 end
 
-jet.shutdown_kernel(kid)
+jet.stop(kid)
 
 assert(saw_input_request, 'never saw input_request frame')
 assert(
