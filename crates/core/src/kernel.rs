@@ -186,7 +186,10 @@ impl Kernel {
         }
         log::info!("spawning kernel: {:?}", spec.argv);
         let child = command.spawn().with_context(|| {
-            format!("running kernelspec argv `{}`", spec.argv.join(" "))
+            format!(
+                "running startup command given by kernelspec `{}`",
+                spec.argv.join(" ")
+            )
         })?;
         let guard = ChildGuard::new(child);
 
