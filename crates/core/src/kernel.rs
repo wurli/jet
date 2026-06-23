@@ -470,6 +470,8 @@ fn build_kernel_command(spec: &KernelSpec, connection_path: &Path) -> Result<Com
             cmd.arg(OsStr::new(arg));
         }
     }
+    // tokio::Command inherits the parent env by default; spec entries
+    // are layered on top and win on conflict.
     for (k, v) in &spec.env {
         cmd.env(k, v);
     }
@@ -481,6 +483,64 @@ fn default_temp_path() -> PathBuf {
         "jet-conn-{:x}.json",
         rand::thread_rng().r#gen::<u64>()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::ffi::OsString;
+    use std::path::Path;
+
+    use super::{InterruptMode, KernelSpec, build_kernel_command};
+
+    fn spec_with_env(env: &[(&str, &str)]) -> KernelSpec {
+        KernelSpec {
+            argv: vec!["/bin/true".to_string(), "{connection_file}".to_string()],
+            language: "python".to_string(),
+            display_name: None,
+            interrupt_mode: InterruptMode::Signal,
+            env: env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            metadata: HashMap::new(),
+            kernel_protocol_version: None,
+        }
+    }
+
+    fn cmd_env(cmd: &tokio::process::Command) -> HashMap<OsString, OsString> {
+        cmd.as_std()
+            .get_envs()
+            .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
+            .collect()
+    }
+
+    #[test]
+    fn spec_env_overrides_parent_env_on_conflict() {
+        // SAFETY: tests in the same process share env; the keys we set are
+        // unique to this test so they won't collide with other tests.
+        unsafe {
+            // Same key is also in the spec — spec must win.
+            std::env::set_var("JET_TEST_OVERRIDE_PROBE", "from-parent");
+        }
+        let spec = spec_with_env(&[
+            ("JET_TEST_SPEC_ONLY", "from-spec"),
+            ("JET_TEST_OVERRIDE_PROBE", "from-spec"),
+        ]);
+        let cmd = build_kernel_command(&spec, Path::new("/tmp/conn.json")).unwrap();
+        let env = cmd_env(&cmd);
+
+        assert_eq!(
+            env.get(OsString::from("JET_TEST_SPEC_ONLY").as_os_str()),
+            Some(&OsString::from("from-spec")),
+            "spec-only key should be present",
+        );
+        assert_eq!(
+            env.get(OsString::from("JET_TEST_OVERRIDE_PROBE").as_os_str()),
+            Some(&OsString::from("from-spec")),
+            "spec must override parent on conflict",
+        );
+    }
 }
 
 fn make_session_id(name: Option<&str>) -> String {

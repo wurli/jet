@@ -304,7 +304,13 @@ impl Renderer {
         };
 
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
-            self.write(t, prefix)?;
+            // execute_result/display_data carry a complete value, not a
+            // streaming chunk: ark's `Sys.getenv("X")` sends `[1] "123"`
+            // with no trailing newline, and ipykernel does the same for
+            // bare expressions. Use write_line so the next prompt lands
+            // on a fresh line instead of clobbering the value via the
+            // bracketed-paste sequence rustyline emits.
+            self.write_line(t, prefix)?;
             return Ok(());
         }
 
