@@ -892,6 +892,50 @@ fn shutdown_jet_pty(
     let _ = reader_handle.join();
 }
 
+/// Regression: KernelSession.start consumes the kernel_info_reply
+/// before spawning the reader loops, so without explicit handling
+/// the renderer never sees it and no welcome banner is printed.
+/// ipykernel's reply.banner starts with "Python ".
+#[test]
+fn spawn_emits_kernel_banner() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+
+    let xdg = scratch_xdg_dir();
+    let (child, writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json, &xdg);
+    // spawn_jet_pty already waits for the first "> " prompt, which
+    // only fires after KernelSession::start returns — so by the time
+    // it returns, the banner sink should have already run.
+    let captured = output.lock().unwrap().clone();
+    shutdown_jet_pty(child, writer, reader_handle, master);
+    let _ = std::fs::remove_dir_all(&xdg);
+
+    assert!(
+        captured.contains("Python "),
+        "expected kernel banner ('Python …') before first prompt; got:\n{captured}",
+    );
+
+    // Banner must appear BEFORE the first `> ` prompt — not sandwiched
+    // between two prompts. If kernel_info handshaking returns before
+    // the renderer has finished writing the banner, rustyline draws
+    // the prompt first and the user sees `> Python … > `.
+    let banner_idx = captured.find("Python ").expect("banner present");
+    let prompt_idx = captured.find("> ").expect("prompt present");
+    assert!(
+        banner_idx < prompt_idx,
+        "banner must precede the first '> ' prompt; got:\n{captured}",
+    );
+}
+
 /// A complete one-liner executes immediately — no continuation prompt
 /// appears and the result lands.
 #[test]

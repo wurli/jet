@@ -68,6 +68,8 @@ pub fn attach(
 /// kernel) and the kernel_info reply.
 async fn wrap(kernel: Kernel) -> anyhow::Result<(String, serde_json::Value, KernelHandle)> {
     let session_id = kernel.session_id.clone();
+    // KernelSession::start performs a kernel_info handshake, doubling
+    // as the is-the-kernel-actually-answering check on attach.
     let (session, info) = KernelSession::start(kernel).await?;
     let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(session));
     Ok((session_id, info, handle))

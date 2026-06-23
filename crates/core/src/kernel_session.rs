@@ -16,13 +16,19 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
-use crossbeam_channel::{Receiver as XReceiver, Sender as XSender, TryRecvError, unbounded};
+use anyhow::{Result, anyhow};
 use jupyter_protocol::{JupyterMessage, KernelInfoRequest};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tokio::sync::{Notify, mpsc::UnboundedReceiver, mpsc::UnboundedSender, mpsc::unbounded_channel};
+use tokio::sync::{
+    Notify,
+    mpsc::{
+        UnboundedReceiver, UnboundedSender,
+        error::TryRecvError,
+        unbounded_channel,
+    },
+};
 
 use crate::events::{Channel, EventData, from_message};
 use crate::kernel::Kernel;
@@ -57,7 +63,7 @@ type Sink = Arc<dyn Fn(Frame) + Send + Sync + 'static>;
 /// `status: idle`, which closes the slot. Frames with no matching slot
 /// fall through to the [`Sink`] passed at session start.
 struct FrameRouter {
-    by_parent: Mutex<HashMap<String, XSender<RoutedFrame>>>,
+    by_parent: Mutex<HashMap<String, UnboundedSender<RoutedFrame>>>,
     sink: Sink,
 }
 
@@ -69,8 +75,8 @@ impl FrameRouter {
         }
     }
 
-    fn register(&self, parent_msg_id: String) -> XReceiver<RoutedFrame> {
-        let (tx, rx) = unbounded();
+    fn register(&self, parent_msg_id: String) -> UnboundedReceiver<RoutedFrame> {
+        let (tx, rx) = unbounded_channel();
         self.by_parent.lock().unwrap().insert(parent_msg_id, tx);
         rx
     }
@@ -80,13 +86,23 @@ impl FrameRouter {
     }
 
     /// Route one parsed message:
-    /// - Idle status with a matching registered parent closes that slot
-    ///   (terminal item for the request stream).
+    /// - Idle status with a matching registered parent closes that
+    ///   slot (terminal item for the request stream).
     /// - Content frames with a matching registered parent go to the
     ///   per-request slot.
-    /// - Everything (including Idle and per-request content) also goes
-    ///   to the global [`Sink`] — out-of-band consumers (the REPL's
-    ///   renderer) need to see every frame, not just unrouted ones.
+    /// - Everything (including Idle and per-request content) also
+    ///   goes to the global [`Sink`] — out-of-band consumers (the
+    ///   REPL's renderer) need to see every frame, not just unrouted
+    ///   ones.
+    ///
+    /// Caveat: idle and the reply for a request arrive on different
+    /// sockets (iopub vs shell). The kernel sends reply-then-idle in
+    /// time order, but the socket driver task can observe them in
+    /// either order, so closing the slot on idle can lose the reply
+    /// to the slot. Consumers that care about that ordering should
+    /// not use the slot as their synchronisation point — use the
+    /// sink (or, for the REPL, the renderer's idle_tx signal which is
+    /// emitted after the renderer has processed every prior frame).
     fn dispatch(&self, channel: Channel, msg: JupyterMessage) {
         let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
         let is_idle = matches!(
@@ -94,9 +110,6 @@ impl FrameRouter {
             EventData::Idle { .. },
         );
 
-        // Close out a matching per-request slot on Idle. We use the
-        // parent_header msg_id here rather than the EventData's
-        // already-extracted parent_id — they're the same field.
         if is_idle {
             if let Some(pid) = parent_id.as_deref() {
                 if let Some(tx) = self.by_parent.lock().unwrap().remove(pid) {
@@ -104,8 +117,6 @@ impl FrameRouter {
                 }
             }
         } else if let Some(pid) = parent_id.as_deref() {
-            // Content frame: clone into the per-request slot if any.
-            // The Frame still also goes to the global sink below.
             let sender = self.by_parent.lock().unwrap().get(pid).cloned();
             if let Some(tx) = sender {
                 let _ = tx.send(RoutedFrame::Frame(Frame {
@@ -138,56 +149,64 @@ pub struct KernelSession {
 }
 
 impl KernelSession {
-    /// Take the shell/iopub/stdin channels out of the kernel, send a
-    /// `kernel_info_request` synchronously, and spawn the long-running
-    /// reader/writer tasks. Returns the session and the kernel-info
-    /// reply content as JSON (the runtimed reply struct, serialized).
-    ///
-    /// Out-of-band frames (anything not consumed by a [`RequestStream`])
-    /// are dropped. Use [`KernelSession::start_with_sink`] to surface
-    /// them — the CLI REPL does this to feed every frame to its
-    /// renderer.
+    /// Take the shell/iopub/stdin channels out of the kernel and spawn
+    /// the long-running reader/writer tasks. Out-of-band frames
+    /// (anything not consumed by a [`RequestStream`]) are dropped.
     pub async fn start(kernel: Kernel) -> Result<(Self, Value)> {
         Self::start_with_sink(kernel, |_| {}).await
     }
 
     /// Like [`KernelSession::start`] but every routed frame is also
-    /// handed to `sink`, including those that match a registered
-    /// per-request slot. Use when the consumer has a global view (a
-    /// renderer, a logger) that needs every frame regardless of which
-    /// request — if any — it belongs to.
+    /// handed to `sink`. Use when the consumer has a global view (a
+    /// renderer, a logger) that needs every frame regardless of
+    /// which request — if any — it belongs to.
+    ///
+    /// Performs a synchronous `kernel_info` handshake before spawning
+    /// the socket loop. The reply is fed through the sink (so a
+    /// renderer sink draws the banner) and returned as JSON. iopub
+    /// `status: busy`/`idle` for our own handshake request are
+    /// dropped — the client didn't initiate the request, so surfacing
+    /// idle for it would mislead any "wait for idle" consumer. Other
+    /// iopub frames (kernel-side startup prints) are forwarded to the
+    /// sink in order.
+    ///
+    /// The handshake doubles as the "is the kernel actually
+    /// answering" probe. Owning both sockets exclusively here means
+    /// no concurrent socket-loop dispatch can race the banner write.
     pub async fn start_with_sink<F>(mut kernel: Kernel, sink: F) -> Result<(Self, Value)>
     where
         F: Fn(Frame) + Send + Sync + 'static,
     {
         let mut shell = kernel.channels.take_shell()?;
-        let iopub = kernel.channels.take_iopub()?;
+        let mut iopub = kernel.channels.take_iopub()?;
         let stdin_sock = kernel.channels.take_stdin()?;
 
-        let info_req: JupyterMessage = KernelInfoRequest {}.into();
-        let info_id = info_req.header.msg_id.clone();
-        shell.send(info_req).await
-            .map_err(|e| anyhow!("shell.send: {e}"))
-            .context("sending kernel_info_request")?;
-        let info = match tokio::time::timeout(
-            Duration::from_secs(10),
-            await_kernel_info(&mut shell, &info_id),
-        )
-        .await
-        {
-            Ok(r) => r?,
-            Err(_) => anyhow::bail!("timed out waiting for kernel_info_reply"),
-        };
+        let sink: Sink = Arc::new(sink);
+        let (reply, info) = handshake(&mut shell, &mut iopub, &sink).await?;
+
+        // Feed the reply through the sink as the last step of the
+        // handshake. By the time start_with_sink returns, the sink
+        // has finished writing the banner (synchronous call), so the
+        // caller can draw a prompt next without racing.
+        sink(Frame {
+            channel: Channel::Shell,
+            message: reply,
+        });
 
         let (shell_tx, shell_rx) = unbounded_channel::<JupyterMessage>();
         let (stdin_tx, stdin_rx) = unbounded_channel::<JupyterMessage>();
-        let sink: Sink = Arc::new(sink);
         let router = Arc::new(FrameRouter::new(sink));
         let closed = Arc::new(Notify::new());
 
-        spawn_shell_loop(shell, shell_rx, router.clone(), closed.clone());
-        spawn_iopub_reader(iopub, router.clone(), closed.clone());
-        spawn_stdin_loop(stdin_sock, stdin_rx, router.clone(), closed.clone());
+        spawn_socket_loop(
+            shell,
+            iopub,
+            stdin_sock,
+            shell_rx,
+            stdin_rx,
+            router.clone(),
+            closed.clone(),
+        );
 
         Ok((
             Self {
@@ -279,7 +298,7 @@ impl KernelSession {
 /// calls keep returning `None`.
 pub struct RequestStream {
     pub msg_id: String,
-    rx: Option<XReceiver<RoutedFrame>>,
+    rx: Option<UnboundedReceiver<RoutedFrame>>,
     router: Arc<FrameRouter>,
 }
 
@@ -291,7 +310,7 @@ pub enum TryRecv {
 
 impl RequestStream {
     pub fn try_recv(&mut self) -> TryRecv {
-        let Some(rx) = self.rx.as_ref() else {
+        let Some(rx) = self.rx.as_mut() else {
             return TryRecv::Done;
         };
         match rx.try_recv() {
@@ -309,22 +328,15 @@ impl RequestStream {
         }
     }
 
-    /// Await the next frame, blocking the current task until one
-    /// arrives. Returns `None` after `Idle` for this request.
+    /// Await the next frame, parking until one arrives. Returns `None`
+    /// after `Idle` for this request.
     pub async fn recv(&mut self) -> Option<Frame> {
-        loop {
-            match self.try_recv() {
-                TryRecv::Frame(f) => return Some(f),
-                TryRecv::Done => return None,
-                TryRecv::Empty => {
-                    // crossbeam channel has no async API; the reader
-                    // tasks deliver into it from a different thread, so
-                    // a short yield + sleep is fine here. Production
-                    // CLI callers want low overhead but not millisecond
-                    // latency on every frame.
-                    tokio::task::yield_now().await;
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
+        let rx = self.rx.as_mut()?;
+        match rx.recv().await {
+            Some(RoutedFrame::Frame(f)) => Some(f),
+            Some(RoutedFrame::Idle) | None => {
+                self.rx = None;
+                None
             }
         }
     }
@@ -353,34 +365,132 @@ impl Drop for RequestStream {
     }
 }
 
-async fn await_kernel_info(
+/// One tokio task that drives all three ZMQ sockets via `tokio::select!`.
+///
+/// Splitting these across three tasks was the cause of a real race: the
+/// kernel sends `kernel_info_reply` on shell and `status: idle` on
+/// iopub, and consumers wait for the idle to know "the request is
+/// done." If shell-reader and iopub-reader run on separate tasks, the
+/// iopub task can dispatch the idle (which fires the consumer's
+/// renderer + signals the main loop) before the shell task has
+/// dispatched its reply (which would render the banner). The user
+/// then sees `> Python ... > ` because the prompt drew before the
+/// banner write reached stdout.
+///
+/// Combining the readers serialises dispatch: at any moment we're
+/// processing exactly one message, and the order in which the kernel
+/// sent them (busy → reply → idle, per Jupyter spec) is preserved
+/// through the router/sink. A single task is enough — `tokio::select!`
+/// polls all sockets concurrently; we're not actually blocking on any
+/// one read.
+/// Synchronous `kernel_info` handshake: send `kernel_info_request`
+/// on shell, wait for the matching reply, drain iopub concurrently so
+/// the kernel can't block on a full iopub HWM.
+///
+/// During the handshake:
+/// - `status: busy`/`idle` for our own request are silently dropped —
+///   the consumer didn't initiate this request, so signalling idle
+///   for it would mislead any later "wait for idle" logic.
+/// - Other iopub frames (startup prints, comm_open from the kernel,
+///   etc.) flow through the sink in arrival order.
+///
+/// Returns the reply message AND its content serialised to JSON.
+/// Reply is fed through the sink by the caller as the LAST step (so
+/// it's the last write before start_with_sink returns, ensuring
+/// banner-then-prompt ordering for renderer sinks).
+async fn handshake(
     shell: &mut ClientShellConnection,
-    expected_id: &str,
-) -> Result<Value> {
-    loop {
-        let msg = shell.read().await.map_err(|e| anyhow!("shell.read: {e}"))?;
-        let parent = msg
-            .parent_header
-            .as_ref()
-            .map(|h| h.msg_id.as_str())
-            .unwrap_or("");
-        if parent == expected_id && msg.message_type() == "kernel_info_reply" {
-            return Ok(serde_json::to_value(&msg.content)?);
+    iopub: &mut ClientIoPubConnection,
+    sink: &Sink,
+) -> Result<(JupyterMessage, Value)> {
+    let req: JupyterMessage = KernelInfoRequest {}.into();
+    let info_id = req.header.msg_id.clone();
+    shell
+        .send(req)
+        .await
+        .map_err(|e| anyhow!("shell.send (kernel_info): {e}"))?;
+
+    let wait = async {
+        loop {
+            tokio::select! {
+                biased;
+                read = shell.read() => {
+                    let msg = read.map_err(|e| anyhow!("shell.read: {e}"))?;
+                    let parent = msg.parent_header.as_ref().map(|h| h.msg_id.as_str()).unwrap_or("");
+                    if parent == info_id && msg.message_type() == "kernel_info_reply" {
+                        let content = serde_json::to_value(&msg.content)?;
+                        return Ok::<_, anyhow::Error>((msg, content));
+                    }
+                    // Other shell traffic this early is unexpected; let
+                    // the sink see it so logs/renderer can surface it.
+                    sink(Frame { channel: Channel::Shell, message: msg });
+                }
+                read = iopub.read() => {
+                    let msg = read.map_err(|e| anyhow!("iopub.read: {e}"))?;
+                    let parent = msg.parent_header.as_ref().map(|h| h.msg_id.as_str()).unwrap_or("");
+                    // Drop status frames belonging to our own
+                    // kernel_info_request — consumer didn't ask for it.
+                    if parent == info_id && msg.message_type() == "status" {
+                        continue;
+                    }
+                    sink(Frame { channel: Channel::IoPub, message: msg });
+                }
+            }
         }
-        // Boot-time chatter we don't surface.
-    }
+    };
+    tokio::time::timeout(Duration::from_secs(10), wait)
+        .await
+        .map_err(|_| anyhow!("timed out waiting for kernel_info_reply"))?
 }
 
-fn spawn_shell_loop(
+fn spawn_socket_loop(
     mut shell: ClientShellConnection,
-    mut send_rx: UnboundedReceiver<JupyterMessage>,
+    mut iopub: ClientIoPubConnection,
+    mut stdin_sock: ClientStdinConnection,
+    mut shell_send_rx: UnboundedReceiver<JupyterMessage>,
+    mut stdin_send_rx: UnboundedReceiver<JupyterMessage>,
     router: Arc<FrameRouter>,
     closed: Arc<Notify>,
 ) {
     tokio::spawn(async move {
         loop {
+            // `biased;` polls the arms in declaration order. Reads
+            // come before sends so a backlog of inbound frames can't
+            // be starved by a tight loop of outbound sends; shell read
+            // comes before iopub read so on the rare iteration where
+            // a reply and the matching idle are both ready we dispatch
+            // the reply (banner) first. The Jupyter spec puts
+            // busy(iopub) → reply(shell) → idle(iopub) in order, but
+            // they arrive on different sockets, so without ordering
+            // help the consumer's "wait for idle" can win the race
+            // against the renderer's "draw banner."
             tokio::select! {
-                send = send_rx.recv() => match send {
+                biased;
+                read = shell.read() => match read {
+                    Ok(msg) => router.dispatch(Channel::Shell, msg),
+                    Err(e) => {
+                        log::warn!("shell.read: {e}");
+                        closed.notify_waiters();
+                        return;
+                    }
+                },
+                read = iopub.read() => match read {
+                    Ok(msg) => router.dispatch(Channel::IoPub, msg),
+                    Err(e) => {
+                        log::warn!("iopub.read: {e}");
+                        closed.notify_waiters();
+                        return;
+                    }
+                },
+                read = stdin_sock.read() => match read {
+                    Ok(msg) => router.dispatch(Channel::Stdin, msg),
+                    Err(e) => {
+                        log::warn!("stdin.read: {e}");
+                        closed.notify_waiters();
+                        return;
+                    }
+                },
+                send = shell_send_rx.recv() => match send {
                     Some(msg) => {
                         if let Err(e) = shell.send(msg).await {
                             log::warn!("shell.send: {e}");
@@ -390,48 +500,7 @@ fn spawn_shell_loop(
                     }
                     None => return,
                 },
-                read = shell.read() => match read {
-                    Ok(msg) => router.dispatch(Channel::Shell, msg),
-                    Err(e) => {
-                        log::warn!("shell.read: {e}");
-                        closed.notify_waiters();
-                        return;
-                    }
-                },
-            }
-        }
-    });
-}
-
-fn spawn_iopub_reader(
-    mut iopub: ClientIoPubConnection,
-    router: Arc<FrameRouter>,
-    closed: Arc<Notify>,
-) {
-    tokio::spawn(async move {
-        loop {
-            match iopub.read().await {
-                Ok(msg) => router.dispatch(Channel::IoPub, msg),
-                Err(e) => {
-                    log::warn!("iopub.read: {e}");
-                    closed.notify_waiters();
-                    return;
-                }
-            }
-        }
-    });
-}
-
-fn spawn_stdin_loop(
-    mut stdin_sock: ClientStdinConnection,
-    mut send_rx: UnboundedReceiver<JupyterMessage>,
-    router: Arc<FrameRouter>,
-    closed: Arc<Notify>,
-) {
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                send = send_rx.recv() => match send {
+                send = stdin_send_rx.recv() => match send {
                     Some(msg) => {
                         if let Err(e) = stdin_sock.send(msg).await {
                             log::warn!("stdin.send: {e}");
@@ -440,14 +509,6 @@ fn spawn_stdin_loop(
                         }
                     }
                     None => return,
-                },
-                read = stdin_sock.read() => match read {
-                    Ok(msg) => router.dispatch(Channel::Stdin, msg),
-                    Err(e) => {
-                        log::warn!("stdin.read: {e}");
-                        closed.notify_waiters();
-                        return;
-                    }
                 },
             }
         }

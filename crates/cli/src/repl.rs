@@ -204,13 +204,20 @@ pub async fn drive_repl(
         .with_is_complete_tx(is_complete_tx)
         .with_own_session_name(session_name.clone());
 
-    // The sink runs on a tokio worker thread — `tokio::spawn` can't be
-    // used inside it (the closure is sync) and we want renderer calls
-    // to happen inline, so a plain Fn that calls handle_event works.
+    // KernelSession::start_with_sink performs the kernel_info
+    // handshake before spawning the socket loop, feeding the reply
+    // through the sink as its last step. On the spawn path that
+    // renders the welcome banner; on attach we suppress the
+    // kernel_info_reply specifically so we don't reprint it on every
+    // reconnect (the rest of the renderer's behaviour stays).
     let sink_renderer = renderer.clone();
     let is_attached = kernel.is_attached();
     let child_pid = kernel.child_pid();
+    let sink_attached = is_attached;
     let (mut session, _info) = KernelSession::start_with_sink(kernel, move |f| {
+        if sink_attached && f.message.message_type() == "kernel_info_reply" {
+            return;
+        }
         if let Err(e) = sink_renderer.handle_event(from_message(f.channel, &f.message)) {
             log::warn!("renderer ({:?}): {e}", f.channel);
         }
