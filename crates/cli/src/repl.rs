@@ -19,7 +19,7 @@ use jet_core::jupyter_protocol::{
     ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
 };
 use jet_core::kernel::Kernel;
-use jet_core::kernel_session::KernelSession;
+use jet_core::kernel_session::{KernelSession, KernelStatus};
 use jet_core::manager::SessionStore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -49,6 +49,19 @@ enum WaitResult {
     Timeout,
     Closed,
     Input(InputRequest),
+}
+
+/// Park until the kernel reaches `KernelStatus::Exited`. Resolves
+/// immediately if it's already there.
+async fn await_kernel_exited(mut rx: tokio::sync::watch::Receiver<KernelStatus>) {
+    loop {
+        if *rx.borrow() == KernelStatus::Exited {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            return;
+        }
+    }
 }
 
 /// Run a stdin-byte watcher for the lifetime of `f`. rustyline keeps the
@@ -224,90 +237,15 @@ pub async fn drive_repl(
     })
     .await?;
 
-    let closed = session.closed();
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
-    // Liveness watcher.
-    //
-    // - Spawn path (we own the child): waitpid(pid, WNOHANG) every
-    //   500ms. Instant, kernel-level, gives an exit status.
-    // - Attach path (no pid): heartbeat. ZMQ DEALER/SUB reads on a
-    //   peer that exited don't error — they block forever — so a
-    //   clean exit like R's `quit()` would otherwise hang jet
-    //   indefinitely. The heartbeat REQ/REP echo is what JEP 13
-    //   designed for this case.
-    //
-    // The reader/writer tasks inside `KernelSession` also notify
-    // `closed` when their socket errors out; that covers crashes a
-    // heartbeat poll wouldn't catch in time.
-    if is_attached {
-        let mut hb = session.take_heartbeat()?;
-        let closed_for_hb = closed.clone();
-        let shutdown_for_hb = shutdown.clone();
-        let session_id_for_hb = session_id.clone();
-        tokio::spawn(async move {
-            let mut consecutive_timeouts = 0;
-            loop {
-                tokio::select! {
-                    _ = shutdown_for_hb.notified() => return,
-                    r = tokio::time::timeout(Duration::from_secs(5), hb.single_heartbeat()) => {
-                        match r {
-                            Ok(Ok(())) => {
-                                consecutive_timeouts = 0;
-                            }
-                            Ok(Err(e)) => {
-                                log::info!("heartbeat error: {e} — kernel gone");
-                                mark_session_closed(&session_id_for_hb);
-                                closed_for_hb.notify_waiters();
-                                return;
-                            }
-                            Err(_) => {
-                                consecutive_timeouts += 1;
-                                log::warn!("heartbeat timeout ({consecutive_timeouts})");
-                                if consecutive_timeouts >= 2 {
-                                    log::info!("heartbeat: kernel unresponsive, declaring dead");
-                                    mark_session_closed(&session_id_for_hb);
-                                    closed_for_hb.notify_waiters();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-                tokio::select! {
-                    _ = shutdown_for_hb.notified() => return,
-                    _ = tokio::time::sleep(Duration::from_secs(2)) => {}
-                }
-            }
-        });
-    }
-    if let Some(pid) = child_pid {
-        let closed_for_watcher = closed.clone();
-        let shutdown_for_watcher = shutdown.clone();
-        let session_id_for_watcher = session_id.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = shutdown_for_watcher.notified() => return,
-                    _ = tokio::time::sleep(Duration::from_millis(500)) => {
-                        let mut status: libc::c_int = 0;
-                        let r = unsafe {
-                            libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG)
-                        };
-                        // r > 0  → child changed state and we reaped it.
-                        // r == 0 → still running.
-                        // r < 0  → ECHILD: tokio already reaped, child gone.
-                        if r != 0 {
-                            log::info!("kernel pid {pid} exited (waitpid -> {r})");
-                            mark_session_closed(&session_id_for_watcher);
-                            closed_for_watcher.notify_waiters();
-                            return;
-                        }
-                    }
-                }
-            }
-        });
-    }
+    // Liveness is owned by KernelSession (heartbeat for attached kernels,
+    // waitpid for spawned ones, socket-loop error path for crashes). The
+    // CLI's only liveness concern is flipping session.json to Closed; we
+    // do that inline at the two sites where the REPL observes Exited
+    // (the prompt-loop select and the wait-for-idle select), so no
+    // separate bridge task is needed.
+    let _ = (is_attached, child_pid);
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
@@ -334,8 +272,9 @@ pub async fn drive_repl(
                 (prompt_rl, result)
             });
             let line = tokio::select! {
-                _ = closed.notified() => {
+                _ = await_kernel_exited(session.watch_status()) => {
                     eprintln!("{}", ansi::red("Kernel exited"));
+                    mark_session_closed(&session_id);
                     shutdown.notify_waiters();
                     std::process::exit(0);
                 }
@@ -435,7 +374,7 @@ pub async fn drive_repl(
                     loop {
                         tokio::select! {
                             r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id, Duration::from_secs(300)) => return r,
-                            _ = closed.notified() => return WaitResult::Closed,
+                            _ = await_kernel_exited(session.watch_status()) => return WaitResult::Closed,
                             _ = intr_rx.recv() => {
                                 if let Err(e) = session.interrupt().await {
                                     eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
@@ -496,6 +435,7 @@ pub async fn drive_repl(
                 eprintln!("{}", ansi::yellow("Timeout waiting for kernel"));
             }
             WaitResult::Closed => {
+                mark_session_closed(&session_id);
                 shutdown.notify_waiters();
                 std::process::exit(0);
             }

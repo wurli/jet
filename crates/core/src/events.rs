@@ -41,6 +41,9 @@ pub enum EventData {
     Idle {
         parent_id: Option<String>,
     },
+    Busy {
+        parent_id: Option<String>,
+    },
     InputRequest {
         prompt: String,
         password: bool,
@@ -140,13 +143,11 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             password: req.password,
             parent_id,
         },
-        (Channel::IoPub, JupyterMessageContent::Status(s)) => {
-            if matches!(s.execution_state, ExecutionState::Idle) && !parent_id.is_none() {
-                EventData::Idle { parent_id }
-            } else {
-                EventData::Other
-            }
-        }
+        (Channel::IoPub, JupyterMessageContent::Status(s)) => match s.execution_state {
+            ExecutionState::Idle if parent_id.is_some() => EventData::Idle { parent_id },
+            ExecutionState::Busy => EventData::Busy { parent_id },
+            _ => EventData::Other,
+        },
         _ => EventData::Other,
     };
 
@@ -361,13 +362,13 @@ mod tests {
     }
 
     #[test]
-    fn busy_status_is_other() {
+    fn busy_status_event() {
         let msg: JupyterMessage = Status::busy().into();
         let msg = with_parent(msg, "abc");
-        assert!(matches!(
-            from_message(Channel::IoPub, &msg).data,
-            EventData::Other
-        ));
+        match from_message(Channel::IoPub, &msg).data {
+            EventData::Busy { parent_id } => assert_eq!(parent_id, Some("abc".into())),
+            other => panic!("expected Busy, got {other:?}"),
+        }
     }
 
     #[test]

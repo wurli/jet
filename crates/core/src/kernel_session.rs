@@ -22,13 +22,51 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::sync::{
-    Notify,
+    watch,
     mpsc::{
         UnboundedReceiver, UnboundedSender,
         error::TryRecvError,
         unbounded_channel,
     },
 };
+
+/// High-level kernel liveness state. The session funnels every liveness
+/// signal (iopub status frames, socket errors, heartbeat timeouts, child
+/// exit) into a single `tokio::sync::watch` channel of this type, so
+/// consumers don't have to wire up four separate watchers.
+///
+/// `Exited` is terminal: once a session reaches it, no further transition
+/// is allowed. A late `status: idle` arriving from a kernel that quit
+/// cleanly (ark's `quit()` does this) can't resurrect the session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KernelStatus {
+    /// Before the kernel_info handshake completes. Transient.
+    Starting,
+    /// Kernel reachable, not running a cell for us.
+    Idle,
+    /// Kernel processing one of our requests.
+    Busy,
+    /// Kernel gone. Terminal — only reset by a fresh KernelSession.
+    Exited,
+}
+
+/// Update the watch channel to `next`, unless we've already reached the
+/// terminal `Exited` state. Returns whether the value changed.
+fn transition(tx: &watch::Sender<KernelStatus>, next: KernelStatus) -> bool {
+    let mut changed = false;
+    tx.send_if_modified(|cur| {
+        if *cur == KernelStatus::Exited {
+            return false;
+        }
+        if *cur == next {
+            return false;
+        }
+        *cur = next;
+        changed = true;
+        true
+    });
+    changed
+}
 
 use crate::events::{Channel, EventData, from_message};
 use crate::kernel::Kernel;
@@ -65,13 +103,15 @@ type Sink = Arc<dyn Fn(Frame) + Send + Sync + 'static>;
 struct FrameRouter {
     by_parent: Mutex<HashMap<String, UnboundedSender<RoutedFrame>>>,
     sink: Sink,
+    status_tx: Arc<watch::Sender<KernelStatus>>,
 }
 
 impl FrameRouter {
-    fn new(sink: Sink) -> Self {
+    fn new(sink: Sink, status_tx: Arc<watch::Sender<KernelStatus>>) -> Self {
         Self {
             by_parent: Mutex::new(HashMap::new()),
             sink,
+            status_tx,
         }
     }
 
@@ -105,10 +145,21 @@ impl FrameRouter {
     /// emitted after the renderer has processed every prior frame).
     fn dispatch(&self, channel: Channel, msg: JupyterMessage) {
         let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
-        let is_idle = matches!(
-            from_message(channel, &msg).data,
-            EventData::Idle { .. },
-        );
+        let event_data = from_message(channel, &msg).data;
+        let is_idle = matches!(event_data, EventData::Idle { .. });
+
+        // Drive the KernelStatus state machine from iopub status frames.
+        // Guarded inside `transition` so a trailing idle after Exited
+        // can't resurrect the session.
+        match event_data {
+            EventData::Busy { .. } => {
+                transition(&self.status_tx, KernelStatus::Busy);
+            }
+            EventData::Idle { .. } => {
+                transition(&self.status_tx, KernelStatus::Idle);
+            }
+            _ => {}
+        }
 
         if is_idle {
             if let Some(pid) = parent_id.as_deref() {
@@ -142,10 +193,18 @@ pub struct KernelSession {
     shell_tx: UnboundedSender<JupyterMessage>,
     stdin_tx: UnboundedSender<JupyterMessage>,
     router: Arc<FrameRouter>,
-    /// Notified once when any of the reader/writer tasks observes a
-    /// fatal socket error or task shutdown. Lets consumers (REPL,
-    /// liveness watchers) react to a kernel that has gone away.
-    closed: Arc<Notify>,
+    status_tx: Arc<watch::Sender<KernelStatus>>,
+    /// Background liveness watchers (heartbeat for attached kernels,
+    /// waitpid for spawned ones). Aborted on Drop.
+    watchers: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for KernelSession {
+    fn drop(&mut self) {
+        for w in self.watchers.drain(..) {
+            w.abort();
+        }
+    }
 }
 
 impl KernelSession {
@@ -181,6 +240,9 @@ impl KernelSession {
         let mut iopub = kernel.channels.take_iopub()?;
         let stdin_sock = kernel.channels.take_stdin()?;
 
+        let (status_tx, _status_rx) = watch::channel(KernelStatus::Starting);
+        let status_tx = Arc::new(status_tx);
+
         let sink: Sink = Arc::new(sink);
         let (reply, info) = match handshake(&mut shell, &mut iopub, &sink).await {
             Ok(v) => v,
@@ -201,10 +263,12 @@ impl KernelSession {
             message: reply,
         });
 
+        // Handshake succeeded — we're talking to a live kernel.
+        transition(&status_tx, KernelStatus::Idle);
+
         let (shell_tx, shell_rx) = unbounded_channel::<JupyterMessage>();
         let (stdin_tx, stdin_rx) = unbounded_channel::<JupyterMessage>();
-        let router = Arc::new(FrameRouter::new(sink));
-        let closed = Arc::new(Notify::new());
+        let router = Arc::new(FrameRouter::new(sink, status_tx.clone()));
 
         spawn_socket_loop(
             shell,
@@ -213,8 +277,27 @@ impl KernelSession {
             shell_rx,
             stdin_rx,
             router.clone(),
-            closed.clone(),
+            status_tx.clone(),
         );
+
+        // Liveness watchers:
+        // - Attach path (no owned pid): heartbeat. ZMQ DEALER/SUB reads
+        //   on a kernel that has exited cleanly don't error — they block
+        //   forever — so the heartbeat REQ/REP is the only way to catch
+        //   a clean exit like R's `quit()`.
+        // - Spawn path (we own the child): waitpid(WNOHANG) every 500ms.
+        //   Instant, kernel-level, gives an exit status.
+        // The socket loop also flips status to Exited on any read/send
+        // error, so a crash is caught even if neither watcher polls in
+        // time.
+        let mut watchers = Vec::new();
+        if kernel.is_attached() {
+            let hb = kernel.channels.take_heartbeat()?;
+            watchers.push(spawn_heartbeat_watcher(hb, status_tx.clone()));
+        }
+        if let Some(pid) = kernel.child_pid() {
+            watchers.push(spawn_waitpid_watcher(pid, status_tx.clone()));
+        }
 
         Ok((
             Self {
@@ -222,10 +305,23 @@ impl KernelSession {
                 shell_tx,
                 stdin_tx,
                 router,
-                closed,
+                status_tx,
+                watchers,
             },
             info,
         ))
+    }
+
+    /// Current kernel liveness/execution state.
+    pub fn status(&self) -> KernelStatus {
+        *self.status_tx.borrow()
+    }
+
+    /// Watch handle for kernel status transitions. Latest-value channel:
+    /// callers can `borrow()` for the current state or
+    /// `changed().await` to park until it moves.
+    pub fn watch_status(&self) -> watch::Receiver<KernelStatus> {
+        self.status_tx.subscribe()
     }
 
     /// Send a shell-channel request and return a stream of its routed
@@ -254,27 +350,12 @@ impl KernelSession {
         Ok(())
     }
 
-    /// Notified once when the session loses contact with the kernel
-    /// (socket error in any reader/writer task). The CLI REPL selects on
-    /// this alongside its prompt; the Lua binding ignores it and lets
-    /// individual request streams close naturally.
-    pub fn closed(&self) -> Arc<Notify> {
-        self.closed.clone()
-    }
-
     pub fn kernel(&self) -> &Kernel {
         &self.kernel
     }
 
     pub fn kernel_mut(&mut self) -> &mut Kernel {
         &mut self.kernel
-    }
-
-    /// Take the heartbeat connection out of the kernel. Used by the
-    /// REPL's attach-path liveness watcher; once taken, the session no
-    /// longer carries heartbeat, so callers must not call this twice.
-    pub fn take_heartbeat(&mut self) -> Result<crate::jupyter_zmq_client::ClientHeartbeatConnection> {
-        self.kernel.channels.take_heartbeat()
     }
 
     /// Forward a ^C-equivalent to the kernel.
@@ -455,6 +536,50 @@ async fn handshake(
 mod tests {
     use super::*;
     use crate::kernel::Kernel;
+    use jupyter_protocol::{JupyterMessage, Status};
+
+    fn with_parent(mut m: JupyterMessage, parent_id: &str) -> JupyterMessage {
+        let mut header = m.header.clone();
+        header.msg_id = parent_id.to_string();
+        m.parent_header = Some(header);
+        m
+    }
+
+    #[test]
+    fn router_drives_status_busy_and_idle() {
+        let (tx, _rx) = watch::channel(KernelStatus::Idle);
+        let tx = Arc::new(tx);
+        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
+
+        let busy: JupyterMessage = with_parent(Status::busy().into(), "exec-1");
+        router.dispatch(Channel::IoPub, busy);
+        assert_eq!(*tx.borrow(), KernelStatus::Busy);
+
+        let idle: JupyterMessage = with_parent(Status::idle().into(), "exec-1");
+        router.dispatch(Channel::IoPub, idle);
+        assert_eq!(*tx.borrow(), KernelStatus::Idle);
+    }
+
+    #[test]
+    fn exited_is_terminal_against_trailing_idle() {
+        let (tx, _rx) = watch::channel(KernelStatus::Busy);
+        let tx = Arc::new(tx);
+        // Simulate the socket loop flipping the kernel to Exited.
+        transition(&tx, KernelStatus::Exited);
+        assert_eq!(*tx.borrow(), KernelStatus::Exited);
+
+        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
+        // Trailing iopub idle from a kernel that just quit cleanly
+        // must not resurrect the session.
+        let idle: JupyterMessage = with_parent(Status::idle().into(), "exec-1");
+        router.dispatch(Channel::IoPub, idle);
+        assert_eq!(*tx.borrow(), KernelStatus::Exited);
+
+        // Same for a trailing busy.
+        let busy: JupyterMessage = with_parent(Status::busy().into(), "exec-1");
+        router.dispatch(Channel::IoPub, busy);
+        assert_eq!(*tx.borrow(), KernelStatus::Exited);
+    }
 
     /// Unit-test the enrichment function directly with a synthetic
     /// log file and a fake kernel handle. We don't drive a full
@@ -503,6 +628,68 @@ mod tests {
     }
 }
 
+/// Poll the heartbeat REQ/REP echo every 2 seconds with a 5s timeout.
+/// After two consecutive timeouts, or any send/recv error, declare the
+/// kernel dead by transitioning status to `Exited`. Returns when the
+/// kernel is declared dead (or the watcher is aborted).
+fn spawn_heartbeat_watcher(
+    mut hb: crate::jupyter_zmq_client::ClientHeartbeatConnection,
+    status_tx: Arc<watch::Sender<KernelStatus>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut consecutive_timeouts = 0;
+        loop {
+            match tokio::time::timeout(Duration::from_secs(5), hb.single_heartbeat()).await {
+                Ok(Ok(())) => {
+                    consecutive_timeouts = 0;
+                }
+                Ok(Err(e)) => {
+                    log::info!("heartbeat error: {e} — kernel gone");
+                    transition(&status_tx, KernelStatus::Exited);
+                    return;
+                }
+                Err(_) => {
+                    consecutive_timeouts += 1;
+                    log::warn!("heartbeat timeout ({consecutive_timeouts})");
+                    if consecutive_timeouts >= 2 {
+                        log::info!("heartbeat: kernel unresponsive, declaring dead");
+                        transition(&status_tx, KernelStatus::Exited);
+                        return;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    })
+}
+
+/// Poll `waitpid(pid, WNOHANG)` every 500ms; the moment the child
+/// changes state, transition status to `Exited`. Used for kernels we
+/// spawned ourselves (where we own the pid and tokio doesn't reap it
+/// for us until much later).
+fn spawn_waitpid_watcher(
+    pid: u32,
+    status_tx: Arc<watch::Sender<KernelStatus>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let mut status: libc::c_int = 0;
+            let r = unsafe {
+                libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG)
+            };
+            // r > 0  → child changed state and we reaped it.
+            // r == 0 → still running.
+            // r < 0  → ECHILD: tokio already reaped, child gone.
+            if r != 0 {
+                log::info!("kernel pid {pid} exited (waitpid -> {r})");
+                transition(&status_tx, KernelStatus::Exited);
+                return;
+            }
+        }
+    })
+}
+
 fn spawn_socket_loop(
     mut shell: ClientShellConnection,
     mut iopub: ClientIoPubConnection,
@@ -510,9 +697,16 @@ fn spawn_socket_loop(
     mut shell_send_rx: UnboundedReceiver<JupyterMessage>,
     mut stdin_send_rx: UnboundedReceiver<JupyterMessage>,
     router: Arc<FrameRouter>,
-    closed: Arc<Notify>,
+    status_tx: Arc<watch::Sender<KernelStatus>>,
 ) {
     tokio::spawn(async move {
+        let mark_exited = |reason: &str, e: Option<&dyn std::fmt::Display>| {
+            match e {
+                Some(e) => log::warn!("{reason}: {e}"),
+                None => log::warn!("{reason}"),
+            }
+            transition(&status_tx, KernelStatus::Exited);
+        };
         loop {
             // `biased;` polls the arms in declaration order. Reads
             // come before sends so a backlog of inbound frames can't
@@ -528,33 +722,20 @@ fn spawn_socket_loop(
                 biased;
                 read = shell.read() => match read {
                     Ok(msg) => router.dispatch(Channel::Shell, msg),
-                    Err(e) => {
-                        log::warn!("shell.read: {e}");
-                        closed.notify_waiters();
-                        return;
-                    }
+                    Err(e) => { mark_exited("shell.read", Some(&e)); return; }
                 },
                 read = iopub.read() => match read {
                     Ok(msg) => router.dispatch(Channel::IoPub, msg),
-                    Err(e) => {
-                        log::warn!("iopub.read: {e}");
-                        closed.notify_waiters();
-                        return;
-                    }
+                    Err(e) => { mark_exited("iopub.read", Some(&e)); return; }
                 },
                 read = stdin_sock.read() => match read {
                     Ok(msg) => router.dispatch(Channel::Stdin, msg),
-                    Err(e) => {
-                        log::warn!("stdin.read: {e}");
-                        closed.notify_waiters();
-                        return;
-                    }
+                    Err(e) => { mark_exited("stdin.read", Some(&e)); return; }
                 },
                 send = shell_send_rx.recv() => match send {
                     Some(msg) => {
                         if let Err(e) = shell.send(msg).await {
-                            log::warn!("shell.send: {e}");
-                            closed.notify_waiters();
+                            mark_exited("shell.send", Some(&e));
                             return;
                         }
                     }
@@ -563,8 +744,7 @@ fn spawn_socket_loop(
                 send = stdin_send_rx.recv() => match send {
                     Some(msg) => {
                         if let Err(e) = stdin_sock.send(msg).await {
-                            log::warn!("stdin.send: {e}");
-                            closed.notify_waiters();
+                            mark_exited("stdin.send", Some(&e));
                             return;
                         }
                     }
