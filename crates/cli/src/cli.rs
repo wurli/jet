@@ -38,6 +38,11 @@ pub enum Command {
     /// Stop a running kernel
     #[command(alias = "s")]
     Stop(StopArgs),
+
+    /// Execute code against a running kernel and stream the result to stdout.
+    /// Exits once the kernel goes idle for the request.
+    #[command(alias = "e")]
+    Execute(ExecuteArgs),
 }
 
 impl Command {
@@ -48,6 +53,7 @@ impl Command {
             Command::ListSessions(c) => &c.global,
             Command::ListKernels(c) => &c.global,
             Command::Stop(c) => &c.global,
+            Command::Execute(c) => &c.global,
         }
     }
 }
@@ -149,6 +155,33 @@ pub struct AttachArgs {
     // Open until the next `jet list` runs its `probe_open` self-heal.
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
+
+    /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
+    #[arg(long)]
+    pub no_graphics: bool,
+
+    /// A name used to identify the client.
+    #[arg(long)]
+    pub session_name: Option<String>,
+
+    #[command(flatten)]
+    pub global: GlobalArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct ExecuteArgs {
+    /// Session id (directory name under the jet data dir) to execute against.
+    /// Look these up with `jet list`. Required unless `--connection-file`
+    /// is given; if both are given the session id wins.
+    pub session_id: Option<String>,
+
+    /// Path to a connection file, e.g. written by an earlier `jet connect
+    /// --persist`. Alternative to the positional `session_id`.
+    #[arg(long)]
+    pub connection_file: Option<PathBuf>,
+
+    /// Code to execute. If omitted, read from stdin.
+    pub code: Option<String>,
 
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
     #[arg(long)]

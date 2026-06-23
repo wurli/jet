@@ -165,7 +165,7 @@ impl Renderer {
                     });
                 }
             }
-            EventData::KernelExited | EventData::Other => {}
+            EventData::Busy { .. } | EventData::KernelExited | EventData::Other => {}
         }
         Ok(())
     }

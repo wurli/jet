@@ -1,21 +1,26 @@
 //! The interactive REPL loop driven by `jet connect` / `jet attach`.
 //!
 //! Owns: rustyline prompt, is-complete polling, execute-request dispatch,
-//! per-channel reader/writer tasks, the kernel-liveness watchers
-//! (waitpid for spawned kernels, heartbeat for attached ones), and the
-//! raw-mode SIGINT pipe that turns a tty ^C into a kernel interrupt.
+//! the kernel-liveness watchers (waitpid for spawned kernels, heartbeat
+//! for attached ones), and the raw-mode SIGINT pipe that turns a tty ^C
+//! into a kernel interrupt. The wire mechanics (per-channel reader and
+//! writer tasks, kernel_info_request handshake, frame routing) live in
+//! [`jet_core::kernel_session::KernelSession`] — this module asks for a
+//! global sink that pumps every frame into the [`Renderer`], and uses
+//! the renderer's mpsc channels to surface control signals (idle,
+//! input_request, is_complete_reply) back into the REPL loop.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use jet_core::events::{Channel, InputRequest, IsCompleteReplyMsg, from_message};
+use jet_core::events::{InputRequest, IsCompleteReplyMsg, from_message};
 use jet_core::jupyter_protocol::{
     ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
-    KernelInfoRequest,
 };
 use jet_core::kernel::Kernel;
-use jet_core::session::SessionStore;
+use jet_core::kernel_session::{KernelSession, KernelStatus};
+use jet_core::manager::SessionStore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
@@ -44,6 +49,19 @@ enum WaitResult {
     Timeout,
     Closed,
     Input(InputRequest),
+}
+
+/// Park until the kernel reaches `KernelStatus::Exited`. Resolves
+/// immediately if it's already there.
+async fn await_kernel_exited(mut rx: tokio::sync::watch::Receiver<KernelStatus>) {
+    loop {
+        if *rx.borrow() == KernelStatus::Exited {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            return;
+        }
+    }
 }
 
 /// Run a stdin-byte watcher for the lifetime of `f`. rustyline keeps the
@@ -174,27 +192,16 @@ async fn wait_for_idle(
     }
 }
 
-/// Sender half plumbed back to the REPL loop. Dropping all of these tells
-/// the reader task to stop. Kept inline because there are only two of
-/// them and one type each.
-struct Pipes {
-    shell_tx: tokio::sync::mpsc::UnboundedSender<JupyterMessage>,
-    stdin_tx: tokio::sync::mpsc::UnboundedSender<JupyterMessage>,
-    /// Reader task signals "kernel exited" by notifying this.
-    closed: Arc<tokio::sync::Notify>,
-}
-
 /// Run the prompt → execute → render loop until the user exits or the
-/// kernel dies. Borrows the kernel's channels rather than the `Kernel`
-/// itself so the caller still owns the lifecycle (detach vs shutdown).
+/// kernel dies. Consumes the [`Kernel`] (wraps it in a
+/// [`KernelSession`]) and returns the session so the caller can pick
+/// between `.detach()` and `.shutdown()`.
 pub async fn drive_repl(
-    kernel: &mut Kernel,
+    kernel: Kernel,
     render_graphics: bool,
     session_name: Option<String>,
     session_id: Option<String>,
-) -> Result<()> {
-    // Cloned into each liveness watcher; on a death signal they mark
-    // the session closed before notifying the REPL loop.
+) -> Result<KernelSession> {
     let session_id = Arc::new(session_id);
     if render_graphics {
         warn_if_passthrough_off();
@@ -210,241 +217,35 @@ pub async fn drive_repl(
         .with_is_complete_tx(is_complete_tx)
         .with_own_session_name(session_name.clone());
 
-    // Channels carrying messages FROM the REPL TO the per-channel writer
-    // tasks. We can't borrow &mut kernel.channels.shell across an await
-    // and also use it from elsewhere, so the pattern is: take the shell /
-    // stdin sockets out of the kernel for the duration of the REPL via
-    // `std::mem::replace` would require Default impls we don't have.
-    // Instead, run the four readers/writers as tasks owning their socket
-    // halves, with mpsc back to here for sends.
-    let (shell_send_tx, mut shell_send_rx) =
-        tokio::sync::mpsc::unbounded_channel::<JupyterMessage>();
-    let (stdin_send_tx, mut stdin_send_rx) =
-        tokio::sync::mpsc::unbounded_channel::<JupyterMessage>();
+    // KernelSession::start_with_sink performs the kernel_info
+    // handshake before spawning the socket loop, feeding the reply
+    // through the sink as its last step. On the spawn path that
+    // renders the welcome banner; on attach we suppress the
+    // kernel_info_reply specifically so we don't reprint it on every
+    // reconnect (the rest of the renderer's behaviour stays).
+    let sink_renderer = renderer.clone();
+    let is_attached = kernel.is_attached();
+    let child_pid = kernel.child_pid();
+    let sink_attached = is_attached;
+    let (mut session, _info) = KernelSession::start_with_sink(kernel, move |f| {
+        if sink_attached && f.message.message_type() == "kernel_info_reply" {
+            return;
+        }
+        if let Err(e) = sink_renderer.handle_event(from_message(f.channel, &f.message)) {
+            log::warn!("renderer ({:?}): {e}", f.channel);
+        }
+    })
+    .await?;
 
-    let closed = Arc::new(tokio::sync::Notify::new());
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
-    // Move the sockets out of the kernel so we can spawn tasks that own
-    // them. The kernel keeps `control` for interrupt() / shutdown().
-    let mut shell = kernel.channels.take_shell()?;
-    let mut iopub = kernel.channels.take_iopub()?;
-    let mut stdin_sock = kernel.channels.take_stdin()?;
-
-    // Liveness watcher.
-    //
-    // - Spawn path (we own the child): waitpid(pid, WNOHANG) every
-    //   500ms. Instant, kernel-level, gives an exit status.
-    // - Attach path (no pid): heartbeat. ZMQ DEALER/SUB reads on a
-    //   peer that exited don't error — they block forever — so a
-    //   clean exit like R's `quit()` would otherwise hang jet
-    //   indefinitely. The heartbeat REQ/REP echo is what JEP 13
-    //   designed for this case.
-    if kernel.child_pid().is_none() {
-        let mut hb = kernel.channels.take_heartbeat()?;
-        let closed_for_hb = closed.clone();
-        let shutdown_for_hb = shutdown.clone();
-        let session_id_for_hb = session_id.clone();
-        tokio::spawn(async move {
-            let mut consecutive_timeouts = 0;
-            loop {
-                tokio::select! {
-                    _ = shutdown_for_hb.notified() => return,
-                    r = tokio::time::timeout(Duration::from_secs(5), hb.single_heartbeat()) => {
-                        match r {
-                            Ok(Ok(())) => {
-                                consecutive_timeouts = 0;
-                            }
-                            Ok(Err(e)) => {
-                                log::info!("heartbeat error: {e} — kernel gone");
-                                mark_session_closed(&session_id_for_hb);
-                                closed_for_hb.notify_one();
-                                return;
-                            }
-                            Err(_) => {
-                                consecutive_timeouts += 1;
-                                log::warn!("heartbeat timeout ({consecutive_timeouts})");
-                                if consecutive_timeouts >= 2 {
-                                    log::info!("heartbeat: kernel unresponsive, declaring dead");
-                                    mark_session_closed(&session_id_for_hb);
-                                    closed_for_hb.notify_one();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-                tokio::select! {
-                    _ = shutdown_for_hb.notified() => return,
-                    _ = tokio::time::sleep(Duration::from_secs(2)) => {}
-                }
-            }
-        });
-    }
-    if let Some(pid) = kernel.child_pid() {
-        let closed_for_watcher = closed.clone();
-        let shutdown_for_watcher = shutdown.clone();
-        let session_id_for_watcher = session_id.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = shutdown_for_watcher.notified() => return,
-                    _ = tokio::time::sleep(Duration::from_millis(500)) => {
-                        let mut status: libc::c_int = 0;
-                        let r = unsafe {
-                            libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG)
-                        };
-                        // r > 0  → child changed state and we reaped it
-                        //          (we won't, since our wait might also race
-                        //          tokio's signal handler — that's fine, the
-                        //          kernel exit is the signal we care about).
-                        // r == 0 → still running.
-                        // r < 0  → ECHILD: tokio already reaped, child gone.
-                        if r != 0 {
-                            log::info!("kernel pid {pid} exited (waitpid -> {r})");
-                            mark_session_closed(&session_id_for_watcher);
-                            closed_for_watcher.notify_one();
-                            return;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Shell driver: select between (a) outbound sends from the REPL and
-    // (b) inbound replies. Replies become Events fed to the renderer.
-    let renderer_shell = renderer.clone();
-    let closed_shell = closed.clone();
-    let shutdown_shell = shutdown.clone();
-    let session_id_shell = session_id.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = shutdown_shell.notified() => return,
-                send = shell_send_rx.recv() => match send {
-                    Some(msg) => {
-                        if let Err(e) = shell.send(msg).await {
-                            log::error!("shell send: {e}");
-                            mark_session_closed(&session_id_shell);
-                            closed_shell.notify_one();
-                            return;
-                        }
-                    }
-                    None => return,
-                },
-                read = shell.read() => match read {
-                    Ok(msg) => {
-                        if let Err(e) = renderer_shell.handle_event(from_message(Channel::Shell, &msg)) {
-                            log::warn!("renderer (shell): {e}");
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("shell recv: {e}");
-                        mark_session_closed(&session_id_shell);
-                        closed_shell.notify_one();
-                        return;
-                    }
-                },
-            }
-        }
-    });
-
-    // IOPub reader: read-only, pump everything to the renderer. Stop on
-    // socket error (kernel went away).
-    let renderer_iopub = renderer.clone();
-    let closed_iopub = closed.clone();
-    let shutdown_iopub = shutdown.clone();
-    let session_id_iopub = session_id.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = shutdown_iopub.notified() => return,
-                read = iopub.read() => match read {
-                    Ok(msg) => {
-                        if let Err(e) = renderer_iopub.handle_event(from_message(Channel::IoPub, &msg)) {
-                            log::warn!("renderer (iopub): {e}");
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("iopub recv: {e}");
-                        mark_session_closed(&session_id_iopub);
-                        closed_iopub.notify_one();
-                        return;
-                    }
-                },
-            }
-        }
-    });
-
-    // Stdin driver: input_request comes IN from the kernel; input_reply
-    // goes OUT.
-    let renderer_stdin = renderer.clone();
-    let closed_stdin = closed.clone();
-    let shutdown_stdin = shutdown.clone();
-    let session_id_stdin = session_id.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = shutdown_stdin.notified() => return,
-                send = stdin_send_rx.recv() => match send {
-                    Some(msg) => {
-                        if let Err(e) = stdin_sock.send(msg).await {
-                            log::error!("stdin send: {e}");
-                            mark_session_closed(&session_id_stdin);
-                            closed_stdin.notify_one();
-                            return;
-                        }
-                    }
-                    None => return,
-                },
-                read = stdin_sock.read() => match read {
-                    Ok(msg) => {
-                        if let Err(e) = renderer_stdin.handle_event(from_message(Channel::Stdin, &msg)) {
-                            log::warn!("renderer (stdin): {e}");
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("stdin recv: {e}");
-                        mark_session_closed(&session_id_stdin);
-                        closed_stdin.notify_one();
-                        return;
-                    }
-                },
-            }
-        }
-    });
-
-    let pipes = Pipes {
-        shell_tx: shell_send_tx,
-        stdin_tx: stdin_send_tx,
-        closed: closed.clone(),
-    };
-
-    // Banner: kernel_info_request, wait for its idle. Skipped on attach
-    // — the kernel's already past startup and the second client's banner
-    // round-trip just produces a duplicate idle status with nothing
-    // useful to render.
-    if !kernel.is_attached() {
-        let info_req: JupyterMessage = KernelInfoRequest {}.into();
-        let info_id = info_req.header.msg_id.clone();
-        let _ = pipes.shell_tx.send(info_req);
-        match wait_for_idle(
-            &mut idle_rx,
-            &mut input_rx,
-            &info_id,
-            Duration::from_secs(10),
-        )
-        .await
-        {
-            WaitResult::Idle | WaitResult::Timeout => {}
-            WaitResult::Closed => {
-                shutdown.notify_waiters();
-                return Ok(());
-            }
-            WaitResult::Input(_) => {}
-        }
-    }
+    // Liveness is owned by KernelSession (heartbeat for attached kernels,
+    // waitpid for spawned ones, socket-loop error path for crashes). The
+    // CLI's only liveness concern is flipping session.json to Closed; we
+    // do that inline at the two sites where the REPL observes Exited
+    // (the prompt-loop select and the wait-for-idle select), so no
+    // separate bridge task is needed.
+    let _ = (is_attached, child_pid);
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
@@ -471,8 +272,9 @@ pub async fn drive_repl(
                 (prompt_rl, result)
             });
             let line = tokio::select! {
-                _ = pipes.closed.notified() => {
+                _ = await_kernel_exited(session.watch_status()) => {
                     eprintln!("{}", ansi::red("Kernel exited"));
+                    mark_session_closed(&session_id);
                     shutdown.notify_waiters();
                     std::process::exit(0);
                 }
@@ -484,7 +286,7 @@ pub async fn drive_repl(
                         Err(rustyline::error::ReadlineError::Eof) => {
                             if buffer.is_empty() {
                                 shutdown.notify_waiters();
-                                return Ok(());
+                                return Ok(session);
                             }
                             // ^D inside an in-progress block: discard.
                             break 'accumulate None;
@@ -495,7 +297,7 @@ pub async fn drive_repl(
                         }
                         Err(e) => {
                             eprintln!("Readline: {e}");
-                            return Ok(());
+                            return Ok(session);
                         }
                     }
                 }
@@ -518,7 +320,11 @@ pub async fn drive_repl(
             }
             .into();
             let req_id = req.header.msg_id.clone();
-            let _ = pipes.shell_tx.send(req);
+            // We don't read the per-request stream — the global sink
+            // already feeds the reply through the renderer's
+            // is_complete_tx channel. Drop the stream immediately;
+            // RequestStream's Drop forgets its router slot for us.
+            let _ = session.request(req)?;
             let reply =
                 wait_for_is_complete(&mut is_complete_rx, &req_id, Duration::from_secs(5)).await;
             match reply.map(|r| (r.status, r.indent)) {
@@ -556,7 +362,7 @@ pub async fn drive_repl(
         }
         .into();
         let msg_id = req.header.msg_id.clone();
-        let _ = pipes.shell_tx.send(req);
+        let _ = session.request(req)?;
 
         let outcome = loop {
             let (intr_tx, mut intr_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -568,14 +374,14 @@ pub async fn drive_repl(
                     loop {
                         tokio::select! {
                             r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id, Duration::from_secs(300)) => return r,
-                            _ = pipes.closed.notified() => return WaitResult::Closed,
+                            _ = await_kernel_exited(session.watch_status()) => return WaitResult::Closed,
                             _ = intr_rx.recv() => {
-                                if let Err(e) = kernel.interrupt().await {
+                                if let Err(e) = session.interrupt().await {
                                     eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
                                 }
                             }
                             _ = sigint.recv() => {
-                                if let Err(e) = kernel.interrupt().await {
+                                if let Err(e) = session.interrupt().await {
                                     eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
                                 }
                             }
@@ -614,7 +420,7 @@ pub async fn drive_repl(
                         error: None,
                     }
                     .into();
-                    let _ = pipes.stdin_tx.send(reply);
+                    let _ = session.reply_stdin(reply);
                     continue;
                 }
                 other => break other,
@@ -629,6 +435,7 @@ pub async fn drive_repl(
                 eprintln!("{}", ansi::yellow("Timeout waiting for kernel"));
             }
             WaitResult::Closed => {
+                mark_session_closed(&session_id);
                 shutdown.notify_waiters();
                 std::process::exit(0);
             }

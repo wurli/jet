@@ -3,9 +3,11 @@
 use anyhow::Result;
 
 use jet_core::kernel::Kernel;
-use jet_core::session::{SessionStatus, SessionStore};
+use jet_core::manager::{SessionStatus, SessionStore};
 
-use crate::cli::{AttachArgs, ConnectArgs, ListArgs, ListKernelsArgs, StatusFilter, StopArgs};
+use crate::cli::{
+    AttachArgs, ConnectArgs, ExecuteArgs, ListArgs, ListKernelsArgs, StatusFilter, StopArgs,
+};
 use crate::pickers::{pick_kernelspec, pick_session};
 use crate::repl::drive_repl;
 
@@ -132,7 +134,7 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
         );
     }
 
-    let mut kernel =
+    let kernel =
         Kernel::spawn(&spec, Some(conn_path.clone()), args.session_name.as_deref()).await?;
     if let (Some(pid), Some(s)) = (kernel.child_pid(), session.as_mut()) {
         s.set_kernel_pid(pid);
@@ -140,12 +142,13 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let render_graphics = !args.no_graphics;
     let session_id = session.as_ref().map(|s| s.meta().id.clone());
-    drive_repl(&mut kernel, render_graphics, args.session_name, session_id).await?;
+    let mut kernel_session =
+        drive_repl(kernel, render_graphics, args.session_name, session_id).await?;
 
     if args.persist {
-        kernel.detach();
+        kernel_session.detach();
     } else {
-        let _ = kernel.shutdown().await;
+        let _ = kernel_session.shutdown().await;
         if let Some(s) = session.as_mut() {
             s.mark_closed();
         }
@@ -185,10 +188,78 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
             unreachable!("clap ArgGroup forbids passing both session_id and --connection-file")
         }
     };
-    let mut kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
+    let kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
     let render_graphics = !args.no_graphics;
-    drive_repl(&mut kernel, render_graphics, args.session_name, session_id).await?;
+    drive_repl(kernel, render_graphics, args.session_name, session_id).await?;
     // Attach mode never kills the kernel; we just disconnect.
+    Ok(())
+}
+
+pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
+    use std::io::Read;
+    use std::sync::{Arc, Mutex};
+
+    use jet_core::jupyter_protocol::{ExecuteRequest, JupyterMessage};
+
+    // When --connection-file is given, clap may have shifted positionals
+    // (filling session_id with what the user meant as code). Detect that
+    // and re-interpret: the lone positional is code.
+    let (conn_path, code_arg) = match (args.session_id, args.connection_file, args.code) {
+        (Some(id), None, code) => (
+            SessionStore::default()?.open(&id)?.connection_file_path(),
+            code,
+        ),
+        (Some(first), Some(path), None) => (path, Some(first)),
+        (None, Some(path), code) => (path, code),
+        (Some(_), Some(_), Some(_)) => {
+            anyhow::bail!(
+                "cannot pass both a session id and --connection-file together with code; \
+                 pick one target"
+            )
+        }
+        (None, None, _) => {
+            anyhow::bail!("must provide a session id or --connection-file")
+        }
+    };
+
+    let code = match code_arg {
+        Some(c) => c,
+        None => {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf)?;
+            buf
+        }
+    };
+
+    let kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
+
+    let render_graphics = !args.no_graphics;
+    if render_graphics {
+        crate::render::warn_if_passthrough_off();
+    }
+    let (idle_tx, _idle_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let writer: crate::render::SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
+    let renderer = crate::render::Renderer::new(render_graphics, idle_tx, writer)
+        .with_own_session_name(args.session_name.clone());
+
+    // KernelSession::start performs a kernel_info handshake — that's
+    // the fast-fail probe that confirms the kernel is answering. We
+    // don't install a sink, so the banner isn't rendered for execute.
+    let (session, _info) = jet_core::kernel_session::KernelSession::start(kernel).await?;
+
+    let req: JupyterMessage = ExecuteRequest {
+        code,
+        silent: false,
+        store_history: false,
+        user_expressions: None,
+        allow_stdin: false,
+        stop_on_error: true,
+    }
+    .into();
+    session
+        .request(req)?
+        .drain_to_idle(|f| renderer.handle_event(jet_core::events::from_message(f.channel, &f.message)))
+        .await?;
     Ok(())
 }
 

@@ -11,7 +11,6 @@ crate-type = ["cdylib"]
 jet_core.workspace = true
 
 anyhow.workspace = true
-crossbeam-channel.workspace = true
 log.workspace = true
 mlua.workspace = true
 once_cell.workspace = true

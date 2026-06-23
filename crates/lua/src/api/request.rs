@@ -1,6 +1,6 @@
 //! Per-request Lua API. Each function builds a Jupyter shell-channel
-//! request, hands it to the kernel's shell writer task, and returns a
-//! poll closure (see [`crate::poll::make_poll`]) the Lua caller drains.
+//! request, hands it to the session, and returns a poll closure (see
+//! [`crate::poll::make_poll`]) the Lua caller drains.
 
 use jet_core::jupyter_protocol::{
     CommMsg, CommOpen, CompleteRequest, ExecuteRequest, IsCompleteRequest, JupyterMessage,
@@ -10,23 +10,20 @@ use rand::Rng;
 use serde_json::Value;
 
 use crate::poll::make_poll;
-use crate::runtime::{KernelHandle, get};
+use crate::runtime::{KernelHandle, get, rt};
 
-/// Common path: register a router slot for the message's id, push it to
-/// the shell writer task, return the polling closure.
+/// Common path: hand a message to the kernel session and wrap the
+/// resulting [`RequestStream`] in a Lua poll closure.
 fn shell_request(
     lua: &Lua,
     handle: &KernelHandle,
     msg: JupyterMessage,
 ) -> LuaResult<LuaFunction> {
-    let msg_id = msg.header.msg_id.clone();
-    let rx = handle.router.register(msg_id.clone());
-    handle
-        .shell_tx
-        .send(msg)
-        .map_err(|e| anyhow::anyhow!("shell_tx send: {e}"))
+    let session = handle.clone();
+    let stream = rt()
+        .block_on(async move { session.lock().await.request(msg) })
         .into_lua_err()?;
-    make_poll(lua, rx, msg_id, handle.router.clone())
+    make_poll(lua, stream)
 }
 
 pub fn execute_code(

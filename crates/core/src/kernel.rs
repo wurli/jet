@@ -191,7 +191,26 @@ impl Kernel {
         let guard = ChildGuard::new(child);
 
         let session_id = make_session_id(session_name);
-        let channels = connect_channels(&info, &session_id).await?;
+        let channels = match connect_channels(&info, &session_id).await {
+            Ok(c) => c,
+            Err(e) => {
+                // The most common cause of channel-connect failure is
+                // the kernel exiting before opening its ports. Give
+                // the OS a beat to mark the child dead so child_alive
+                // reports honestly, then enrich.
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let alive = match guard.id() {
+                    Some(pid) => unsafe { libc::kill(pid as libc::pid_t, 0) == 0 },
+                    None => true,
+                };
+                return Err(enrich_startup_error(
+                    e,
+                    guard.id(),
+                    alive,
+                    log_file_path.as_deref(),
+                ));
+            }
+        };
 
         Ok(Self {
             child: Some(guard),
@@ -201,6 +220,26 @@ impl Kernel {
             channels,
             log_file_path,
         })
+    }
+
+    /// Build a degenerate [`Kernel`] for tests — no ZMQ channels, no
+    /// child process, with a caller-supplied log path. Used by
+    /// `kernel_session::tests` to exercise the startup-error
+    /// enrichment path without paying zeromq-rs's 30s connect
+    /// timeout against a non-listening peer.
+    #[cfg(test)]
+    pub fn synthetic_for_test(
+        session_id: Option<String>,
+        log_file_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            child: None,
+            _connection_path: ConnectionPath::OwnedTemp(default_temp_path()),
+            session_id: session_id.unwrap_or_else(|| "test".into()),
+            interrupt_mode: InterruptMode::Signal,
+            channels: Channels::default(),
+            log_file_path,
+        }
     }
 
     /// Attach to an already-running kernel via its connection file. We do
@@ -329,6 +368,45 @@ impl Kernel {
         }
         Ok(())
     }
+}
+
+/// Decorate a startup-time failure with extra context the bare error
+/// can't carry: whether the spawned child has already exited, and a
+/// tail of the kernel's stderr log (when one was created).
+///
+/// "Connection refused" on a fresh attach, "Connect timed out after
+/// 30s" from zeromq-rs's connect, or "timed out waiting for
+/// kernel_info_reply" from the handshake are all useless on their
+/// own. Most real-world startup failures show up in the kernel's
+/// stderr — a Python ImportError, a missing R library, an
+/// interpreter that can't find its prefix. Surface that here so the
+/// user doesn't have to know about the log file.
+pub fn enrich_startup_error(
+    err: anyhow::Error,
+    child_pid: Option<u32>,
+    child_alive: bool,
+    log_path: Option<&Path>,
+) -> anyhow::Error {
+    let mut parts = vec![err.to_string()];
+
+    if let Some(pid) = child_pid {
+        if !child_alive {
+            parts.push(format!("kernel process (pid {pid}) has already exited"));
+        }
+    }
+
+    if let Some(path) = log_path {
+        match std::fs::read_to_string(path) {
+            Ok(s) if !s.trim().is_empty() => {
+                let tail: Vec<&str> = s.lines().rev().take(20).collect();
+                let tail = tail.into_iter().rev().collect::<Vec<_>>().join("\n");
+                parts.push(format!("kernel stderr (tail):\n{tail}"));
+            }
+            _ => {}
+        }
+    }
+
+    anyhow!(parts.join("\n\n"))
 }
 
 /// Quick liveness check: TCP-connect to the shell port with a short
