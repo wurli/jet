@@ -57,6 +57,12 @@ pub enum Command {
     /// Exits once the kernel goes idle for the request.
     #[command(alias = "e")]
     Execute(ExecuteArgs),
+
+    /// Send code to a running kernel and exit immediately. Output (if any)
+    /// is discarded — the kernel runs the cell after `jet` has gone. Same
+    /// target shape as `jet execute`, minus rendering options.
+    #[command(alias = "se")]
+    Send(SendArgs),
 }
 
 impl Command {
@@ -68,6 +74,7 @@ impl Command {
             Command::ListKernels(c) => &c.global,
             Command::Stop(c) => &c.global,
             Command::Execute(c) => &c.global,
+            Command::Send(c) => &c.global,
         }
     }
 }
@@ -205,9 +212,48 @@ pub struct ExecuteArgs {
     /// Code to execute. If omitted, read from stdin.
     pub code: Option<String>,
 
+    /// Set the `silent` flag on the underlying Jupyter `execute_request`.
+    /// Kernels typically suppress output (including `display_data`) and
+    /// skip history when this is set.
+    #[arg(long)]
+    pub silent: bool,
+
     /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
     #[arg(long)]
     pub no_graphics: bool,
+
+    /// A name used to identify the client.
+    #[arg(long)]
+    pub session_name: Option<String>,
+
+    #[command(flatten)]
+    pub global: GlobalArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct SendArgs {
+    /// Session id (directory name under the jet data dir) to send to.
+    /// Look these up with `jet list`.
+    pub session_id: Option<String>,
+
+    /// Path to a connection file. Alternative to the positional `session_id`.
+    /// When combined with `--kernelspec`, the file must not already exist —
+    /// jet writes it for the kernel it spawns.
+    #[arg(long)]
+    pub connection_file: Option<PathBuf>,
+
+    /// Path to a Jupyter `kernel.json` kernelspec. When set, jet spawns a
+    /// fresh kernel for this send and shuts it down on exit. Mutually
+    /// exclusive with the positional `session_id`.
+    #[arg(long)]
+    pub kernelspec: Option<PathBuf>,
+
+    /// Code to send. If omitted, read from stdin.
+    pub code: Option<String>,
+
+    /// Set the `silent` flag on the underlying Jupyter `execute_request`.
+    #[arg(long)]
+    pub silent: bool,
 
     /// A name used to identify the client.
     #[arg(long)]

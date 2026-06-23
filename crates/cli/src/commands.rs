@@ -6,7 +6,8 @@ use jet_core::kernel::Kernel;
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
-    AttachArgs, ConnectArgs, ExecuteArgs, ListArgs, ListKernelsArgs, StatusFilter, StopArgs,
+    AttachArgs, ConnectArgs, ExecuteArgs, ListArgs, ListKernelsArgs, SendArgs, StatusFilter,
+    StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::drive_repl;
@@ -195,51 +196,52 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
     Ok(())
 }
 
-/// Where `jet execute` should get its kernel from.
-enum ExecuteTarget {
+/// Where a code-running subcommand (`execute`, `send`) should get its kernel from.
+enum KernelTarget {
     /// Attach to an already-running kernel.
     Attach(std::path::PathBuf),
-    /// Spawn a fresh kernel for this execute and shut it down on exit.
+    /// Spawn a fresh kernel and shut it down when done.
     Spawn {
         kernelspec: std::path::PathBuf,
         conn_path: Option<std::path::PathBuf>,
     },
 }
 
-/// Resolve the target and the code-to-execute from `ExecuteArgs`.
+/// Resolve the target and the code-to-run from the four argument slots
+/// shared by `jet execute` and `jet send`.
 ///
 /// Clap can't disambiguate positionals when one of them (`session_id`)
 /// is excluded by a flag (`--kernelspec`): with `--kernelspec K 'code'`
 /// clap fills `session_id="code"`. We handle that shift here. The valid
 /// shapes are:
 ///
-///   - `session_id [code]`                       → Attach
-///   - `--connection-file P [code]`              → Attach
-///   - `session_id --connection-file P` (code)   → Attach, positional was code
-///   - `--kernelspec K [--connection-file P] [code]` → Spawn
-///   - `--kernelspec K session_id` (code)        → Spawn, positional was code
-fn resolve_execute_target(args: ExecuteArgs) -> Result<(ExecuteTarget, Option<String>)> {
-    let ExecuteArgs {
-        session_id,
-        connection_file,
-        kernelspec,
-        code,
-        ..
-    } = args;
-
+///   - `session_id [code]`                            → Attach
+///   - `--connection-file P [code]`                   → Attach
+///   - `session_id --connection-file P` (code)        → Attach, positional was code
+///   - `--kernelspec K [--connection-file P] [code]`  → Spawn
+///   - `--kernelspec K session_id` (code)             → Spawn, positional was code
+///
+/// `subcommand` is the name the conflict errors should attribute to.
+fn resolve_kernel_target(
+    subcommand: &str,
+    session_id: Option<String>,
+    connection_file: Option<std::path::PathBuf>,
+    kernelspec: Option<std::path::PathBuf>,
+    code: Option<String>,
+) -> Result<(KernelTarget, Option<String>)> {
     if let Some(kernelspec) = kernelspec {
         // Spawn mode. `session_id` is never valid here — but if the user
         // also passed `code`, treat session_id as a real conflict; if
         // not, clap just shifted code into session_id.
         let code = match (session_id, code) {
             (Some(_), Some(_)) => crate::cli::conflict_exit(
-                "execute",
+                subcommand,
                 "the argument '[SESSION_ID]' cannot be used with '--kernelspec <KERNELSPEC>'",
             ),
             (shifted, code) => code.or(shifted),
         };
         return Ok((
-            ExecuteTarget::Spawn {
+            KernelTarget::Spawn {
                 kernelspec,
                 conn_path: connection_file,
             },
@@ -250,53 +252,52 @@ fn resolve_execute_target(args: ExecuteArgs) -> Result<(ExecuteTarget, Option<St
     // Attach mode.
     match (session_id, connection_file, code) {
         (Some(id), None, code) => Ok((
-            ExecuteTarget::Attach(SessionStore::default()?.open(&id)?.connection_file_path()),
+            KernelTarget::Attach(SessionStore::default()?.open(&id)?.connection_file_path()),
             code,
         )),
-        (None, Some(path), code) => Ok((ExecuteTarget::Attach(path), code)),
+        (None, Some(path), code) => Ok((KernelTarget::Attach(path), code)),
         // `--connection-file P shifted` → the positional was code, not session_id.
-        (Some(shifted), Some(path), None) => Ok((ExecuteTarget::Attach(path), Some(shifted))),
+        (Some(shifted), Some(path), None) => Ok((KernelTarget::Attach(path), Some(shifted))),
         (Some(_), Some(_), Some(_)) => crate::cli::conflict_exit(
-            "execute",
+            subcommand,
             "the argument '[SESSION_ID]' cannot be used with '--connection-file <CONNECTION_FILE>'",
         ),
         (None, None, _) => crate::cli::conflict_exit(
-            "execute",
+            subcommand,
             "must provide one of '[SESSION_ID]', '--connection-file <CONNECTION_FILE>', \
              or '--kernelspec <KERNELSPEC>'",
         ),
     }
 }
 
-pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
-    use std::io::Read;
-    use std::sync::{Arc, Mutex};
+/// Read code from stdin if the caller didn't pass it as an argument.
+/// Errors instead of blocking when stdin is a tty — `jet e <session>` with
+/// no arg would otherwise hang forever waiting on EOF.
+fn code_or_stdin(code: Option<String>) -> Result<String> {
+    use std::io::{IsTerminal, Read};
+    if let Some(c) = code {
+        return Ok(c);
+    }
+    if std::io::stdin().is_terminal() {
+        anyhow::bail!("no code given; pass it as an argument or pipe via stdin");
+    }
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf)?;
+    Ok(buf)
+}
 
-    use jet_core::jupyter_protocol::ExecuteRequest;
-
-    let session_name = args.session_name.clone();
-    let no_graphics = args.no_graphics;
-    let (target, code_arg) = resolve_execute_target(args)?;
-
-    let code = match code_arg {
-        Some(c) => c,
-        None => {
-            use std::io::IsTerminal;
-            if std::io::stdin().is_terminal() {
-                anyhow::bail!("no code given; pass it as an argument or pipe via stdin");
-            }
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            buf
+/// Open a kernel for one of the code-running subcommands. Returns the
+/// kernel and a flag indicating whether we spawned it (and so should
+/// shut it down on the way out).
+async fn open_target_kernel(
+    target: KernelTarget,
+    session_name: Option<&str>,
+) -> Result<(Kernel, bool)> {
+    match target {
+        KernelTarget::Attach(conn_path) => {
+            Ok((Kernel::attach(&conn_path, session_name).await?, false))
         }
-    };
-
-    let (kernel, spawned) = match target {
-        ExecuteTarget::Attach(conn_path) => (
-            Kernel::attach(&conn_path, session_name.as_deref()).await?,
-            false,
-        ),
-        ExecuteTarget::Spawn {
+        KernelTarget::Spawn {
             kernelspec,
             conn_path,
         } => {
@@ -310,16 +311,34 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
             }
             let spec = jet_core::kernel::KernelSpec::load(&kernelspec)?;
             log::info!(
-                "spawning kernel for execute (language={}, argv={:?})",
+                "spawning kernel (language={}, argv={:?})",
                 spec.language,
                 spec.argv,
             );
-            (
-                Kernel::spawn(&spec, conn_path, session_name.as_deref()).await?,
-                true,
-            )
+            Ok((Kernel::spawn(&spec, conn_path, session_name).await?, true))
         }
-    };
+    }
+}
+
+pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
+    use std::sync::{Arc, Mutex};
+
+    use jet_core::jupyter_protocol::ExecuteRequest;
+
+    let ExecuteArgs {
+        session_id,
+        connection_file,
+        kernelspec,
+        code,
+        silent,
+        no_graphics,
+        session_name,
+        ..
+    } = args;
+    let (target, code_arg) =
+        resolve_kernel_target("execute", session_id, connection_file, kernelspec, code)?;
+    let code = code_or_stdin(code_arg)?;
+    let (kernel, spawned) = open_target_kernel(target, session_name.as_deref()).await?;
 
     let render_graphics = !no_graphics;
     if render_graphics {
@@ -339,7 +358,7 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
         .request(
             ExecuteRequest {
                 code,
-                silent: false,
+                silent,
                 store_history: false,
                 user_expressions: None,
                 allow_stdin: false,
@@ -354,6 +373,55 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
 
     if spawned {
         let _ = session.shutdown().await;
+    }
+
+    Ok(())
+}
+
+pub async fn run_send(args: SendArgs) -> Result<()> {
+    use jet_core::jupyter_protocol::ExecuteRequest;
+
+    let SendArgs {
+        session_id,
+        connection_file,
+        kernelspec,
+        code,
+        silent,
+        session_name,
+        ..
+    } = args;
+    let (target, code_arg) =
+        resolve_kernel_target("send", session_id, connection_file, kernelspec, code)?;
+    let code = code_or_stdin(code_arg)?;
+    let (kernel, spawned) = open_target_kernel(target, session_name.as_deref()).await?;
+
+    let (session, _info) = jet_core::client::Client::start(kernel).await?;
+
+    let mut stream = session.request(
+        ExecuteRequest {
+            code,
+            silent,
+            store_history: false,
+            user_expressions: None,
+            allow_stdin: false,
+            stop_on_error: true,
+        }
+        .into(),
+    )?;
+
+    if spawned {
+        // We own this kernel — wait for the cell to finish, then shut
+        // down. Otherwise we'd race ZMQ teardown against the kernel
+        // mid-execution and lose the work the user just asked for.
+        while stream.recv().await.is_some() {}
+        let _ = session.shutdown().await;
+    } else {
+        // Fire-and-forget against a kernel we don't own. Wait only for
+        // the first routed frame (typically `status: busy` on iopub for
+        // our msg_id) — that confirms the kernel has the request off
+        // shell. After that, dropping the sockets is safe; the kernel
+        // keeps running the cell on its own.
+        let _ = stream.recv().await;
     }
 
     Ok(())
