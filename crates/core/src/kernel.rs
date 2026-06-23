@@ -185,9 +185,9 @@ impl Kernel {
             command.process_group(0);
         }
         log::info!("spawning kernel: {:?}", spec.argv);
-        let child = command
-            .spawn()
-            .with_context(|| format!("spawning kernel {:?}", spec.argv.first()))?;
+        let child = command.spawn().with_context(|| {
+            format!("running kernelspec argv `{}`", spec.argv.join(" "))
+        })?;
         let guard = ChildGuard::new(child);
 
         let session_id = make_session_id(session_name);
@@ -228,10 +228,7 @@ impl Kernel {
     /// enrichment path without paying zeromq-rs's 30s connect
     /// timeout against a non-listening peer.
     #[cfg(test)]
-    pub fn synthetic_for_test(
-        session_id: Option<String>,
-        log_file_path: Option<PathBuf>,
-    ) -> Self {
+    pub fn synthetic_for_test(session_id: Option<String>, log_file_path: Option<PathBuf>) -> Self {
         Self {
             child: None,
             _connection_path: ConnectionPath::OwnedTemp(default_temp_path()),
@@ -269,7 +266,7 @@ impl Kernel {
         })
     }
 
-/// Stop killing the child on drop. Use before exiting `jet` when the
+    /// Stop killing the child on drop. Use before exiting `jet` when the
     /// caller wants the kernel to outlive the process. No-op for attached
     /// kernels.
     pub fn detach(&mut self) {
