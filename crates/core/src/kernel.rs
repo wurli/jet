@@ -230,21 +230,7 @@ impl Kernel {
         })
     }
 
-    pub async fn attach_or_spawn(
-        spec: &KernelSpec,
-        connection_path: &Path,
-        session_name: Option<&str>,
-    ) -> Result<Self> {
-        match Self::attach(&connection_path, session_name).await {
-            Ok(kernel) => Ok(kernel),
-            Err(e) => {
-                log::info!("Failed to connect to existing kernel at {connection_path:?}: {e}");
-                Self::spawn(spec, Some(connection_path.to_path_buf()), session_name).await
-            }
-        }
-    }
-
-    /// Stop killing the child on drop. Use before exiting `jet` when the
+/// Stop killing the child on drop. Use before exiting `jet` when the
     /// caller wants the kernel to outlive the process. No-op for attached
     /// kernels.
     pub fn detach(&mut self) {
@@ -347,9 +333,8 @@ impl Kernel {
 
 /// Quick liveness check: TCP-connect to the shell port with a short
 /// timeout. Returns `Err` if the kernel's no longer listening, so
-/// `attach_or_spawn` can fall through to spawn — and so external
-/// probers (session list self-heal) can check liveness without
-/// constructing a full `Kernel`.
+/// external probers (session list self-heal) can check liveness
+/// without constructing a full `Kernel`.
 pub async fn probe_kernel_alive(info: &ConnectionInfo) -> Result<()> {
     use jupyter_protocol::Transport;
     if !matches!(info.transport, Transport::TCP) {

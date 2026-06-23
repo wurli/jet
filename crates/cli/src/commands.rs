@@ -118,8 +118,15 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
         .clone()
         .unwrap_or_else(|| session.connection_file_path());
 
+    if conn_path.exists() {
+        anyhow::bail!(
+            "connection file already exists at {0}: remove it or run `jet attach --connection-file {0}` to reconnect",
+            conn_path.display(),
+        );
+    }
+
     let mut kernel =
-        Kernel::attach_or_spawn(&spec, &conn_path, args.session_name.as_deref()).await?;
+        Kernel::spawn(&spec, Some(conn_path.clone()), args.session_name.as_deref()).await?;
     if let Some(pid) = kernel.child_pid() {
         session.set_kernel_pid(pid);
     }

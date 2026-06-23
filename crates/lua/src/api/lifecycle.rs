@@ -16,10 +16,9 @@ use crate::runtime::{KERNELS, KernelHandle, get, rt};
 
 /// `jet.connect(spec_path, connection_file?) -> (session_id, info)`
 ///
-/// Spawn a kernel from `spec_path`. If `connection_file` is given,
-/// attach to a kernel already listening there or spawn against that
-/// path if the attach fails (mirrors [`Kernel::attach_or_spawn`] and
-/// `jet connect --connection-file`).
+/// Spawn a kernel from `spec_path`. If `connection_file` is given and
+/// the path already exists, errors — use `jet.attach` to reconnect.
+/// Mirrors `jet connect --connection-file`.
 pub fn connect(
     lua: &Lua,
     (spec_path, connection_file, session_name): (String, Option<String>, Option<String>),
@@ -28,16 +27,19 @@ pub fn connect(
         .with_context(|| format!("loading kernelspec {spec_path}"))
         .into_lua_err()?;
 
+    let conn_path = connection_file.map(PathBuf::from);
+    if let Some(p) = &conn_path
+        && p.exists()
+    {
+        return Err(LuaError::external(anyhow::anyhow!(
+            "connection file already exists at {0}: remove it or call jet.attach({0:?}) to reconnect",
+            p.display(),
+        )));
+    }
+
     let (session_id, info, handle) = rt()
         .block_on(async move {
-            let kernel = match connection_file {
-                Some(p) => {
-                    Kernel::attach_or_spawn(&spec, &PathBuf::from(p), session_name.as_deref())
-                        .await?
-                }
-                None => Kernel::spawn(&spec, None, session_name.as_deref()).await?,
-            };
-            boot_kernel(kernel).await
+            boot_kernel(Kernel::spawn(&spec, conn_path, session_name.as_deref()).await?).await
         })
         .into_lua_err()?;
 
