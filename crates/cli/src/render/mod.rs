@@ -13,15 +13,29 @@ pub use kitty::emit_png;
 pub use tmux::warn_if_passthrough_off;
 
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use base64::Engine;
 use jet_core::events::{Event, EventData, InputRequest, IsCompleteReplyMsg};
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 pub type SharedWriter = Arc<Mutex<dyn Write + Send>>;
+
+/// Shared kernel-busy state visible to the REPL. The renderer flips
+/// `busy` to true on a Busy status from a *different* session and back
+/// to false on the matching Idle, notifying waiters on every transition
+/// to false. The REPL parks on `notify` before drawing a new prompt so
+/// it doesn't redraw while another client is mid-execute.
+#[derive(Default, Clone)]
+pub struct BusyState {
+    pub busy: Arc<AtomicBool>,
+    pub notify: Arc<Notify>,
+    /// session name currently holding the kernel busy, for display.
+    pub holder: Arc<Mutex<Option<String>>>,
+}
 
 #[derive(Clone)]
 pub struct Renderer {
@@ -29,6 +43,7 @@ pub struct Renderer {
     pub idle_tx: mpsc::UnboundedSender<String>,
     pub input_tx: Option<mpsc::UnboundedSender<InputRequest>>,
     pub is_complete_tx: Option<mpsc::UnboundedSender<IsCompleteReplyMsg>>,
+    pub busy_state: BusyState,
     writer: SharedWriter,
     // The session name passed via --session-name (None or "jet" if not
     // set). Output that originated from this same session is shown
@@ -53,6 +68,7 @@ impl Renderer {
             idle_tx,
             input_tx: None,
             is_complete_tx: None,
+            busy_state: BusyState::default(),
             writer,
             own_session_name: None,
             at_line_start: Arc::new(Mutex::new(true)),
@@ -136,8 +152,23 @@ impl Renderer {
                     let mut w = self.writer.lock().unwrap();
                     write!(w, "> ")?;
                     w.flush()?;
+                    // Release the REPL prompt-gate that was set when this
+                    // session went Busy.
+                    self.busy_state.busy.store(false, Ordering::SeqCst);
+                    *self.busy_state.holder.lock().unwrap() = None;
+                    self.busy_state.notify.notify_waiters();
                 }
                 let _ = self.idle_tx.send(parent_id.unwrap_or_default());
+            }
+            EventData::Busy { .. } => {
+                // Another session has started executing. Set the
+                // prompt-gate so this REPL parks instead of drawing a new
+                // prompt over the in-flight output.
+                if !is_own_session {
+                    self.busy_state.busy.store(true, Ordering::SeqCst);
+                    *self.busy_state.holder.lock().unwrap() =
+                        session_name.map(|s| s.to_string());
+                }
             }
             EventData::InputRequest {
                 prompt,
@@ -165,7 +196,7 @@ impl Renderer {
                     });
                 }
             }
-            EventData::Busy { .. } | EventData::KernelExited | EventData::Other => {}
+            EventData::KernelExited | EventData::Other => {}
         }
         Ok(())
     }

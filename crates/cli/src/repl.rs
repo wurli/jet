@@ -216,6 +216,7 @@ pub async fn drive_repl(
         .with_input_tx(input_tx)
         .with_is_complete_tx(is_complete_tx)
         .with_own_session_name(session_name.clone());
+    let busy_state = renderer.busy_state.clone();
 
     // KernelSession::start_with_sink performs the kernel_info
     // handshake before spawning the socket loop, feeding the reply
@@ -262,6 +263,25 @@ pub async fn drive_repl(
         // so we render it verbatim instead of prepending our own.
         let mut next_indent: Option<String> = None;
         let code = 'accumulate: loop {
+            // If another session is currently executing, park before
+            // drawing the prompt. Without this, every CR the user types
+            // produces a fresh `> ` even though the kernel is busy with
+            // someone else's request — hiding the fact that it's busy.
+            // We watch for kernel-exit alongside so a crash during a
+            // foreign execute still wakes us out of the park.
+            while busy_state.busy.load(std::sync::atomic::Ordering::SeqCst) {
+                let notified = busy_state.notify.notified();
+                tokio::select! {
+                    _ = notified => {}
+                    _ = await_kernel_exited(session.watch_status()) => {
+                        eprintln!("{}", ansi::red("Kernel exited"));
+                        mark_session_closed(&session_id);
+                        shutdown.notify_waiters();
+                        std::process::exit(0);
+                    }
+                }
+            }
+
             let mut prompt_rl = rl.take().expect("editor present at top of loop");
             let prompt = match &next_indent {
                 None => "> ".to_string(),
