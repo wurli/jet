@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::fmt::shorten_path;
 use crate::picker;
-use jet_core::session::{SessionStatus, SessionStore};
+use jet_core::manager::{SessionStatus, SessionStore};
 
 /// Interactive picker over kernelspecs discovered on disk. Returns
 /// `Ok(None)` on cancel or empty list.

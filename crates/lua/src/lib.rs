@@ -11,7 +11,6 @@
 
 mod api;
 mod poll;
-mod router;
 mod runtime;
 
 use mlua::prelude::*;

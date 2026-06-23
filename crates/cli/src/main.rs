@@ -27,5 +27,6 @@ async fn main() -> Result<()> {
         Command::Stop(c) => commands::run_stop(c).await,
         Command::ListSessions(c) => commands::run_list(c).await,
         Command::ListKernels(c) => commands::run_list_kernels(c),
+        Command::Execute(c) => commands::run_execute(c).await,
     }
 }

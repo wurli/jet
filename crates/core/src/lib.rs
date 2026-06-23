@@ -8,9 +8,10 @@
 pub mod connection_file;
 pub mod events;
 pub mod kernel;
+pub mod kernel_session;
 pub mod kernel_spec;
 pub mod logger;
-pub mod session;
+pub mod manager;
 
 pub use jupyter_protocol;
 pub use jupyter_zmq_client;

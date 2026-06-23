@@ -1,21 +1,17 @@
 //! Process-global tokio runtime + kernel registry.
 //!
 //! Lua callers are sync; we own a multi-threaded tokio runtime once and
-//! `block_on` jet-core calls through it. Each kernel gets a long-lived
-//! pair of reader tasks (one per ZMQ channel that flows kernel→client)
-//! plus mpsc senders for the two channels that flow client→kernel
-//! (shell + stdin). Lifecycle calls (interrupt, shutdown) own the
-//! `Kernel` directly under a tokio mutex.
+//! `block_on` jet-core calls through it. Each kernel is wrapped in an
+//! [`Arc<tokio::sync::Mutex<KernelSession>>`] so the lua-side registry
+//! can hand out shared handles — the lock keeps per-kernel state safe
+//! when sync lua callers race on lifecycle methods (`interrupt`,
+//! `shutdown`) and per-request sends.
 
-use jet_core::jupyter_protocol::JupyterMessage;
-use jet_core::kernel::Kernel;
+use jet_core::kernel_session::KernelSession;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::runtime::{Builder, Runtime};
-use tokio::sync::mpsc::UnboundedSender;
-
-use crate::router::FrameRouter;
 
 /// Lazily-built, process-global runtime.
 pub fn rt() -> &'static Runtime {
@@ -29,22 +25,12 @@ pub fn rt() -> &'static Runtime {
     &RT
 }
 
-pub struct KernelHandle {
-    /// The kernel itself. Held under a tokio mutex because lifecycle
-    /// methods (interrupt, shutdown) need `&mut self` and we want one at
-    /// a time.
-    pub kernel: Arc<tokio::sync::Mutex<Kernel>>,
-    /// Outbound shell sends: `execute_request`, `complete_request`, etc.
-    pub shell_tx: UnboundedSender<JupyterMessage>,
-    /// Outbound stdin sends: `input_reply`.
-    pub stdin_tx: UnboundedSender<JupyterMessage>,
-    pub router: Arc<FrameRouter>,
-}
+pub type KernelHandle = Arc<tokio::sync::Mutex<KernelSession>>;
 
-pub static KERNELS: Lazy<Mutex<HashMap<String, Arc<KernelHandle>>>> =
+pub static KERNELS: Lazy<Mutex<HashMap<String, KernelHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn get(session_id: &str) -> anyhow::Result<Arc<KernelHandle>> {
+pub fn get(session_id: &str) -> anyhow::Result<KernelHandle> {
     KERNELS
         .lock()
         .unwrap()

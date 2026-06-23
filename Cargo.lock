@@ -808,6 +808,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "crossbeam-channel",
  "env_logger",
  "hex",
  "jupyter-protocol",
@@ -827,7 +828,6 @@ name = "jet_lua"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crossbeam-channel",
  "jet_core",
  "log",
  "mlua",

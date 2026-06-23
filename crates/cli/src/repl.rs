@@ -15,7 +15,7 @@ use jet_core::jupyter_protocol::{
     KernelInfoRequest,
 };
 use jet_core::kernel::Kernel;
-use jet_core::session::SessionStore;
+use jet_core::manager::SessionStore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};

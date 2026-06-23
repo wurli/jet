@@ -1,17 +1,12 @@
 //! Kernel lifecycle: start, attach, shutdown, interrupt, list.
 
 use anyhow::Context;
-use jet_core::events::{Channel, EventData, from_message, raw_msg_type_and_content};
-use jet_core::jupyter_protocol::{JupyterMessage, KernelInfoRequest};
 use jet_core::kernel::{Kernel, KernelSpec};
+use jet_core::kernel_session::KernelSession;
 use mlua::prelude::*;
-use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::router::{Frame, FrameRouter};
 use crate::runtime::{KERNELS, KernelHandle, get, rt};
 
 /// `jet.connect(spec_path, connection_file?) -> (session_id, info)`
@@ -39,7 +34,8 @@ pub fn connect(
 
     let (session_id, info, handle) = rt()
         .block_on(async move {
-            boot_kernel(Kernel::spawn(&spec, conn_path, session_name.as_deref()).await?).await
+            let kernel = Kernel::spawn(&spec, conn_path, session_name.as_deref()).await?;
+            wrap(kernel).await
         })
         .into_lua_err()?;
 
@@ -58,7 +54,8 @@ pub fn attach(
     let path = PathBuf::from(&connection_file);
     let (session_id, info, handle) = rt()
         .block_on(async move {
-            boot_kernel(Kernel::attach(&path, session_name.as_deref()).await?).await
+            let kernel = Kernel::attach(&path, session_name.as_deref()).await?;
+            wrap(kernel).await
         })
         .into_lua_err()?;
 
@@ -66,176 +63,40 @@ pub fn attach(
     Ok((session_id, lua.to_value(&info)?))
 }
 
-/// Move all four channel halves out of the kernel, send
-/// `kernel_info_request` synchronously, then spawn the long-running
-/// reader/writer tasks and return a populated [`KernelHandle`]. Used
-/// by both `start_kernel` and `attach_kernel`.
-async fn boot_kernel(mut kernel: Kernel) -> anyhow::Result<(String, Value, Arc<KernelHandle>)> {
+/// Wrap a freshly built [`Kernel`] in a [`KernelSession`] and the
+/// lua-side shared handle, returning the session id (taken from the
+/// kernel) and the kernel_info reply.
+async fn wrap(kernel: Kernel) -> anyhow::Result<(String, serde_json::Value, KernelHandle)> {
     let session_id = kernel.session_id.clone();
-
-    let mut shell = kernel.channels.take_shell()?;
-    let iopub = kernel.channels.take_iopub()?;
-    let stdin_sock = kernel.channels.take_stdin()?;
-
-    // kernel_info_request: send + wait for reply on the still-borrowed
-    // shell socket, before spawning the long-running shell task.
-    let info_req: JupyterMessage = KernelInfoRequest {}.into();
-    let info_id = info_req.header.msg_id.clone();
-    shell.send(info_req).await.context("shell.send")?;
-    let info = match tokio::time::timeout(
-        Duration::from_secs(10),
-        await_kernel_info(&mut shell, &info_id),
-    )
-    .await
-    {
-        Ok(r) => r?,
-        Err(_) => anyhow::bail!("timed out waiting for kernel_info_reply"),
-    };
-
-    let (shell_tx, shell_rx) = tokio::sync::mpsc::unbounded_channel::<JupyterMessage>();
-    let (stdin_tx, stdin_rx) = tokio::sync::mpsc::unbounded_channel::<JupyterMessage>();
-
-    let router = Arc::new(FrameRouter::new());
-
-    spawn_shell_loop(shell, shell_rx, router.clone());
-    spawn_iopub_reader(iopub, router.clone());
-    spawn_stdin_loop(stdin_sock, stdin_rx, router.clone());
-
-    let handle = Arc::new(KernelHandle {
-        kernel: Arc::new(tokio::sync::Mutex::new(kernel)),
-        shell_tx,
-        stdin_tx,
-        router,
-    });
+    let (session, info) = KernelSession::start(kernel).await?;
+    let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(session));
     Ok((session_id, info, handle))
-}
-
-async fn await_kernel_info(
-    shell: &mut jet_core::jupyter_zmq_client::ClientShellConnection,
-    expected_id: &str,
-) -> anyhow::Result<Value> {
-    loop {
-        let msg = shell
-            .read()
-            .await
-            .map_err(|e| anyhow::anyhow!("shell.read: {e}"))?;
-        let parent = msg
-            .parent_header
-            .as_ref()
-            .map(|h| h.msg_id.as_str())
-            .unwrap_or("");
-        if parent == expected_id && msg.message_type() == "kernel_info_reply" {
-            return Ok(serde_json::to_value(&msg.content)?);
-        }
-        // Otherwise drop the message — boot-time chatter we don't show.
-    }
-}
-
-fn spawn_shell_loop(
-    mut shell: jet_core::jupyter_zmq_client::ClientShellConnection,
-    mut send_rx: UnboundedReceiver<JupyterMessage>,
-    router: Arc<FrameRouter>,
-) {
-    rt().spawn(async move {
-        loop {
-            tokio::select! {
-                send = send_rx.recv() => match send {
-                    Some(msg) => {
-                        if let Err(e) = shell.send(msg).await {
-                            log::warn!("shell.send: {e}");
-                            return;
-                        }
-                    }
-                    None => return,
-                },
-                read = shell.read() => match read {
-                    Ok(msg) => dispatch(&router, Channel::Shell, &msg),
-                    Err(e) => {
-                        log::warn!("shell.read: {e}");
-                        return;
-                    }
-                },
-            }
-        }
-    });
-}
-
-fn spawn_iopub_reader(
-    mut iopub: jet_core::jupyter_zmq_client::ClientIoPubConnection,
-    router: Arc<FrameRouter>,
-) {
-    rt().spawn(async move {
-        loop {
-            match iopub.read().await {
-                Ok(msg) => dispatch(&router, Channel::IoPub, &msg),
-                Err(e) => {
-                    log::warn!("iopub.read: {e}");
-                    return;
-                }
-            }
-        }
-    });
-}
-
-fn spawn_stdin_loop(
-    mut stdin_sock: jet_core::jupyter_zmq_client::ClientStdinConnection,
-    mut send_rx: UnboundedReceiver<JupyterMessage>,
-    router: Arc<FrameRouter>,
-) {
-    rt().spawn(async move {
-        loop {
-            tokio::select! {
-                send = send_rx.recv() => match send {
-                    Some(msg) => {
-                        if let Err(e) = stdin_sock.send(msg).await {
-                            log::warn!("stdin.send: {e}");
-                            return;
-                        }
-                    }
-                    None => return,
-                },
-                read = stdin_sock.read() => match read {
-                    Ok(msg) => dispatch(&router, Channel::Stdin, &msg),
-                    Err(e) => {
-                        log::warn!("stdin.read: {e}");
-                        return;
-                    }
-                },
-            }
-        }
-    });
-}
-
-/// Convert one message into router frames. Idle is its own terminal
-/// signal; everything else becomes a `Content` frame keyed by parent_id.
-fn dispatch(router: &FrameRouter, channel: Channel, msg: &JupyterMessage) {
-    let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
-    if let EventData::Idle { parent_id } = from_message(channel, msg).data {
-        router.dispatch(
-            None,
-            Frame::Idle {
-                parent_msg_id: parent_id,
-            },
-        );
-        return;
-    }
-    let (msg_type, content) = raw_msg_type_and_content(msg);
-    router.dispatch(parent_id.as_deref(), Frame::Content { msg_type, content });
 }
 
 /// `jet.stop(session_id)`
 pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
-    rt().block_on(async move { handle.kernel.lock().await.shutdown().await })
-        .into_lua_err()?;
     KERNELS.lock().unwrap().remove(&session_id);
-    Ok(())
+    // Drop our registry reference; if no other handle holds it, take
+    // ownership of the session and call shutdown (which consumes self).
+    rt().block_on(async move {
+        match Arc::try_unwrap(handle) {
+            Ok(mutex) => mutex.into_inner().shutdown().await,
+            Err(arc) => {
+                // Another caller is still holding a handle (unusual);
+                // best-effort interrupt+drop instead.
+                let mut guard = arc.lock().await;
+                guard.kernel_mut().shutdown().await
+            }
+        }
+    })
+    .into_lua_err()
 }
 
 /// `jet.interrupt(session_id)`
 pub fn interrupt(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
-    rt().block_on(async move { handle.kernel.lock().await.interrupt().await })
+    rt().block_on(async move { handle.lock().await.interrupt().await })
         .into_lua_err()
 }
 
