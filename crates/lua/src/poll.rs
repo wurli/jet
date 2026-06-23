@@ -5,8 +5,8 @@
 //! - `{status="pending"}` when nothing has arrived yet
 //! - `nil` once the kernel has gone idle for this request
 
+use jet_core::client::{RequestStream, TryRecv};
 use jet_core::events::raw_msg_type_and_content;
-use jet_core::kernel_session::{RequestStream, TryRecv};
 use mlua::prelude::*;
 use std::cell::RefCell;
 

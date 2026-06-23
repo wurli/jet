@@ -5,10 +5,10 @@
 //! whatever frontend is consuming them. Used by `jet-cli` (the REPL) and
 //! by `jet-lua` (Neovim binding).
 
+pub mod client;
 pub mod connection_file;
 pub mod events;
 pub mod kernel;
-pub mod kernel_session;
 pub mod kernel_spec;
 pub mod logger;
 pub mod manager;

@@ -5,11 +5,11 @@
 //!
 //! This is the shared core of what used to be open-coded in two places:
 //! the Lua binding's `boot_kernel` + `FrameRouter`, and the CLI REPL's
-//! three `tokio::spawn` blocks. Both collapse to a [`KernelSession`]:
+//! three `tokio::spawn` blocks. Both collapse to a [`Client`]:
 //! the Lua side wraps it in `Arc<Mutex<_>>` because its sync callers
 //! need shared access; the CLI owns it by value.
 //!
-//! `KernelSession` is single-session by design — one kernel, one
+//! `Client` is single-session by design — one kernel, one
 //! session. Multi-session bookkeeping (e.g. a session-id → session
 //! registry) is the consumer's problem.
 
@@ -22,12 +22,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError, unbounded_channel},
     watch,
-    mpsc::{
-        UnboundedReceiver, UnboundedSender,
-        error::TryRecvError,
-        unbounded_channel,
-    },
 };
 
 /// High-level kernel liveness state. The session funnels every liveness
@@ -46,7 +42,7 @@ pub enum KernelStatus {
     Idle,
     /// Kernel processing one of our requests.
     Busy,
-    /// Kernel gone. Terminal — only reset by a fresh KernelSession.
+    /// Kernel gone. Terminal — only reset by a fresh Client.
     Exited,
 }
 
@@ -69,10 +65,10 @@ fn transition(tx: &watch::Sender<KernelStatus>, next: KernelStatus) -> bool {
 }
 
 use crate::events::{Channel, EventData, from_message};
-use crate::kernel::Kernel;
 use crate::jupyter_zmq_client::{
     ClientIoPubConnection, ClientShellConnection, ClientStdinConnection,
 };
+use crate::kernel::Kernel;
 
 /// One routed frame for a particular in-flight request, tagged with
 /// the ZMQ channel it arrived on (so consumers can reconstruct typed
@@ -177,18 +173,21 @@ impl FrameRouter {
             }
         }
 
-        (self.sink)(Frame { channel, message: msg });
+        (self.sink)(Frame {
+            channel,
+            message: msg,
+        });
     }
 }
 
 /// A long-lived session over a single [`Kernel`].
 ///
-/// After [`KernelSession::start`] returns, the shell/iopub/stdin sockets
+/// After [`Client::start`] returns, the shell/iopub/stdin sockets
 /// have been moved into background tasks; the [`Kernel`] retains only
 /// `control` + `heartbeat` + (for spawned kernels) the child process
-/// guard, which is what [`KernelSession::interrupt`] /
-/// [`KernelSession::shutdown`] need.
-pub struct KernelSession {
+/// guard, which is what [`Client::interrupt`] /
+/// [`Client::shutdown`] need.
+pub struct Client {
     kernel: Kernel,
     shell_tx: UnboundedSender<JupyterMessage>,
     stdin_tx: UnboundedSender<JupyterMessage>,
@@ -199,7 +198,7 @@ pub struct KernelSession {
     watchers: Vec<tokio::task::JoinHandle<()>>,
 }
 
-impl Drop for KernelSession {
+impl Drop for Client {
     fn drop(&mut self) {
         for w in self.watchers.drain(..) {
             w.abort();
@@ -207,7 +206,7 @@ impl Drop for KernelSession {
     }
 }
 
-impl KernelSession {
+impl Client {
     /// Take the shell/iopub/stdin channels out of the kernel and spawn
     /// the long-running reader/writer tasks. Out-of-band frames
     /// (anything not consumed by a [`RequestStream`]) are dropped.
@@ -215,7 +214,7 @@ impl KernelSession {
         Self::start_with_sink(kernel, |_| {}).await
     }
 
-    /// Like [`KernelSession::start`] but every routed frame is also
+    /// Like [`Client::start`] but every routed frame is also
     /// handed to `sink`. Use when the consumer has a global view (a
     /// renderer, a logger) that needs every frame regardless of
     /// which request — if any — it belongs to.
@@ -246,12 +245,14 @@ impl KernelSession {
         let sink: Sink = Arc::new(sink);
         let (reply, info) = match handshake(&mut shell, &mut iopub, &sink).await {
             Ok(v) => v,
-            Err(e) => return Err(crate::kernel::enrich_startup_error(
-                e,
-                kernel.child_pid(),
-                kernel.child_alive(),
-                kernel.log_file_path.as_deref(),
-            )),
+            Err(e) => {
+                return Err(crate::kernel::enrich_startup_error(
+                    e,
+                    kernel.child_pid(),
+                    kernel.child_alive(),
+                    kernel.log_file_path.as_deref(),
+                ));
+            }
         };
 
         // Feed the reply through the sink as the last step of the
@@ -589,10 +590,8 @@ mod tests {
     /// guard against regressing.
     #[test]
     fn enrich_includes_log_tail() {
-        let dir = std::env::temp_dir().join(format!(
-            "jet-enrich-unit-{:x}",
-            rand::random::<u64>(),
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("jet-enrich-unit-{:x}", rand::random::<u64>(),));
         std::fs::create_dir_all(&dir).unwrap();
         let log_path = dir.join("conn.json.log");
         std::fs::write(
@@ -675,9 +674,7 @@ fn spawn_waitpid_watcher(
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
             let mut status: libc::c_int = 0;
-            let r = unsafe {
-                libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG)
-            };
+            let r = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
             // r > 0  → child changed state and we reaped it.
             // r == 0 → still running.
             // r < 0  → ECHILD: tokio already reaped, child gone.

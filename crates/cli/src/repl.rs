@@ -14,12 +14,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use jet_core::client::{Client, KernelStatus};
 use jet_core::events::{InputRequest, IsCompleteReplyMsg, from_message};
 use jet_core::jupyter_protocol::{
     ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
 };
 use jet_core::kernel::Kernel;
-use jet_core::kernel_session::{KernelSession, KernelStatus};
 use jet_core::manager::SessionStore;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -201,7 +201,7 @@ pub async fn drive_repl(
     render_graphics: bool,
     session_name: Option<String>,
     session_id: Option<String>,
-) -> Result<KernelSession> {
+) -> Result<Client> {
     let session_id = Arc::new(session_id);
     if render_graphics {
         warn_if_passthrough_off();
@@ -227,7 +227,7 @@ pub async fn drive_repl(
     let is_attached = kernel.is_attached();
     let child_pid = kernel.child_pid();
     let sink_attached = is_attached;
-    let (mut session, _info) = KernelSession::start_with_sink(kernel, move |f| {
+    let (mut session, _info) = Client::start_with_sink(kernel, move |f| {
         if sink_attached && f.message.message_type() == "kernel_info_reply" {
             return;
         }

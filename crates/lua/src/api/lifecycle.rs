@@ -1,8 +1,8 @@
 //! Kernel lifecycle: start, attach, shutdown, interrupt, list.
 
 use anyhow::Context;
+use jet_core::client::Client;
 use jet_core::kernel::{Kernel, KernelSpec};
-use jet_core::kernel_session::KernelSession;
 use mlua::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -70,7 +70,7 @@ async fn wrap(kernel: Kernel) -> anyhow::Result<(String, serde_json::Value, Kern
     let session_id = kernel.session_id.clone();
     // KernelSession::start performs a kernel_info handshake, doubling
     // as the is-the-kernel-actually-answering check on attach.
-    let (session, info) = KernelSession::start(kernel).await?;
+    let (session, info) = Client::start(kernel).await?;
     let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(session));
     Ok((session_id, info, handle))
 }

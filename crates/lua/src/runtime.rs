@@ -7,7 +7,7 @@
 //! when sync lua callers race on lifecycle methods (`interrupt`,
 //! `shutdown`) and per-request sends.
 
-use jet_core::kernel_session::KernelSession;
+use jet_core::client::Client;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -25,7 +25,7 @@ pub fn rt() -> &'static Runtime {
     &RT
 }
 
-pub type KernelHandle = Arc<tokio::sync::Mutex<KernelSession>>;
+pub type KernelHandle = Arc<tokio::sync::Mutex<Client>>;
 
 pub static KERNELS: Lazy<Mutex<HashMap<String, KernelHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));

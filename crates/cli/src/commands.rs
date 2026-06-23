@@ -245,7 +245,7 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     // KernelSession::start performs a kernel_info handshake — that's
     // the fast-fail probe that confirms the kernel is answering. We
     // don't install a sink, so the banner isn't rendered for execute.
-    let (session, _info) = jet_core::kernel_session::KernelSession::start(kernel).await?;
+    let (session, _info) = jet_core::client::Client::start(kernel).await?;
 
     let req: JupyterMessage = ExecuteRequest {
         code,
