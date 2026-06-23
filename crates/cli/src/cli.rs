@@ -154,7 +154,7 @@ pub struct StopArgs {
     pub session_id: Option<String>,
 
     /// Path to a connection file, e.g. written by an earlier `jet connect
-    /// --persist`. Use this to attach to a kernel that wasn't tracked
+    /// --persist`. Use this to stop a kernel that wasn't tracked
     /// as a jet session. Mutually exclusive with the positional
     /// `session_id`.
     #[arg(long)]

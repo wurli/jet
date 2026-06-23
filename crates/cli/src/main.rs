@@ -9,6 +9,7 @@ use clap::Parser;
 
 mod cli;
 mod commands;
+mod fmt;
 mod picker;
 mod pickers;
 mod render;
