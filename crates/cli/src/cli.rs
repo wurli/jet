@@ -34,6 +34,10 @@ pub enum Command {
     /// List Jupyter kernels discoverable on disk.
     #[command(alias = "lk")]
     ListKernels(ListKernelsArgs),
+
+    /// Stop a running kernel
+    #[command(alias = "s")]
+    Stop(StopArgs),
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -121,7 +125,7 @@ pub struct AttachArgs {
     /// is shown over open sessions in the current working directory.
     pub session_id: Option<String>,
 
-    /// Path to a connection file written by an earlier `jet connect
+    /// Path to a connection file, e.g. written by an earlier `jet connect
     /// --persist`. Use this to attach to a kernel that wasn't tracked
     /// as a jet session. Mutually exclusive with the positional
     /// `session_id`.
@@ -133,6 +137,30 @@ pub struct AttachArgs {
     pub no_graphics: bool,
 
     /// A name used to identify the client.
+    #[arg(long)]
+    pub session_name: Option<String>,
+
+    #[command(flatten)]
+    pub global: GlobalArgs,
+}
+
+#[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("target").args(["session_id", "connection_file"])))]
+pub struct StopArgs {
+    /// Session id (directory name under the jet data dir) to stop.
+    /// Look these up with `jet list`. Mutually exclusive with
+    /// `--connection-file`. If neither is given, an interactive picker
+    /// is shown over open sessions in the current working directory.
+    pub session_id: Option<String>,
+
+    /// Path to a connection file, e.g. written by an earlier `jet connect
+    /// --persist`. Use this to attach to a kernel that wasn't tracked
+    /// as a jet session. Mutually exclusive with the positional
+    /// `session_id`.
+    #[arg(long)]
+    pub connection_file: Option<PathBuf>,
+
+    /// A name used to identify the client shutting down the kernel.
     #[arg(long)]
     pub session_name: Option<String>,
 

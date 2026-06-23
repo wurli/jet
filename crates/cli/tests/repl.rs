@@ -1164,3 +1164,101 @@ fn session_left_open_with_persist() {
 
     let _ = std::fs::remove_dir_all(&xdg);
 }
+
+/// `jet stop --connection-file <path>` attaches to a persisted kernel,
+/// sends shutdown_request on control, and the kernel actually dies.
+#[test]
+fn jet_stop_shuts_down_persisted_kernel() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
+    let conn = std::env::temp_dir().join(format!(
+        "jet-stop-test-{:x}.json",
+        rand::thread_rng().r#gen::<u64>()
+    ));
+    let conn_str = conn.to_string_lossy().to_string();
+
+    // Spawn persisted: kernel survives jet's exit.
+    let mut spawn = Command::new(bin)
+        .args([
+            "connect",
+            "--connection-file",
+            &conn_str,
+            "--persist",
+            kernel_json.to_str().unwrap(),
+        ])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet (persist)");
+    std::thread::sleep(Duration::from_secs(3));
+    drop(spawn.stdin.take()); // EOF → jet exits, kernel keeps running
+    let _ = spawn.wait();
+    assert!(
+        conn.exists(),
+        "connection file {conn_str} should still exist after --persist"
+    );
+
+    // Grab the kernel pid from the session record so we can verify it
+    // actually dies (not just that jet stop returned 0).
+    let meta = read_only_session(&xdg);
+    let kernel_pid = meta["kernel_pid"]
+        .as_i64()
+        .expect("kernel_pid recorded") as i32;
+    // Sanity: pid is alive right now.
+    assert_eq!(
+        unsafe { libc::kill(kernel_pid, 0) },
+        0,
+        "expected persisted kernel pid {kernel_pid} to still be alive before stop"
+    );
+
+    // Run `jet stop --connection-file <conn>`.
+    let status = Command::new(bin)
+        .args(["stop", "--connection-file", &conn_str])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("run jet stop");
+    assert!(status.success(), "jet stop exited non-zero: {status:?}");
+
+    // The shutdown_request is best-effort: poll for the pid to disappear.
+    // ipykernel exits cleanly on shutdown_request; if jet stop's control
+    // channel were wired up wrong, the pid would linger here.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut died = false;
+    while Instant::now() < deadline {
+        if unsafe { libc::kill(kernel_pid, 0) } != 0 {
+            died = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Cleanup: kill any straggler before asserting so we don't leak.
+    if !died {
+        unsafe {
+            libc::kill(kernel_pid, libc::SIGKILL);
+        }
+    }
+    let _ = std::fs::remove_file(&conn);
+    let _ = std::fs::remove_dir_all(&xdg);
+
+    assert!(
+        died,
+        "kernel pid {kernel_pid} still alive 10s after `jet stop` — \
+         shutdown_request was not delivered or kernel ignored it"
+    );
+}

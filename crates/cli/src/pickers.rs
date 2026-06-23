@@ -36,7 +36,7 @@ pub async fn pick_kernelspec() -> Result<Option<PathBuf>> {
 /// Interactive picker over open sessions in the current working directory.
 /// Returns `Ok(None)` if the user cancels (Esc / ^C) or there's nothing
 /// to attach to.
-pub async fn pick_session() -> Result<Option<String>> {
+pub async fn pick_session(message: &str) -> Result<Option<String>> {
     let store = SessionStore::default()?;
     store.probe_open().await?;
     let cwd = std::env::current_dir()?;
@@ -61,9 +61,8 @@ pub async fn pick_session() -> Result<Option<String>> {
             ]
         })
         .collect();
-    let idx =
-        tokio::task::spawn_blocking(move || picker::pick("Connect to an existing session:", &rows))
-            .await??;
+    let message = message.to_owned();
+    let idx = tokio::task::spawn_blocking(move || picker::pick(&message, &rows)).await??;
     Ok(idx.map(|i| sessions[i].id.clone()))
 }
 

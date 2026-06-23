@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
     match args.command {
         Command::Connect(c) => commands::run_connect(c).await,
         Command::Attach(c) => commands::run_attach(c).await,
+        Command::Stop(c) => commands::run_stop(c).await,
         Command::ListSessions(c) => commands::run_list(c).await,
         Command::ListKernels(c) => commands::run_list_kernels(c),
     }

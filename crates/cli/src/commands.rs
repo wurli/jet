@@ -6,7 +6,7 @@ use jet_core::kernel::Kernel;
 use jet_core::logger::init_logger;
 use jet_core::session::{SessionStatus, SessionStore};
 
-use crate::cli::{AttachArgs, ConnectArgs, ListArgs, ListKernelsArgs, StatusFilter};
+use crate::cli::{AttachArgs, ConnectArgs, ListArgs, ListKernelsArgs, StatusFilter, StopArgs};
 use crate::pickers::{pick_kernelspec, pick_session};
 use crate::repl::drive_repl;
 
@@ -67,7 +67,11 @@ pub async fn run_list(args: ListArgs) -> Result<()> {
     let show_status = matches!(args.status, StatusFilter::All);
     let id_w = sessions.iter().map(|s| s.id.len()).max().unwrap_or(0);
     let name_w = sessions.iter().map(|s| s.name.len()).max().unwrap_or(0);
-    let created_w = sessions.iter().map(|s| s.created_at.len()).max().unwrap_or(0);
+    let created_w = sessions
+        .iter()
+        .map(|s| s.created_at.len())
+        .max()
+        .unwrap_or(0);
     for s in &sessions {
         if show_status {
             let st = match s.status {
@@ -79,10 +83,7 @@ pub async fn run_list(args: ListArgs) -> Result<()> {
                 s.id, s.name, s.created_at, st,
             );
         } else {
-            println!(
-                "{:<id_w$}  {:<name_w$}  {}",
-                s.id, s.name, s.created_at,
-            );
+            println!("{:<id_w$}  {:<name_w$}  {}", s.id, s.name, s.created_at,);
         }
     }
     Ok(())
@@ -108,8 +109,7 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let cwd = std::env::current_dir()?;
     let name = spec.display_name.clone().unwrap_or_default();
-    let mut session =
-        SessionStore::default()?.create(&spec.language, &name, &kernelspec, &cwd)?;
+    let mut session = SessionStore::default()?.create(&spec.language, &name, &kernelspec, &cwd)?;
 
     // --connection-file overrides where the connection file is written;
     // otherwise it lives inside the session dir.
@@ -152,7 +152,8 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
         }
         (None, Some(path)) => (path, None),
         (None, None) => {
-            let Some(id) = pick_session().await? else {
+            let Some(id) = pick_session("Connect to an existing session:").await? else {
+                // No session selected
                 return Ok(());
             };
             let path = SessionStore::default()?.open(&id)?.connection_file_path();
@@ -167,4 +168,24 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
     drive_repl(&mut kernel, render_graphics, args.session_name, session_id).await?;
     // Attach mode never kills the kernel; we just disconnect.
     Ok(())
+}
+
+pub async fn run_stop(args: StopArgs) -> Result<()> {
+    init_logger(args.global.log.as_deref());
+    let conn_path = match (args.session_id, args.connection_file) {
+        (Some(id), None) => SessionStore::default()?.open(&id)?.connection_file_path(),
+        (None, Some(path)) => path,
+        (None, None) => {
+            let Some(id) = pick_session("Shutdown a running kernel:").await? else {
+                // No session selected
+                return Ok(());
+            };
+            SessionStore::default()?.open(&id)?.connection_file_path()
+        }
+        (Some(_), Some(_)) => {
+            unreachable!("clap ArgGroup forbids passing both session_id and --connection-file")
+        }
+    };
+    let mut kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
+    kernel.shutdown().await
 }

@@ -326,6 +326,7 @@ impl Kernel {
     /// `Kernel` after this returns (or call [`Kernel::detach`] first to
     /// keep the kernel running).
     pub async fn shutdown(&mut self) -> Result<()> {
+        log::debug!("Sending shutdown_request to kernel");
         let req = jupyter_protocol::ShutdownRequest { restart: false };
         let msg: JupyterMessage = req.into();
         if let Some(control) = self.channels.control.as_mut() {
