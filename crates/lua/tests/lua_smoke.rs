@@ -53,18 +53,15 @@ fn ensure_python_kernelspec() -> Option<PathBuf> {
     Some(path)
 }
 
-/// Locate the prebuilt `jet_lua` cdylib. `cargo test` only links the rlib
+/// Path to the prebuilt `jet_lua` cdylib. `cargo test` only links the rlib
 /// into the test binary and doesn't produce the cdylib that luajit loads,
 /// so callers must run `cargo build -p jet_lua` first. Tests skip when
 /// the artifact is missing.
 fn find_cdylib() -> Option<PathBuf> {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = manifest.parent().unwrap().parent().unwrap();
-    let candidates = [
-        workspace.join("target/debug/libjet_lua.dylib"),
-        workspace.join("target/debug/libjet_lua.so"),
-    ];
-    candidates.into_iter().find(|c| c.exists())
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/debug")
+        .join(format!("libjet_lua{}", std::env::consts::DLL_SUFFIX));
+    path.exists().then_some(path)
 }
 
 /// True if any `.rs` file under crates/lua/src is newer than the dylib.
@@ -96,18 +93,6 @@ fn walkdir(root: &Path) -> Box<dyn Iterator<Item = PathBuf>> {
     }))
 }
 
-/// Stage the cdylib as `jet.so` in a per-test temp dir so `require('jet')`
-/// finds it. luajit's package loader matches against `?.so`, so the file
-/// extension must be `.so` even on macOS — luajit's loader doesn't care
-/// what kind of dylib it actually is.
-fn stage_module(dylib: &Path) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("jet-lua-stage-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir stage");
-    let staged = dir.join("jet.so");
-    std::fs::copy(dylib, &staged).expect("copy cdylib");
-    dir
-}
-
 fn run_lua_test(script_name: &str) {
     let Some(luajit) = which("luajit") else {
         skip("luajit not on PATH");
@@ -130,8 +115,9 @@ fn run_lua_test(script_name: &str) {
         skip("cdylib older than src/; run `cargo build -p jet_lua` first");
         return;
     }
-    let stage = stage_module(&dylib);
-    let cpath = format!("{}/?.so", stage.display());
+    // LUA_CPATH patterns are tried verbatim — no `?` substitution needed.
+    // luajit happily loads `libjet_lua.dylib` as the `jet` module.
+    let cpath = dylib.display().to_string();
 
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let script = manifest.join("tests/scripts").join(script_name);
