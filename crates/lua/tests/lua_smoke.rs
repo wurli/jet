@@ -53,30 +53,47 @@ fn ensure_python_kernelspec() -> Option<PathBuf> {
     Some(path)
 }
 
-/// Build the `jet_lua` cdylib and return its on-disk path. We invoke
-/// `cargo build` from the test so the binary is always fresh — relying on
-/// implicit ordering between test crates and lib crates is fragile.
-fn build_cdylib() -> PathBuf {
-    let status = Command::new(env!("CARGO"))
-        .args(["build", "-p", "jet_lua"])
-        .status()
-        .expect("cargo build");
-    assert!(status.success(), "cargo build -p jet_lua failed");
-
-    // CARGO_MANIFEST_DIR is .../crates/lua. Walk up to workspace root.
+/// Locate the prebuilt `jet_lua` cdylib. `cargo test` only links the rlib
+/// into the test binary and doesn't produce the cdylib that luajit loads,
+/// so callers must run `cargo build -p jet_lua` first. Tests skip when
+/// the artifact is missing.
+fn find_cdylib() -> Option<PathBuf> {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest.parent().unwrap().parent().unwrap();
-
     let candidates = [
         workspace.join("target/debug/libjet_lua.dylib"),
         workspace.join("target/debug/libjet_lua.so"),
     ];
-    for c in &candidates {
-        if c.exists() {
-            return c.clone();
+    candidates.into_iter().find(|c| c.exists())
+}
+
+/// True if any `.rs` file under crates/lua/src is newer than the dylib.
+/// Catches the footgun of forgetting to rebuild before re-running tests.
+fn dylib_is_stale(dylib: &Path) -> bool {
+    let Ok(dylib_mtime) = dylib.metadata().and_then(|m| m.modified()) else {
+        return false;
+    };
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    walkdir(&src).any(|p| {
+        p.metadata()
+            .and_then(|m| m.modified())
+            .map(|t| t > dylib_mtime)
+            .unwrap_or(false)
+    })
+}
+
+fn walkdir(root: &Path) -> Box<dyn Iterator<Item = PathBuf>> {
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return Box::new(std::iter::empty());
+    };
+    Box::new(rd.flatten().flat_map(|e| {
+        let p = e.path();
+        if p.is_dir() {
+            walkdir(&p)
+        } else {
+            Box::new(std::iter::once(p))
         }
-    }
-    panic!("cdylib not found; checked {candidates:?}");
+    }))
 }
 
 /// Stage the cdylib as `jet.so` in a per-test temp dir so `require('jet')`
@@ -105,7 +122,14 @@ fn run_lua_test(script_name: &str) {
         return;
     };
 
-    let dylib = build_cdylib();
+    let Some(dylib) = find_cdylib() else {
+        skip("cdylib not built; run `cargo build -p jet_lua` first");
+        return;
+    };
+    if dylib_is_stale(&dylib) {
+        skip("cdylib older than src/; run `cargo build -p jet_lua` first");
+        return;
+    }
     let stage = stage_module(&dylib);
     let cpath = format!("{}/?.so", stage.display());
 
