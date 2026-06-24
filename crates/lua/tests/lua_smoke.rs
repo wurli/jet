@@ -139,5 +139,5 @@ fn execute_smoke() {
 
 #[test]
 fn input_request_smoke() {
-    run_lua_test("input_request_smoke.lua");
+    run_lua_test("input.lua");
 }
