@@ -134,7 +134,7 @@ fn run_lua_test(script_name: &str) {
 
 #[test]
 fn execute_smoke() {
-    run_lua_test("execute_smoke.lua");
+    run_lua_test("execute.lua");
 }
 
 #[test]
