@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
         Command::Start(c) => commands::run_connect(c).await,
         Command::Attach(c) => commands::run_attach(c).await,
         Command::Stop(c) => commands::run_stop(c).await,
-        Command::ListSessions(c) => commands::run_list(c).await,
+        Command::ListSessions(c) => commands::run_list_sessions(c).await,
         Command::ListKernels(c) => commands::run_list_kernels(c),
         Command::Execute(c) => commands::run_execute(c).await,
         Command::Send(c) => commands::run_send(c).await,

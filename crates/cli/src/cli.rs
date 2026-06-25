@@ -43,7 +43,7 @@ pub enum Command {
 
     /// List Jupyter sessions tracked by jet.
     #[command(alias = "ls")]
-    ListSessions(ListArgs),
+    ListSessions(ListSessionsArgs),
 
     /// List Jupyter kernels discoverable on disk.
     #[command(alias = "lk")]
@@ -87,7 +87,7 @@ pub enum StatusFilter {
 }
 
 #[derive(Parser, Debug)]
-pub struct ListArgs {
+pub struct ListSessionsArgs {
     /// Which sessions to show.
     #[arg(long, value_enum, default_value_t = StatusFilter::Open)]
     pub status: StatusFilter,

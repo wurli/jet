@@ -7,7 +7,8 @@ use jet_core::kernel::Kernel;
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
-    AttachArgs, ExecuteArgs, ListArgs, ListKernelsArgs, SendArgs, StartArgs, StatusFilter, StopArgs,
+    AttachArgs, ExecuteArgs, ListKernelsArgs, ListSessionsArgs, SendArgs, StartArgs, StatusFilter,
+    StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::{ReplTarget, drive_repl};
@@ -38,7 +39,7 @@ pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_list(args: ListArgs) -> Result<()> {
+pub async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
     // Flip any Open sessions whose kernel has gone away to Closed before
     // we read the list. Otherwise a kernel that exited while no jet
     // process was attached (or crashed) stays falsely Open on disk.

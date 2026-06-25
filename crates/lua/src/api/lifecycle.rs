@@ -204,7 +204,7 @@ pub fn list_sessions(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let store = SessionStore::default().into_lua_err()?;
     for session in store.list().into_lua_err()? {
         let entry = lua.to_value(&session)?;
-        table.set(session.id.clone(), entry)?;
+        table.push(entry)?;
     }
     Ok(table)
 }
