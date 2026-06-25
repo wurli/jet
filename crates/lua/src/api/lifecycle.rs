@@ -230,6 +230,15 @@ pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
     Ok(table)
 }
 
+/// `jet.show(session_id) -> { session, spec }`
+///
+/// Look up a session by id and return its `SessionMeta` alongside the
+/// parsed kernelspec read from `session.kernelspec_path`.
+pub fn show(lua: &Lua, session_id: String) -> LuaResult<LuaValue> {
+    let view = jet_core::manager::show_session(&session_id).into_lua_err()?;
+    crate::to_lua_value(lua, &view)
+}
+
 /// `jet.list_kernels()` — kernelspecs discovered under the
 /// standard Jupyter directories.
 pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {

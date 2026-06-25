@@ -193,6 +193,30 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>> {
     SessionStore::default()?.list()
 }
 
+/// A session paired with its kernelspec. Returned by [`show_session`].
+#[derive(Debug, serde::Serialize)]
+pub struct SessionView {
+    pub session: SessionMeta,
+    pub spec: crate::kernel::KernelSpec,
+}
+
+/// Look up a session by id and pair it with the kernelspec loaded from
+/// `session.kernelspec_path`.
+pub fn show_session(session_id: &str) -> Result<SessionView> {
+    let session = SessionStore::default()?.open(session_id)?;
+    let meta = session.meta().clone();
+    let spec = crate::kernel::KernelSpec::load(&meta.kernelspec_path).with_context(|| {
+        format!(
+            "loading kernelspec {}",
+            meta.kernelspec_path.display()
+        )
+    })?;
+    Ok(SessionView {
+        session: meta,
+        spec,
+    })
+}
+
 /// Convenience: `SessionStore::default()?.probe_open().await`.
 pub async fn probe_open_sessions() -> Result<()> {
     SessionStore::default()?.probe_open().await

@@ -7,8 +7,8 @@ use jet_core::kernel::Kernel;
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
-    AttachArgs, ExecuteArgs, ListKernelsArgs, ListSessionsArgs, SendArgs, StartArgs, StatusFilter,
-    StopArgs,
+    AttachArgs, ExecuteArgs, ListKernelsArgs, ListSessionsArgs, SendArgs, ShowArgs, StartArgs,
+    StatusFilter, StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::{ReplTarget, drive_repl};
@@ -36,6 +36,12 @@ pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
             println!("{}", path.display());
         }
     }
+    Ok(())
+}
+
+pub fn run_show(args: ShowArgs) -> Result<()> {
+    let view = jet_core::manager::show_session(&args.session_id)?;
+    println!("{}", serde_json::to_string_pretty(&view)?);
     Ok(())
 }
 

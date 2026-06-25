@@ -29,5 +29,6 @@ async fn main() -> Result<()> {
         Command::ListKernels(c) => commands::run_list_kernels(c),
         Command::Execute(c) => commands::run_execute(c).await,
         Command::Send(c) => commands::run_send(c).await,
+        Command::Show(c) => commands::run_show(c),
     }
 }

@@ -53,6 +53,9 @@ pub enum Command {
     #[command(alias = "s")]
     Stop(StopArgs),
 
+    /// Show a session's metadata alongside its kernelspec.
+    Show(ShowArgs),
+
     /// Execute code against a running kernel and stream the result to stdout.
     /// Exits once the kernel goes idle for the request.
     #[command(alias = "e")]
@@ -75,6 +78,7 @@ impl Command {
             Command::Stop(c) => &c.global,
             Command::Execute(c) => &c.global,
             Command::Send(c) => &c.global,
+            Command::Show(c) => &c.global,
         }
     }
 }
@@ -278,6 +282,16 @@ pub struct SendArgs {
     /// A name used to identify the client.
     #[arg(long)]
     pub session_name: Option<String>,
+
+    #[command(flatten)]
+    pub global: GlobalArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct ShowArgs {
+    /// Session id (directory name under the jet data dir) to show.
+    /// Look these up with `jet list-sessions`.
+    pub session_id: String,
 
     #[command(flatten)]
     pub global: GlobalArgs,
