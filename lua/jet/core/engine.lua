@@ -216,11 +216,17 @@ end
 
 ---@alias jet.kernel.callback fun(): jet.kernel.response?
 
+---@class jet.connect.response
+---@field session_id? string
+---@field client_id string
+---@field kernel_info table
+
 ---@class jet.engine
----@field connect fun(spec_path: string, connection_file: string?, session_name: string?): string, table
----@field attach fun(connection_file: string?, session_name: string?): string, table
+---@field connect fun(spec_path: string, connection_file: string?, session_name: string?): jet.connect.response
+---@field attach fun(connection_file: string?, session_name: string?): jet.connect.response
 ---@field stop fun(session_id: string)
 ---@field interrupt fun(session_id: string)
+---@field list_connections fun(): { client_id: string, session_id: string? }
 ---@field list_sessions fun(): table
 ---@field list_kernels fun(): { path: string, spec: table }[]
 ---@field execute_code fun(session_id: string, code: string, user_expression: table?): jet.kernel.callback

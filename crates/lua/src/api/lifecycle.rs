@@ -20,7 +20,7 @@ use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 pub fn connect(
     lua: &Lua,
     (spec_path, connection_file, session_name): (String, Option<String>, Option<String>),
-) -> LuaResult<(String, LuaValue)> {
+) -> LuaResult<LuaTable> {
     let spec = KernelSpec::load(&PathBuf::from(&spec_path))
         .with_context(|| format!("loading kernelspec {spec_path}"))
         .into_lua_err()?;
@@ -78,7 +78,7 @@ pub fn connect(
 pub fn attach(
     lua: &Lua,
     (connection_file, session_name): (String, Option<String>),
-) -> LuaResult<(String, LuaValue)> {
+) -> LuaResult<LuaTable> {
     let path = PathBuf::from(&connection_file);
     let session_id = SessionStore::default()
         .ok()
@@ -98,11 +98,22 @@ pub fn attach(
 
 /// Insert a freshly built [`Client`] into the lua-side registry (keyed by `client_id`),
 /// returning the id and kernel_info reply in lua-friendly form.
-fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<(String, LuaValue)> {
+fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<LuaTable> {
     let client_id = client.client_id().to_string();
+    let session_id = client.session_id().map(str::to_string);
     let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(client));
     KERNELS.lock().unwrap().insert(client_id.clone(), handle);
-    Ok((client_id, lua.to_value(&info)?))
+
+    let out = lua.create_table()?;
+
+    out.set("client_id", client_id.clone())?;
+    out.set("kernel_info", lua.to_value(&info)?)?;
+
+    if let Some(session_id) = session_id {
+        out.set("session_id", session_id)?;
+    }
+
+    Ok(out)
 }
 
 /// `jet.stop(client_id)`
@@ -136,20 +147,23 @@ pub fn interrupt(_lua: &Lua, client_id: String) -> LuaResult<()> {
 /// Each entry carries the bound SessionStore id (if any) so callers can correlate with
 /// `jet.list_sessions()`.
 pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
-    let table = lua.create_table()?;
+    let out = lua.create_table()?;
     let map = KERNELS.lock().unwrap();
     // Snapshot client→session mappings under the registry lock without awaiting; reading
     // session_id() needs the per-client Mutex but try_lock avoids parking the runtime.
     for (client_id, handle) in map.iter() {
         let entry = lua.create_table()?;
-        let session_id = handle.try_lock().ok().and_then(|c| c.session_id().map(str::to_string));
+        let session_id = handle
+            .try_lock()
+            .ok()
+            .and_then(|c| c.session_id().map(str::to_string));
         if let Some(sid) = session_id {
             entry.set("session_id", sid)?;
         }
-        entry.set("status", "running")?;
-        table.set(client_id.clone(), entry)?;
+        entry.set("client_id", client_id.clone())?;
+        out.push(entry)?;
     }
-    Ok(table)
+    Ok(out)
 }
 
 /// `jet.list_sessions()` — Jet sessions on disk (the SessionStore). Returns every

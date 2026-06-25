@@ -36,16 +36,19 @@ M.print = function(obj, level)
 	print(M.dump(obj, level))
 end
 
+---@param jet jet.engine
 M.start_kernel = function(jet, spec)
-	local id, info = jet.connect(spec)
+	local con = jet.connect(spec)
 
-	assert(type(id) == "string" and #id > 0, "expected session id from connect")
-	assert(type(info) == "table", "expected kernel info table")
+	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from connect")
+	assert(type(con.kernel_info) == "table", "expected kernel info table")
 
 	return {
-		id = id,
+		client_id = con.client_id,
+		session_id = con.session_id,
+		kernel_info = con.kernel_info,
 		execute = function(code)
-			local cb = jet.execute_code(id, code, {})
+			local cb = jet.execute_code(con.client_id, code, {})
 			return function()
 				while true do
 					local res = cb()
@@ -59,10 +62,10 @@ M.start_kernel = function(jet, spec)
 			end
 		end,
 		provide_stdin = function(parent_id, value)
-			jet.provide_stdin(id, parent_id, value)
+			jet.provide_stdin(con.client_id, parent_id, value)
 		end,
 		stop = function()
-			jet.stop(id)
+			jet.stop(con.client_id)
 		end,
 	}
 end
