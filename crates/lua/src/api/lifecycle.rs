@@ -2,14 +2,14 @@
 
 use anyhow::Context;
 use jet_core::client::Client;
-use jet_core::kernel::{Kernel, KernelSpec};
+use jet_core::kernel::KernelSpec;
 use mlua::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 
-/// `jet.connect(spec_path, connection_file?) -> (session_id, info)`
+/// `jet.connect(spec_path, connection_file?) -> (client_id, info)`
 ///
 /// Spawn a kernel from `spec_path`. If `connection_file` is given and
 /// the path already exists, errors — use `jet.attach` to reconnect.
@@ -32,18 +32,13 @@ pub fn connect(
         )));
     }
 
-    let (session_id, info, handle) = runtime()
-        .block_on(async move {
-            let kernel = Kernel::spawn(&spec, conn_path, session_name.as_deref()).await?;
-            wrap(kernel).await
-        })
+    let (client, info) = runtime()
+        .block_on(Client::spawn(&spec, conn_path, session_name.as_deref()))
         .into_lua_err()?;
-
-    KERNELS.lock().unwrap().insert(session_id.clone(), handle);
-    Ok((session_id, lua.to_value(&info)?))
+    Ok(register(lua, client, info)?)
 }
 
-/// `jet.attach(connection_file) -> (session_id, info)`
+/// `jet.attach(connection_file) -> (client_id, info)`
 ///
 /// Attach to a kernel already running on `connection_file`. Mirrors
 /// `jet attach`: no kernelspec, never spawns.
@@ -52,27 +47,19 @@ pub fn attach(
     (connection_file, session_name): (String, Option<String>),
 ) -> LuaResult<(String, LuaValue)> {
     let path = PathBuf::from(&connection_file);
-    let (session_id, info, handle) = runtime()
-        .block_on(async move {
-            let kernel = Kernel::attach(&path, session_name.as_deref()).await?;
-            wrap(kernel).await
-        })
+    let (client, info) = runtime()
+        .block_on(Client::attach(&path, session_name.as_deref()))
         .into_lua_err()?;
-
-    KERNELS.lock().unwrap().insert(session_id.clone(), handle);
-    Ok((session_id, lua.to_value(&info)?))
+    register(lua, client, info)
 }
 
-/// Wrap a freshly built [`Kernel`] in a [`KernelSession`] and the
-/// lua-side shared handle, returning the session id (taken from the
-/// kernel) and the kernel_info reply.
-async fn wrap(kernel: Kernel) -> anyhow::Result<(String, serde_json::Value, KernelHandle)> {
-    let session_id = kernel.client_id.clone();
-    // KernelSession::start performs a kernel_info handshake, doubling
-    // as the is-the-kernel-actually-answering check on attach.
-    let (session, info) = Client::start(kernel).await?;
-    let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(session));
-    Ok((session_id, info, handle))
+/// Insert a freshly built [`Client`] into the lua-side registry, returning the id and
+/// kernel_info reply in lua-friendly form.
+fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<(String, LuaValue)> {
+    let client_id = client.client_id().to_string();
+    let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(client));
+    KERNELS.lock().unwrap().insert(client_id.clone(), handle);
+    Ok((client_id, lua.to_value(&info)?))
 }
 
 /// `jet.stop(session_id)`
@@ -89,7 +76,7 @@ pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
                     // Another caller is still holding a handle (unusual);
                     // best-effort interrupt+drop instead.
                     let mut guard = arc.lock().await;
-                    guard.kernel_mut().shutdown().await
+                    guard.shutdown_in_place().await
                 }
             }
         })

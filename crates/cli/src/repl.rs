@@ -19,8 +19,9 @@ use jet_core::events::{InputRequest, IsCompleteReplyMsg, from_message};
 use jet_core::jupyter_protocol::{
     ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
 };
-use jet_core::kernel::Kernel;
+use jet_core::kernel::KernelSpec;
 use jet_core::manager::SessionStore;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
@@ -196,8 +197,21 @@ async fn wait_for_idle(
 /// kernel dies. Consumes the [`Kernel`] (wraps it in a
 /// [`KernelSession`]) and returns the session so the caller can pick
 /// between `.detach()` and `.shutdown()`.
+/// How `drive_repl` should bring up its [`Client`]. Spawn vs Attach decides whether the
+/// renderer sink suppresses the `kernel_info_reply` (so reconnects don't reprint the
+/// banner the first connect already drew).
+pub enum ReplTarget<'a> {
+    Spawn {
+        spec: &'a KernelSpec,
+        connection_path: Option<PathBuf>,
+    },
+    Attach {
+        connection_path: &'a Path,
+    },
+}
+
 pub async fn drive_repl(
-    kernel: Kernel,
+    target: ReplTarget<'_>,
     render_graphics: bool,
     session_name: Option<String>,
     session_id: Option<String>,
@@ -218,25 +232,31 @@ pub async fn drive_repl(
         .with_own_session_name(session_name.clone());
     let busy_state = renderer.busy_state.clone();
 
-    // KernelSession::start_with_sink performs the kernel_info
-    // handshake before spawning the socket loop, feeding the reply
-    // through the sink as its last step. On the spawn path that
-    // renders the welcome banner; on attach we suppress the
-    // kernel_info_reply specifically so we don't reprint it on every
-    // reconnect (the rest of the renderer's behaviour stays).
+    // Client::*_with_sink performs the kernel_info handshake before spawning the
+    // socket loop, feeding the reply through the sink as its last step. On the spawn
+    // path that renders the welcome banner; on attach we suppress the
+    // kernel_info_reply specifically so we don't reprint it on every reconnect (the
+    // rest of the renderer's behaviour stays).
     let sink_renderer = renderer.clone();
-    let is_attached = kernel.is_attached();
-    let child_pid = kernel.child_pid();
-    let sink_attached = is_attached;
-    let (mut session, _info) = Client::start_with_sink(kernel, move |f| {
-        if sink_attached && f.message.message_type() == "kernel_info_reply" {
+    let is_attached = matches!(target, ReplTarget::Attach { .. });
+    let sink = move |f: jet_core::client::Frame| {
+        if is_attached && f.message.message_type() == "kernel_info_reply" {
             return;
         }
         if let Err(e) = sink_renderer.handle_event(from_message(f.channel, &f.message)) {
             log::warn!("renderer ({:?}): {e}", f.channel);
         }
-    })
-    .await?;
+    };
+    let (mut session, _info) = match target {
+        ReplTarget::Spawn {
+            spec,
+            connection_path,
+        } => Client::spawn_with_sink(spec, connection_path, session_name.as_deref(), sink).await?,
+        ReplTarget::Attach { connection_path } => {
+            Client::attach_with_sink(connection_path, session_name.as_deref(), sink).await?
+        }
+    };
+    let child_pid = session.child_pid();
 
     let shutdown = Arc::new(tokio::sync::Notify::new());
 

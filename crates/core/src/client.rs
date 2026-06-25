@@ -70,6 +70,20 @@ use crate::jupyter_zmq_client::{
 };
 use crate::kernel::Kernel;
 
+/// Generate a client id of the form `<name>---repl---<rand>`. Kernels report this back in
+/// the parent header so we can see which client triggered a message. `'jet'` is a special
+/// value which won't be printed in the CLI; other values get surfaced to show when another
+/// client (e.g. an agent) is interacting with the kernel.
+pub fn make_client_id(name: Option<&str>) -> String {
+    use rand::Rng;
+    log::info!("Generated new client id: {:?}", name);
+    format!(
+        "{}---repl---{:x}",
+        name.unwrap_or("jet"),
+        rand::thread_rng().r#gen::<u64>()
+    )
+}
+
 /// One routed frame for a particular in-flight request, tagged with
 /// the ZMQ channel it arrived on (so consumers can reconstruct typed
 /// [`crate::events::Event`]s — `JupyterMessage::channel` is `None` for
@@ -189,6 +203,9 @@ impl FrameRouter {
 /// [`Client::shutdown`] need.
 pub struct Client {
     kernel: Kernel,
+    /// Like `<name>---repl---<rand>`. Kernels report this back in the parent header so we can
+    /// see which client triggered a message.
+    client_id: String,
     shell_tx: UnboundedSender<JupyterMessage>,
     stdin_tx: UnboundedSender<JupyterMessage>,
     router: Arc<FrameRouter>,
@@ -207,11 +224,59 @@ impl Drop for Client {
 }
 
 impl Client {
+    /// Spawn a kernel and bring up a fully-handshaked client over it. The session name
+    /// is mixed into a fresh client id (see [`make_client_id`]); `'jet'` keeps the id
+    /// invisible to the CLI's renderer, anything else surfaces as a foreign-client tag.
+    pub async fn spawn(
+        spec: &crate::kernel::KernelSpec,
+        connection_path: Option<std::path::PathBuf>,
+        session_name: Option<&str>,
+    ) -> Result<(Self, Value)> {
+        Self::spawn_with_sink(spec, connection_path, session_name, |_| {}).await
+    }
+
+    /// Like [`Client::spawn`] but installs a frame sink (see [`Client::start_with_sink`]).
+    pub async fn spawn_with_sink<F>(
+        spec: &crate::kernel::KernelSpec,
+        connection_path: Option<std::path::PathBuf>,
+        session_name: Option<&str>,
+        sink: F,
+    ) -> Result<(Self, Value)>
+    where
+        F: Fn(Frame) + Send + Sync + 'static,
+    {
+        let client_id = make_client_id(session_name);
+        let kernel = Kernel::spawn(spec, connection_path, &client_id).await?;
+        Self::start_with_sink(kernel, client_id, sink).await
+    }
+
+    /// Attach to a running kernel and bring up a fully-handshaked client over it.
+    pub async fn attach(
+        connection_path: &std::path::Path,
+        session_name: Option<&str>,
+    ) -> Result<(Self, Value)> {
+        Self::attach_with_sink(connection_path, session_name, |_| {}).await
+    }
+
+    /// Like [`Client::attach`] but installs a frame sink (see [`Client::start_with_sink`]).
+    pub async fn attach_with_sink<F>(
+        connection_path: &std::path::Path,
+        session_name: Option<&str>,
+        sink: F,
+    ) -> Result<(Self, Value)>
+    where
+        F: Fn(Frame) + Send + Sync + 'static,
+    {
+        let client_id = make_client_id(session_name);
+        let kernel = Kernel::attach(connection_path, &client_id).await?;
+        Self::start_with_sink(kernel, client_id, sink).await
+    }
+
     /// Take the shell/iopub/stdin channels out of the kernel and spawn
     /// the long-running reader/writer tasks. Out-of-band frames
     /// (anything not consumed by a [`RequestStream`]) are dropped.
-    pub async fn start(kernel: Kernel) -> Result<(Self, Value)> {
-        Self::start_with_sink(kernel, |_| {}).await
+    pub async fn start(kernel: Kernel, client_id: String) -> Result<(Self, Value)> {
+        Self::start_with_sink(kernel, client_id, |_| {}).await
     }
 
     /// Like [`Client::start`] but every routed frame is also
@@ -231,7 +296,11 @@ impl Client {
     /// The handshake doubles as the "is the kernel actually
     /// answering" probe. Owning both sockets exclusively here means
     /// no concurrent socket-loop dispatch can race the banner write.
-    pub async fn start_with_sink<F>(mut kernel: Kernel, sink: F) -> Result<(Self, Value)>
+    pub async fn start_with_sink<F>(
+        mut kernel: Kernel,
+        client_id: String,
+        sink: F,
+    ) -> Result<(Self, Value)>
     where
         F: Fn(Frame) + Send + Sync + 'static,
     {
@@ -303,6 +372,7 @@ impl Client {
         Ok((
             Self {
                 kernel,
+                client_id,
                 shell_tx,
                 stdin_tx,
                 router,
@@ -311,6 +381,10 @@ impl Client {
             },
             info,
         ))
+    }
+
+    pub fn client_id(&self) -> &str {
+        &self.client_id
     }
 
     /// Current kernel liveness/execution state.
@@ -351,12 +425,14 @@ impl Client {
         Ok(())
     }
 
-    pub fn kernel(&self) -> &Kernel {
-        &self.kernel
+    /// PID of the underlying spawned kernel, if any. `None` for attached kernels.
+    pub fn child_pid(&self) -> Option<u32> {
+        self.kernel.child_pid()
     }
 
-    pub fn kernel_mut(&mut self) -> &mut Kernel {
-        &mut self.kernel
+    /// `true` if this client attached to an externally-managed kernel (we don't own the child).
+    pub fn is_attached(&self) -> bool {
+        self.kernel.is_attached()
     }
 
     /// Forward a ^C-equivalent to the kernel.
@@ -367,6 +443,12 @@ impl Client {
     /// Shutdown the kernel (best-effort). Consumes the session because
     /// the reader/writer tasks will tear down once their sockets close.
     pub async fn shutdown(mut self) -> Result<()> {
+        self.kernel.shutdown().await
+    }
+
+    /// Like [`Client::shutdown`] but borrows instead of consuming. Used when the
+    /// caller still holds a shared reference and can't drop the client yet.
+    pub async fn shutdown_in_place(&mut self) -> Result<()> {
         self.kernel.shutdown().await
     }
 
@@ -600,7 +682,7 @@ mod tests {
         )
         .unwrap();
 
-        let kernel = Kernel::synthetic_for_test(None, Some(log_path));
+        let kernel = Kernel::synthetic_for_test(Some(log_path));
         let base = anyhow!("timed out waiting for kernel_info_reply");
         let err = crate::kernel::enrich_startup_error(
             base,

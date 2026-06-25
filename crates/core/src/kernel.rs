@@ -135,9 +135,6 @@ pub struct Kernel {
     child: Option<ChildGuard>,
     /// Connection file path. Tempfiles get cleaned up on drop.
     _connection_path: ConnectionPath,
-    /// Like `<name>---repl---<rand>`. Kernels report this back in the parent header so we can
-    /// see which client triggered a message.
-    pub client_id: String,
     pub interrupt_mode: InterruptMode,
     pub channels: Channels,
     /// Path to the on-disk log file capturing the kernel's stderr.
@@ -157,7 +154,7 @@ impl Kernel {
     pub async fn spawn(
         spec: &KernelSpec,
         connection_path: Option<PathBuf>,
-        session_name: Option<&str>,
+        client_id: &str,
     ) -> Result<Self> {
         let conn_path = match connection_path {
             Some(p) => ConnectionPath::Persistent(p),
@@ -195,8 +192,7 @@ impl Kernel {
         })?;
         let guard = ChildGuard::new(child);
 
-        let client_id = make_client_id(session_name);
-        let channels = match connect_channels(&info, &client_id).await {
+        let channels = match connect_channels(&info, client_id).await {
             Ok(c) => c,
             Err(e) => {
                 // The most common cause of channel-connect failure is
@@ -220,7 +216,6 @@ impl Kernel {
         Ok(Self {
             child: Some(guard),
             _connection_path: conn_path,
-            client_id,
             interrupt_mode: spec.interrupt_mode,
             channels,
             log_file_path,
@@ -233,11 +228,10 @@ impl Kernel {
     /// enrichment path without paying zeromq-rs's 30s connect
     /// timeout against a non-listening peer.
     #[cfg(test)]
-    pub fn synthetic_for_test(session_id: Option<String>, log_file_path: Option<PathBuf>) -> Self {
+    pub fn synthetic_for_test(log_file_path: Option<PathBuf>) -> Self {
         Self {
             child: None,
             _connection_path: ConnectionPath::OwnedTemp(default_temp_path()),
-            client_id: session_id.unwrap_or_else(|| "test".into()),
             interrupt_mode: InterruptMode::Signal,
             channels: Channels::default(),
             log_file_path,
@@ -247,21 +241,19 @@ impl Kernel {
     /// Attach to an already-running kernel via its connection file. We do
     /// not own the child process; dropping this `Kernel` does not stop
     /// the kernel.
-    pub async fn attach(connection_path: &Path, session_name: Option<&str>) -> Result<Self> {
+    pub async fn attach(connection_path: &Path, client_id: &str) -> Result<Self> {
         let info = connection_file::read(connection_path)?;
         // ZMQ DEALER/SUB sockets connect to dead endpoints without
         // complaint and just queue forever, so probe the shell port
         // with a plain TCP connect first to fail fast when the kernel
         // recorded in the connection file is no longer alive.
         probe_kernel_alive(&info).await?;
-        let client_id = make_client_id(session_name);
-        let channels = connect_channels(&info, &client_id).await?;
+        let channels = connect_channels(&info, client_id).await?;
         let log_path = log_path_for(connection_path);
         let log_file_path = log_path.exists().then_some(log_path);
         Ok(Self {
             child: None,
             _connection_path: ConnectionPath::Persistent(connection_path.to_path_buf()),
-            client_id,
             // No kernelspec on attach — assume signal-mode so ^C goes to
             // the kernel pgid. Override via a dedicated method if a use
             // case appears.
@@ -545,14 +537,3 @@ mod tests {
     }
 }
 
-fn make_client_id(name: Option<&str>) -> String {
-    log::info!("Generated new client id: {:?}", name);
-    // 'jet' is a special value which won't be printed in the CLI. Other values will be printed,
-    // which is useful for showing when another client (e.g. an agent) is interacting with the
-    // kernel.
-    format!(
-        "{}---repl---{:x}",
-        name.unwrap_or_else(|| "jet"),
-        rand::thread_rng().r#gen::<u64>()
-    )
-}

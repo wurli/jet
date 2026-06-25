@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 
+use jet_core::client::{Client, make_client_id};
 use jet_core::kernel::Kernel;
 use jet_core::manager::{SessionStatus, SessionStore};
 
@@ -10,7 +11,7 @@ use crate::cli::{
     StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
-use crate::repl::drive_repl;
+use crate::repl::{ReplTarget, drive_repl};
 
 pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
     let paths: Vec<_> = jet_core::kernel_spec::KernelSpec::find_valid()
@@ -135,18 +136,23 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
         );
     }
 
-    let kernel =
-        Kernel::spawn(&spec, Some(conn_path.clone()), args.session_name.as_deref()).await?;
-    if let Some(pid) = kernel.child_pid()
+    let render_graphics = !args.no_graphics;
+    let session_id = session.as_ref().map(|s| s.meta().id.clone());
+    let mut kernel_session = drive_repl(
+        ReplTarget::Spawn {
+            spec: &spec,
+            connection_path: Some(conn_path.clone()),
+        },
+        render_graphics,
+        args.session_name,
+        session_id,
+    )
+    .await?;
+    if let Some(pid) = kernel_session.child_pid()
         && let Some(s) = session.as_mut()
     {
         s.set_kernel_pid(pid);
     }
-
-    let render_graphics = !args.no_graphics;
-    let session_id = session.as_ref().map(|s| s.meta().id.clone());
-    let mut kernel_session =
-        drive_repl(kernel, render_graphics, args.session_name, session_id).await?;
 
     if args.persist {
         kernel_session.detach();
@@ -191,9 +197,16 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
             unreachable!("clap ArgGroup forbids passing both session_id and --connection-file")
         }
     };
-    let kernel = Kernel::attach(&conn_path, args.session_name.as_deref()).await?;
     let render_graphics = !args.no_graphics;
-    drive_repl(kernel, render_graphics, args.session_name, session_id).await?;
+    drive_repl(
+        ReplTarget::Attach {
+            connection_path: &conn_path,
+        },
+        render_graphics,
+        args.session_name,
+        session_id,
+    )
+    .await?;
     // Attach mode never kills the kernel; we just disconnect.
     Ok(())
 }
@@ -288,16 +301,17 @@ fn code_or_stdin(code: Option<String>) -> Result<String> {
     Ok(buf)
 }
 
-/// Open a kernel for one of the code-running subcommands. Returns the
-/// kernel and a flag indicating whether we spawned it (and so should
-/// shut it down on the way out).
-async fn open_target_kernel(
+/// Open a client for one of the code-running subcommands. Returns the
+/// client, the kernel_info reply, and a flag indicating whether we spawned
+/// the kernel (and so should shut it down on the way out).
+async fn open_target_client(
     target: KernelTarget,
     session_name: Option<&str>,
-) -> Result<(Kernel, bool)> {
+) -> Result<(Client, serde_json::Value, bool)> {
     match target {
         KernelTarget::Attach(conn_path) => {
-            Ok((Kernel::attach(&conn_path, session_name).await?, false))
+            let (client, info) = Client::attach(&conn_path, session_name).await?;
+            Ok((client, info, false))
         }
         KernelTarget::Spawn {
             kernelspec,
@@ -317,7 +331,8 @@ async fn open_target_kernel(
                 spec.language,
                 spec.argv,
             );
-            Ok((Kernel::spawn(&spec, conn_path, session_name).await?, true))
+            let (client, info) = Client::spawn(&spec, conn_path, session_name).await?;
+            Ok((client, info, true))
         }
     }
 }
@@ -340,7 +355,11 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     let (target, code_arg) =
         resolve_kernel_target("execute", session_id, connection_file, kernelspec, code)?;
     let code = code_or_stdin(code_arg)?;
-    let (kernel, spawned) = open_target_kernel(target, session_name.as_deref()).await?;
+    // Client::spawn / Client::attach perform a kernel_info handshake — that's
+    // the fast-fail probe that confirms the kernel is answering. We don't install
+    // a sink, so the banner isn't rendered for execute.
+    let (session, _info, spawned) =
+        open_target_client(target, session_name.as_deref()).await?;
 
     let render_graphics = !no_graphics;
     if render_graphics {
@@ -350,11 +369,6 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     let writer: crate::render::SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
     let renderer = crate::render::Renderer::new(render_graphics, idle_tx, writer)
         .with_own_session_name(session_name);
-
-    // KernelSession::start performs a kernel_info handshake — that's
-    // the fast-fail probe that confirms the kernel is answering. We
-    // don't install a sink, so the banner isn't rendered for execute.
-    let (session, _info) = jet_core::client::Client::start(kernel).await?;
 
     session
         .request(
@@ -395,9 +409,8 @@ pub async fn run_send(args: SendArgs) -> Result<()> {
     let (target, code_arg) =
         resolve_kernel_target("send", session_id, connection_file, kernelspec, code)?;
     let code = code_or_stdin(code_arg)?;
-    let (kernel, spawned) = open_target_kernel(target, session_name.as_deref()).await?;
-
-    let (session, _info) = jet_core::client::Client::start(kernel).await?;
+    let (session, _info, spawned) =
+        open_target_client(target, session_name.as_deref()).await?;
 
     let mut stream = session.request(
         ExecuteRequest {
@@ -450,18 +463,17 @@ pub async fn run_stop(args: StopArgs) -> Result<()> {
 
     let mut last_err: Option<anyhow::Error> = None;
     for path in conn_paths {
-        match Kernel::attach(&path, args.session_name.as_deref()).await {
+        let client_id = make_client_id(args.session_name.as_deref());
+        match Kernel::attach(&path, &client_id).await {
             Ok(mut kernel) => {
                 if let Err(e) = kernel.shutdown().await {
-                    // TODO: don't use session_id
-                    eprintln!("shutdown failed for {}: {e}", kernel.client_id);
+                    eprintln!("shutdown failed for {}: {e}", client_id);
                     last_err = Some(e);
                 } else {
-                    println!("Shut down kernel {}", kernel.client_id);
+                    println!("Shut down kernel {}", client_id);
                 }
             }
             Err(e) => {
-                // eprintln!("attach failed for {}: {e}", kernel.session_id);
                 last_err = Some(e);
             }
         }
