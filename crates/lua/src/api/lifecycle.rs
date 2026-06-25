@@ -200,9 +200,9 @@ pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 pub fn list_sessions(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let table = lua.create_table()?;
     let store = SessionStore::default().into_lua_err()?;
-    for meta in store.list().into_lua_err()? {
-        let entry = lua.to_value(&meta)?;
-        table.set(meta.id.clone(), entry)?;
+    for session in store.list().into_lua_err()? {
+        let entry = lua.to_value(&session)?;
+        table.set(session.id.clone(), entry)?;
     }
     Ok(table)
 }
