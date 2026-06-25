@@ -142,10 +142,10 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
         ReplTarget::Spawn {
             spec: &spec,
             connection_path: Some(conn_path.clone()),
+            session_id,
         },
         render_graphics,
         args.session_name,
-        session_id,
     )
     .await?;
     if let Some(pid) = kernel_session.child_pid()
@@ -201,10 +201,10 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
     drive_repl(
         ReplTarget::Attach {
             connection_path: &conn_path,
+            session_id,
         },
         render_graphics,
         args.session_name,
-        session_id,
     )
     .await?;
     // Attach mode never kills the kernel; we just disconnect.
@@ -310,7 +310,14 @@ async fn open_target_client(
 ) -> Result<(Client, serde_json::Value, bool)> {
     match target {
         KernelTarget::Attach(conn_path) => {
-            let (client, info) = Client::attach(&conn_path, session_name, |_| {}).await?;
+            // Recover the SessionStore id if the path lives inside a tracked session,
+            // matching `run_attach` so `client.session_id()` is populated wherever possible.
+            let session_id = SessionStore::default()
+                .ok()
+                .and_then(|s| s.find_by_connection_file(&conn_path).ok().flatten())
+                .map(|s| s.meta().id.clone());
+            let (client, info) =
+                Client::attach(&conn_path, session_name, session_id, |_| {}).await?;
             Ok((client, info, false))
         }
         KernelTarget::Spawn {
@@ -331,7 +338,9 @@ async fn open_target_client(
                 spec.language,
                 spec.argv,
             );
-            let (client, info) = Client::spawn(&spec, conn_path, session_name, |_| {}).await?;
+            // execute/send don't create SessionStore entries — they're one-shot.
+            let (client, info) =
+                Client::spawn(&spec, conn_path, session_name, None, |_| {}).await?;
             Ok((client, info, true))
         }
     }

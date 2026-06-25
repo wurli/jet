@@ -208,6 +208,13 @@ pub struct Client {
     /// Like `<name>---repl---<rand>`. Kernels report this back in the parent header so we can
     /// see which client triggered a message.
     client_id: String,
+    /// SessionStore id (the `session.json` slug). `Some` when this Client was started
+    /// against a tracked Jet session — either spawning into one (`jet connect` without an
+    /// explicit `--connection-file`) or attaching to a connection file that lives inside
+    /// a tracked session dir. `None` when the caller manages the connection file directly
+    /// (`jet connect --connection-file P` / `jet attach --connection-file P` where P isn't
+    /// tracked) — there's no session.json to write back to.
+    session_id: Option<String>,
     shell_tx: UnboundedSender<JupyterMessage>,
     stdin_tx: UnboundedSender<JupyterMessage>,
     router: Arc<FrameRouter>,
@@ -234,6 +241,7 @@ impl Client {
         spec: &crate::kernel::KernelSpec,
         connection_path: Option<std::path::PathBuf>,
         session_name: Option<&str>,
+        session_id: Option<String>,
         sink: F,
     ) -> Result<(Self, Value)>
     where
@@ -241,7 +249,7 @@ impl Client {
     {
         let client_id = make_client_id(session_name);
         let kernel = Kernel::spawn(spec, connection_path, &client_id).await?;
-        Self::start_with_sink(kernel, client_id, sink).await
+        Self::start_with_sink(kernel, client_id, session_id, sink).await
     }
 
     /// Attach to a running kernel and bring up a fully-handshaked client over it.
@@ -249,6 +257,7 @@ impl Client {
     pub async fn attach<F>(
         connection_path: &std::path::Path,
         session_name: Option<&str>,
+        session_id: Option<String>,
         sink: F,
     ) -> Result<(Self, Value)>
     where
@@ -256,7 +265,7 @@ impl Client {
     {
         let client_id = make_client_id(session_name);
         let kernel = Kernel::attach(connection_path, &client_id).await?;
-        Self::start_with_sink(kernel, client_id, sink).await
+        Self::start_with_sink(kernel, client_id, session_id, sink).await
     }
 
     /// Take the shell/iopub/stdin channels out of the kernel, perform the
@@ -273,6 +282,7 @@ impl Client {
     async fn start_with_sink<F>(
         mut kernel: Kernel,
         client_id: String,
+        session_id: Option<String>,
         sink: F,
     ) -> Result<(Self, Value)>
     where
@@ -350,6 +360,7 @@ impl Client {
             Self {
                 kernel,
                 client_id,
+                session_id,
                 shell_tx,
                 stdin_tx,
                 router,
@@ -362,6 +373,11 @@ impl Client {
 
     pub fn client_id(&self) -> &str {
         &self.client_id
+    }
+
+    /// SessionStore id this Client is bound to, if any. See the `session_id` field.
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
     }
 
     /// Watch handle for kernel liveness/execution state. Latest-value channel: callers can

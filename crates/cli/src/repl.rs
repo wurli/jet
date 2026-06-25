@@ -204,9 +204,13 @@ pub enum ReplTarget<'a> {
     Spawn {
         spec: &'a KernelSpec,
         connection_path: Option<PathBuf>,
+        /// SessionStore id this kernel is bound to (the `session.json` slug).
+        session_id: Option<String>,
     },
     Attach {
         connection_path: &'a Path,
+        /// SessionStore id this kernel is bound to (the `session.json` slug).
+        session_id: Option<String>,
     },
 }
 
@@ -214,9 +218,7 @@ pub async fn drive_repl(
     target: ReplTarget<'_>,
     render_graphics: bool,
     session_name: Option<String>,
-    session_id: Option<String>,
 ) -> Result<Client> {
-    let session_id = Arc::new(session_id);
     if render_graphics {
         warn_if_passthrough_off();
     }
@@ -251,12 +253,26 @@ pub async fn drive_repl(
         ReplTarget::Spawn {
             spec,
             connection_path,
-        } => Client::spawn(spec, connection_path, session_name.as_deref(), sink).await?,
-        ReplTarget::Attach { connection_path } => {
-            Client::attach(connection_path, session_name.as_deref(), sink).await?
+            session_id,
+        } => {
+            Client::spawn(
+                spec,
+                connection_path,
+                session_name.as_deref(),
+                session_id,
+                sink,
+            )
+            .await?
         }
+        ReplTarget::Attach {
+            connection_path,
+            session_id,
+        } => Client::attach(connection_path, session_name.as_deref(), session_id, sink).await?,
     };
     let child_pid = session.child_pid();
+    // session.json bookkeeping (mark_session_closed on kernel exit) reads the id off
+    // the Client now — kept in an Arc so it survives moves into select! branches below.
+    let session_id = Arc::new(session.session_id().map(str::to_string));
 
     let shutdown = Arc::new(tokio::sync::Notify::new());
 

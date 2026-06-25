@@ -46,6 +46,9 @@ assert(ok2, "expected 'bananas' in error message")
 kernel.stop()
 
 -- Check kernel stopped -------------------------------------------------------
-for session_name, _ in pairs(jet.list_sessions()) do
-	assert(session_name ~= kernel.id, "expected kernel to be stopped")
+-- list_connections() = clients open in this process, keyed by client_id.
+-- list_sessions() now reads from disk and is keyed by session_id; that's a
+-- different concept (a Closed session.json still appears there).
+for client_id, _ in pairs(jet.list_connections()) do
+	assert(client_id ~= kernel.id, "expected kernel to be stopped")
 end

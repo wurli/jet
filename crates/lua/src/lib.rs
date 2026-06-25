@@ -16,7 +16,8 @@ mod runtime;
 use mlua::prelude::*;
 
 use api::lifecycle::{
-    attach, connect, interrupt, list_available_kernels, list_running_kernels, shutdown_kernel,
+    attach, connect, interrupt, list_available_kernels, list_connections, list_sessions,
+    shutdown_kernel,
 };
 use api::request::{comm_open, comm_send, execute_code, get_completions, is_complete};
 use api::stdin::provide_stdin;
@@ -36,7 +37,8 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("attach", lua.create_function(attach)?)?;
     exports.set("stop", lua.create_function(shutdown_kernel)?)?;
     exports.set("interrupt", lua.create_function(interrupt)?)?;
-    exports.set("list_sessions", lua.create_function(list_running_kernels)?)?;
+    exports.set("list_connections", lua.create_function(list_connections)?)?;
+    exports.set("list_sessions", lua.create_function(list_sessions)?)?;
     exports.set("list_kernels", lua.create_function(list_available_kernels)?)?;
     exports.set("execute_code", lua.create_function(execute_code)?)?;
     exports.set("is_complete", lua.create_function(is_complete)?)?;
