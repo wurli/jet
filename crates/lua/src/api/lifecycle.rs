@@ -67,7 +67,7 @@ pub fn attach(
 /// lua-side shared handle, returning the session id (taken from the
 /// kernel) and the kernel_info reply.
 async fn wrap(kernel: Kernel) -> anyhow::Result<(String, serde_json::Value, KernelHandle)> {
-    let session_id = kernel.session_id.clone();
+    let session_id = kernel.client_id.clone();
     // KernelSession::start performs a kernel_info handshake, doubling
     // as the is-the-kernel-actually-answering check on attach.
     let (session, info) = Client::start(kernel).await?;

@@ -454,10 +454,10 @@ pub async fn run_stop(args: StopArgs) -> Result<()> {
             Ok(mut kernel) => {
                 if let Err(e) = kernel.shutdown().await {
                     // TODO: don't use session_id
-                    eprintln!("shutdown failed for {}: {e}", kernel.session_id);
+                    eprintln!("shutdown failed for {}: {e}", kernel.client_id);
                     last_err = Some(e);
                 } else {
-                    println!("Shut down kernel {}", kernel.session_id);
+                    println!("Shut down kernel {}", kernel.client_id);
                 }
             }
             Err(e) => {

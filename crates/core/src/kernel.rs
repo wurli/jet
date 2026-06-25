@@ -135,7 +135,9 @@ pub struct Kernel {
     child: Option<ChildGuard>,
     /// Connection file path. Tempfiles get cleaned up on drop.
     _connection_path: ConnectionPath,
-    pub session_id: String,
+    /// Like `<name>---repl---<rand>`. Kernels report this back in the parent header so we can
+    /// see which client triggered a message.
+    pub client_id: String,
     pub interrupt_mode: InterruptMode,
     pub channels: Channels,
     /// Path to the on-disk log file capturing the kernel's stderr.
@@ -193,8 +195,8 @@ impl Kernel {
         })?;
         let guard = ChildGuard::new(child);
 
-        let session_id = make_session_id(session_name);
-        let channels = match connect_channels(&info, &session_id).await {
+        let client_id = make_client_id(session_name);
+        let channels = match connect_channels(&info, &client_id).await {
             Ok(c) => c,
             Err(e) => {
                 // The most common cause of channel-connect failure is
@@ -218,7 +220,7 @@ impl Kernel {
         Ok(Self {
             child: Some(guard),
             _connection_path: conn_path,
-            session_id,
+            client_id,
             interrupt_mode: spec.interrupt_mode,
             channels,
             log_file_path,
@@ -235,7 +237,7 @@ impl Kernel {
         Self {
             child: None,
             _connection_path: ConnectionPath::OwnedTemp(default_temp_path()),
-            session_id: session_id.unwrap_or_else(|| "test".into()),
+            client_id: session_id.unwrap_or_else(|| "test".into()),
             interrupt_mode: InterruptMode::Signal,
             channels: Channels::default(),
             log_file_path,
@@ -252,14 +254,14 @@ impl Kernel {
         // with a plain TCP connect first to fail fast when the kernel
         // recorded in the connection file is no longer alive.
         probe_kernel_alive(&info).await?;
-        let session_id = make_session_id(session_name);
-        let channels = connect_channels(&info, &session_id).await?;
+        let client_id = make_client_id(session_name);
+        let channels = connect_channels(&info, &client_id).await?;
         let log_path = log_path_for(connection_path);
         let log_file_path = log_path.exists().then_some(log_path);
         Ok(Self {
             child: None,
             _connection_path: ConnectionPath::Persistent(connection_path.to_path_buf()),
-            session_id,
+            client_id,
             // No kernelspec on attach — assume signal-mode so ^C goes to
             // the kernel pgid. Override via a dedicated method if a use
             // case appears.
@@ -543,8 +545,8 @@ mod tests {
     }
 }
 
-fn make_session_id(name: Option<&str>) -> String {
-    log::info!("Generated new session name: {:?}", name);
+fn make_client_id(name: Option<&str>) -> String {
+    log::info!("Generated new client id: {:?}", name);
     // 'jet' is a special value which won't be printed in the CLI. Other values will be printed,
     // which is useful for showing when another client (e.g. an agent) is interacting with the
     // kernel.
