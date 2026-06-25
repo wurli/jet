@@ -4,7 +4,7 @@
 use jet_core::jupyter_protocol::{InputReply, JupyterMessage};
 use mlua::prelude::*;
 
-use crate::runtime::{get, rt};
+use crate::runtime::{get, runtime};
 
 pub fn provide_stdin(
     _lua: &Lua,
@@ -20,6 +20,7 @@ pub fn provide_stdin(
         error: None,
     }
     .into();
-    rt().block_on(async move { handle.lock().await.reply_stdin(reply) })
+    runtime()
+        .block_on(async move { handle.lock().await.reply_stdin(reply) })
         .into_lua_err()
 }

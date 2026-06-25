@@ -7,7 +7,7 @@ use mlua::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::runtime::{KERNELS, KernelHandle, get, rt};
+use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 
 /// `jet.connect(spec_path, connection_file?) -> (session_id, info)`
 ///
@@ -32,7 +32,7 @@ pub fn connect(
         )));
     }
 
-    let (session_id, info, handle) = rt()
+    let (session_id, info, handle) = runtime()
         .block_on(async move {
             let kernel = Kernel::spawn(&spec, conn_path, session_name.as_deref()).await?;
             wrap(kernel).await
@@ -52,7 +52,7 @@ pub fn attach(
     (connection_file, session_name): (String, Option<String>),
 ) -> LuaResult<(String, LuaValue)> {
     let path = PathBuf::from(&connection_file);
-    let (session_id, info, handle) = rt()
+    let (session_id, info, handle) = runtime()
         .block_on(async move {
             let kernel = Kernel::attach(&path, session_name.as_deref()).await?;
             wrap(kernel).await
@@ -81,24 +81,26 @@ pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
     KERNELS.lock().unwrap().remove(&session_id);
     // Drop our registry reference; if no other handle holds it, take
     // ownership of the session and call shutdown (which consumes self).
-    rt().block_on(async move {
-        match Arc::try_unwrap(handle) {
-            Ok(mutex) => mutex.into_inner().shutdown().await,
-            Err(arc) => {
-                // Another caller is still holding a handle (unusual);
-                // best-effort interrupt+drop instead.
-                let mut guard = arc.lock().await;
-                guard.kernel_mut().shutdown().await
+    runtime()
+        .block_on(async move {
+            match Arc::try_unwrap(handle) {
+                Ok(mutex) => mutex.into_inner().shutdown().await,
+                Err(arc) => {
+                    // Another caller is still holding a handle (unusual);
+                    // best-effort interrupt+drop instead.
+                    let mut guard = arc.lock().await;
+                    guard.kernel_mut().shutdown().await
+                }
             }
-        }
-    })
-    .into_lua_err()
+        })
+        .into_lua_err()
 }
 
 /// `jet.interrupt(session_id)`
 pub fn interrupt(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
-    rt().block_on(async move { handle.lock().await.interrupt().await })
+    runtime()
+        .block_on(async move { handle.lock().await.interrupt().await })
         .into_lua_err()
 }
 

@@ -10,13 +10,13 @@ use rand::Rng;
 use serde_json::Value;
 
 use crate::poll::make_poll;
-use crate::runtime::{KernelHandle, get, rt};
+use crate::runtime::{KernelHandle, get, runtime};
 
 /// Common path: hand a message to the kernel session and wrap the
 /// resulting [`RequestStream`] in a Lua poll closure.
 fn shell_request(lua: &Lua, handle: &KernelHandle, msg: JupyterMessage) -> LuaResult<LuaFunction> {
     let session = handle.clone();
-    let stream = rt()
+    let stream = runtime()
         .block_on(async move { session.lock().await.request(msg) })
         .into_lua_err()?;
     make_poll(lua, stream)

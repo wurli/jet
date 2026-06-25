@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::{Builder, Runtime};
 
 /// Lazily-built, process-global runtime.
-pub fn rt() -> &'static Runtime {
+pub fn runtime() -> &'static Runtime {
     static RT: Lazy<Runtime> = Lazy::new(|| {
         Builder::new_multi_thread()
             .worker_threads(2)
