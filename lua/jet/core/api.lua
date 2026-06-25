@@ -58,7 +58,6 @@ end
 ---@field connected_instance jet.kernel?
 ---@field external_instance jet.session_info?
 
---TODO: include kernels which are running but not in nvim
 ---@return jet.kernels.item[]
 local list_kernels = function()
 	local connected_kernels = manager.kernels

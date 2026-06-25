@@ -21,6 +21,7 @@ local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 ---@field term? jet.term
 ---@field connection_file? string
 ---@field cmd string[]
+---@field owned boolean
 local Kernel = {}
 Kernel.__index = Kernel
 
@@ -41,6 +42,7 @@ setmetatable(Kernel, {
 function Kernel.new(opts)
 	opts.session_name = opts.session_name or "nvim"
 	local out = setmetatable(opts, Kernel)
+	out.owned = true
 	out.cmd = out:connect_cmd()
 	table.insert(manager.kernels, out)
 	return out
@@ -78,10 +80,13 @@ end
 ---@return jet.kernel
 function Kernel.from_external(opts)
 	assert(opts.session_id, "Kernel session ID is not set")
+	local view = engine.show(opts.session_id)
 
 	local out = setmetatable({
 		session_id = opts.session_id,
-		spec = engine.show(opts.session_id).spec,
+		spec = view.spec,
+		spec_path = view.session.kernelspec_path,
+		owned = false,
 	}, Kernel)
 
 	out.cmd = out:attach_cmd()
@@ -107,15 +112,13 @@ function Kernel:init_term()
 	self.term = {}
 	self.term.buf = vim.api.nvim_create_buf(false, true)
 
-	if config.stop_on_exit then
-		vim.api.nvim_create_autocmd("BufWipeout", {
-			buffer = self.term.buf,
-			group = augroup,
-			callback = function()
-				self:stop()
-			end,
-		})
-	end
+	vim.api.nvim_create_autocmd("BufWipeout", {
+		buffer = self.term.buf,
+		group = augroup,
+		callback = function()
+			self:stop()
+		end,
+	})
 
 	vim.api.nvim_buf_call(self.term.buf, function()
 		self.term.job_id = vim.fn.jobstart(self.cmd, { term = true })
@@ -152,9 +155,7 @@ function Kernel:attach_lua_client()
 end
 
 function Kernel:stop()
-	if not self.session_id then
-		error("Kernel has no session id")
-	end
+	assert(self.session_id, "Kernel has no session id")
 
 	for i, k in ipairs(manager.kernels) do
 		if k == self then
@@ -169,7 +170,9 @@ function Kernel:stop()
 		end
 	end)
 
-	engine.stop(self.session_id)
+	if self.owned and config.stop_on_exit then
+		engine.stop(self.session_id)
+	end
 
 	vim.notify("Stopped kernel " .. self.spec.display_name)
 end
