@@ -145,6 +145,7 @@ impl Session {
     pub(super) fn mark_closed_at(&mut self, now: SystemTime) {
         self.meta.status = SessionStatus::Closed;
         self.meta.closed_at = Some(format_iso8601(now));
+        self.meta.kernel_pid = None;
         self.persist_best_effort("record closed status");
     }
 
@@ -234,7 +235,39 @@ mod tests {
             reopened.meta().closed_at.as_deref(),
             Some("2026-06-22T14:53:20Z")
         );
-        assert_eq!(reopened.meta().kernel_pid, Some(12345));
+        assert_eq!(
+            reopened.meta().kernel_pid,
+            None,
+            "mark_closed should clear the recorded pid"
+        );
+    }
+
+    #[test]
+    fn set_kernel_pid_round_trips() {
+        let data = TempDir::new().unwrap();
+        let mut sess = create(data.path(), Path::new("/tmp/foo")).unwrap();
+        assert_eq!(sess.meta().kernel_pid, None);
+
+        sess.set_kernel_pid(98765);
+        assert_eq!(sess.meta().kernel_pid, Some(98765));
+
+        // Persisted to disk synchronously, so a separate Session::open sees it.
+        let reopened = Session::open(data.path(), &sess.meta().session_id).unwrap();
+        assert_eq!(reopened.meta().kernel_pid, Some(98765));
+    }
+
+    #[test]
+    fn mark_closed_clears_kernel_pid() {
+        let data = TempDir::new().unwrap();
+        let mut sess = create(data.path(), Path::new("/tmp/foo")).unwrap();
+        sess.set_kernel_pid(12345);
+        assert_eq!(sess.meta().kernel_pid, Some(12345));
+
+        sess.mark_closed();
+        assert_eq!(sess.meta().kernel_pid, None);
+
+        let reopened = Session::open(data.path(), &sess.meta().session_id).unwrap();
+        assert_eq!(reopened.meta().kernel_pid, None);
     }
 
     #[test]

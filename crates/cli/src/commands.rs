@@ -143,13 +143,9 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
         },
         render_graphics,
         args.session_name,
+        session.as_mut(),
     )
     .await?;
-    if let Some(pid) = kernel_session.child_pid()
-        && let Some(s) = session.as_mut()
-    {
-        s.set_kernel_pid(pid);
-    }
 
     if args.persist {
         kernel_session.detach();
@@ -202,6 +198,7 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
         },
         render_graphics,
         args.session_name,
+        None,
     )
     .await?;
     // Attach mode never kills the kernel; we just disconnect.

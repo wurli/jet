@@ -215,6 +215,11 @@ pub struct Client {
     /// (`jet start --connection-file P` / `jet attach --connection-file P` where P isn't
     /// tracked) — there's no session.json to write back to.
     session_id: Option<String>,
+    /// PID of the spawned kernel child, captured at spawn time. `None` for attached
+    /// kernels. Cached here so it remains readable after the OS-level child has been
+    /// reaped (by `spawn_waitpid_watcher`), at which point `kernel.child_pid()` would
+    /// otherwise return `None`.
+    child_pid: Option<u32>,
     shell_tx: UnboundedSender<JupyterMessage>,
     stdin_tx: UnboundedSender<JupyterMessage>,
     router: Arc<FrameRouter>,
@@ -352,7 +357,8 @@ impl Client {
             let hb = kernel.channels.heartbeat.take().expect("heartbeat channel");
             watchers.push(spawn_heartbeat_watcher(hb, status_tx.clone()));
         }
-        if let Some(pid) = kernel.child_pid() {
+        let child_pid = kernel.child_pid();
+        if let Some(pid) = child_pid {
             watchers.push(spawn_waitpid_watcher(pid, status_tx.clone()));
         }
 
@@ -361,6 +367,7 @@ impl Client {
                 kernel,
                 client_id,
                 session_id,
+                child_pid,
                 shell_tx,
                 stdin_tx,
                 router,
@@ -413,8 +420,11 @@ impl Client {
     }
 
     /// PID of the underlying spawned kernel, if any. `None` for attached kernels.
+    /// Stays `Some` for the lifetime of the `Client` even after the kernel exits —
+    /// we cache the pid at spawn time so the OS-level reap by the waitpid watcher
+    /// doesn't make it disappear.
     pub fn child_pid(&self) -> Option<u32> {
-        self.kernel.child_pid()
+        self.child_pid
     }
 
     /// Forward a ^C-equivalent to the kernel.

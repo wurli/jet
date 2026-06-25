@@ -1076,7 +1076,7 @@ fn read_only_session(xdg: &std::path::Path) -> serde_json::Value {
 }
 
 /// Graceful exit (no --persist) should leave the session marked closed
-/// and the kernel_pid recorded.
+/// and the kernel_pid cleared — pid only makes sense for live kernels.
 #[test]
 fn session_marked_closed_on_graceful_exit() {
     if !ipykernel_available() {
@@ -1127,12 +1127,74 @@ fn session_marked_closed_on_graceful_exit() {
         "session not marked closed: {meta}"
     );
     assert!(meta["closed_at"].is_string(), "closed_at missing: {meta}");
-    assert!(meta["kernel_pid"].is_number(), "kernel_pid missing: {meta}");
+    assert!(
+        meta["kernel_pid"].is_null(),
+        "kernel_pid should be cleared on close: {meta}"
+    );
     assert_eq!(meta["lang"], "python");
     let conn_path = std::path::PathBuf::from(meta["working_dir"].as_str().unwrap());
     assert!(conn_path.is_absolute());
 
     let _ = std::fs::remove_dir_all(&xdg);
+}
+
+/// The kernel pid must be written to session.json *while the REPL is running*,
+/// not after the user quits. Earlier versions only wrote the pid after `drive_repl`
+/// returned, so external readers (e.g. the nvim plugin polling `list_sessions`)
+/// always saw a null pid during the kernel's actual lifetime. Regression test for
+/// that timing bug — the pid we read mid-session must match a live process.
+#[test]
+fn session_records_kernel_pid_while_open() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
+
+    let mut child = Command::new(bin)
+        .args(["start", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    // Give the REPL time to spawn the kernel and persist the pid, but don't
+    // close stdin yet — we want to inspect session.json while it's still Open.
+    std::thread::sleep(Duration::from_secs(3));
+
+    let meta = read_only_session(&xdg);
+    let cleanup = |child: &mut std::process::Child| {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&xdg);
+    };
+
+    assert_eq!(
+        meta["status"], "open",
+        "session should still be open mid-REPL: {meta}"
+    );
+    let Some(pid) = meta["kernel_pid"].as_i64() else {
+        cleanup(&mut child);
+        panic!("kernel_pid not recorded while session open: {meta}");
+    };
+    let pid = pid as i32;
+    let alive = unsafe { libc::kill(pid, 0) } == 0;
+    if !alive {
+        cleanup(&mut child);
+        panic!("kernel_pid {pid} recorded but process is not alive");
+    }
+
+    cleanup(&mut child);
 }
 
 /// With --persist, the session stays open and the kernel keeps running.
@@ -1262,7 +1324,7 @@ fn jet_stop_shuts_down_persisted_kernel() {
     let kernel_pid = meta["kernel_pid"].as_i64().expect("kernel_pid recorded") as i32;
     let conn = {
         let jet_dir = xdg.join("jet");
-        let session_id = meta["id"].as_str().expect("session id");
+        let session_id = meta["session_id"].as_str().expect("session id");
         let rel = meta["connection_file"].as_str().expect("connection_file");
         jet_dir.join(session_id).join(rel)
     };

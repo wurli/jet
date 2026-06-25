@@ -20,7 +20,7 @@ use jet_core::jupyter_protocol::{
     ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
 };
 use jet_core::kernel::KernelSpec;
-use jet_core::manager::SessionStore;
+use jet_core::manager::{Session, SessionStore};
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -218,6 +218,7 @@ pub async fn drive_repl(
     target: ReplTarget<'_>,
     render_graphics: bool,
     session_name: Option<String>,
+    session_store_entry: Option<&mut Session>,
 ) -> Result<Client> {
     if render_graphics {
         warn_if_passthrough_off();
@@ -269,7 +270,12 @@ pub async fn drive_repl(
             session_id,
         } => Client::attach(connection_path, session_name.as_deref(), session_id, sink).await?,
     };
-    let child_pid = session.child_pid();
+    // Persist the kernel pid into session.json now — before the REPL loop starts —
+    // so external readers (e.g. `jet list-sessions`, the nvim plugin) see it for the
+    // whole lifetime of the kernel, not just after the user quits the REPL.
+    if let (Some(pid), Some(entry)) = (session.child_pid(), session_store_entry) {
+        entry.set_kernel_pid(pid);
+    }
     // session.json bookkeeping (mark_session_closed on kernel exit) reads the id off
     // the Client now — kept in an Arc so it survives moves into select! branches below.
     let session_id = Arc::new(session.session_id().map(str::to_string));
@@ -282,7 +288,7 @@ pub async fn drive_repl(
     // do that inline at the two sites where the REPL observes Exited
     // (the prompt-loop select and the wait-for-idle select), so no
     // separate bridge task is needed.
-    let _ = (is_attached, child_pid);
+    let _ = is_attached;
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
