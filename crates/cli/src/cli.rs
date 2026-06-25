@@ -86,6 +86,18 @@ pub enum StatusFilter {
     All,
 }
 
+// Convert the enum from clap to the internal jet_core enum. This avoids a clap dependency in
+// jet_core. In theory that would be fine but feels cleaner this way.
+impl From<StatusFilter> for jet_core::manager::StatusFilter {
+    fn from(s: StatusFilter) -> Self {
+        match s {
+            StatusFilter::Open => Self::Open,
+            StatusFilter::Closed => Self::Closed,
+            StatusFilter::All => Self::All,
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 pub struct ListSessionsArgs {
     /// Which sessions to show.

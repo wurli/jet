@@ -40,23 +40,10 @@ pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
 }
 
 pub async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
-    // Flip any Open sessions whose kernel has gone away to Closed before
-    // we read the list. Otherwise a kernel that exited while no jet
-    // process was attached (or crashed) stays falsely Open on disk.
     let store = SessionStore::default()?;
-    store.probe_open().await?;
-
-    let cwd = std::env::current_dir()?;
-    let sessions: Vec<_> = store
-        .list()?
-        .into_iter()
-        .filter(|s| match args.status {
-            StatusFilter::Open => s.status == SessionStatus::Open,
-            StatusFilter::Closed => s.status == SessionStatus::Closed,
-            StatusFilter::All => true,
-        })
-        .filter(|s| args.all_dirs || s.working_dir == cwd)
-        .collect();
+    let sessions = store
+        .list_filtered(args.status.into(), args.all_dirs)
+        .await?;
 
     if args.json {
         println!("{}", serde_json::to_string_pretty(&sessions)?);

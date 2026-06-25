@@ -11,6 +11,27 @@ use super::session::{Session, SessionMeta, SessionStatus, read_meta};
 use crate::connection_file;
 use crate::kernel::probe_kernel_alive;
 
+/// Which sessions [`SessionStore::list_filtered`] should return.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum StatusFilter {
+    Open,
+    Closed,
+    All,
+}
+
+impl std::str::FromStr for StatusFilter {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "open" => Ok(Self::Open),
+            "closed" => Ok(Self::Closed),
+            "all" => Ok(Self::All),
+            other => anyhow::bail!("invalid status {other:?}: expected \"open\", \"closed\", or \"all\""),
+        }
+    }
+}
+
 /// A jet data dir. Wraps a path so callers don't have to thread it
 /// through every call; tests construct one over a tempdir.
 pub struct SessionStore {
@@ -93,6 +114,28 @@ impl SessionStore {
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(out)
+    }
+
+    /// Probe Open sessions, then return entries matching `status` and (unless
+    /// `all_dirs`) the current working directory. The filter pair `jet list-sessions`
+    /// and `jet.list_sessions` both apply.
+    pub async fn list_filtered(
+        &self,
+        status: StatusFilter,
+        all_dirs: bool,
+    ) -> Result<Vec<SessionMeta>> {
+        self.probe_open().await?;
+        let cwd = std::env::current_dir()?;
+        Ok(self
+            .list()?
+            .into_iter()
+            .filter(|s| match status {
+                StatusFilter::Open => s.status == SessionStatus::Open,
+                StatusFilter::Closed => s.status == SessionStatus::Closed,
+                StatusFilter::All => true,
+            })
+            .filter(|s| all_dirs || s.working_dir == cwd)
+            .collect())
     }
 
     /// Probe every Open session; mark dead ones Closed. Best-effort and

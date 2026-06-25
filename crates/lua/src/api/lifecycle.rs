@@ -196,15 +196,36 @@ pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     Ok(out)
 }
 
-/// `jet.list_sessions()` — Jet sessions on disk (the SessionStore). Returns every
-/// `session.json` jet has written, regardless of which process owns the live client (or
-/// whether one is open at all). Each entry exposes the full `SessionMeta`.
-pub fn list_sessions(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
-    let table = lua.create_table()?;
+/// `jet.list_sessions({ status?, all_dirs? })` — Jet sessions on disk (the SessionStore).
+/// Returns every `session.json` jet has written, regardless of which process owns the live
+/// client (or whether one is open at all). Each entry exposes the full `SessionMeta`.
+///
+/// Mirrors `jet list-sessions`:
+/// - `status`: `"open"` (default), `"closed"`, or `"all"`.
+/// - `all_dirs`: when true, return sessions for every working directory; otherwise only
+///   sessions whose `working_dir` matches the current dir.
+///
+/// Probes Open sessions first so kernels that exited while detached are flipped to Closed
+/// before filtering.
+pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
+    let (status, all_dirs) = match opts {
+        Some(t) => (
+            t.get::<Option<String>>("status")?,
+            t.get::<Option<bool>>("all_dirs")?.unwrap_or(false),
+        ),
+        None => (None, false),
+    };
+    let status: jet_core::manager::StatusFilter =
+        status.as_deref().unwrap_or("open").parse().into_lua_err()?;
+
     let store = SessionStore::default().into_lua_err()?;
-    for session in store.list().into_lua_err()? {
-        let entry = lua.to_value(&session)?;
-        table.push(entry)?;
+    let sessions = runtime()
+        .block_on(store.list_filtered(status, all_dirs))
+        .into_lua_err()?;
+
+    let table = lua.create_table()?;
+    for session in sessions {
+        table.push(lua.to_value(&session)?)?;
     }
     Ok(table)
 }

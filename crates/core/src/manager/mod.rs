@@ -10,4 +10,4 @@ mod store;
 
 pub use naming::generate_session_name;
 pub use session::{Session, SessionMeta, SessionStatus};
-pub use store::{SessionStore, list_sessions, probe_open_sessions};
+pub use store::{SessionStore, StatusFilter, list_sessions, probe_open_sessions};
