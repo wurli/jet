@@ -32,24 +32,39 @@ function M.dump(obj, level)
 	end
 end
 
-function M.try_run(jet, id, code, check, err_msg, timeout)
-	timeout = timeout or 30
-	local cb = jet.execute_code(id, code, {})
-	local deadline = os.time() + timeout
-	local messages = {}
-	while os.time() < deadline do
-		local res = cb()
-		if res and res.status ~= "pending" then
-			table.insert(messages, res)
-		end
-		if res == nil then
-			error((err_msg or ("Check didn't pass for code " .. code)) .. "\nMessages: " .. M.dump(messages))
-		end
-		if check(res) then
-			return true
-		end
-	end
-	error("Timeout waiting for kernel to finish executing code" .. "\nMessages: " .. M.dump(messages))
+M.print = function(obj, level)
+	print(M.dump(obj, level))
+end
+
+M.start_kernel = function(jet, spec)
+	local id, info = jet.connect(spec)
+
+	assert(type(id) == "string" and #id > 0, "expected session id from connect")
+	assert(type(info) == "table", "expected kernel info table")
+
+	return {
+		id = id,
+		execute = function(code)
+			local cb = jet.execute_code(id, code, {})
+			return function()
+				while true do
+					local res = cb()
+					if not res then
+						return nil
+					end
+					if res.status ~= "pending" then
+						return res
+					end
+				end
+			end
+		end,
+		provide_stdin = function(parent_id, value)
+			jet.provide_stdin(id, parent_id, value)
+		end,
+		stop = function()
+			jet.stop(id)
+		end,
+	}
 end
 
 return M
