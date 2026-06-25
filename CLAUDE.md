@@ -72,14 +72,14 @@ own fork.
 
 ```bash
 # Python (ipykernel)
-cargo run -- connect ~/Library/Jupyter/kernels/python3/kernel.json
+cargo run -- start ~/Library/Jupyter/kernels/python3/kernel.json
 
 # R (ark)
-cargo run -- connect ~/Library/Jupyter/kernels/ark/kernel.json
+cargo run -- start ~/Library/Jupyter/kernels/ark/kernel.json
 
 # Persist + reattach. --connection-file is optional; without it,
 # the connection file is written to the session dir under $XDG_DATA_HOME/jet.
-cargo run -- connect --persist ~/Library/Jupyter/kernels/python3/kernel.json
+cargo run -- start --persist ~/Library/Jupyter/kernels/python3/kernel.json
 # (jet prints the connection file path on exit; pass that to attach)
 cargo run -- attach <printed-path>
 ```

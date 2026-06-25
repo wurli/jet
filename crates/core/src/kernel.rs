@@ -173,7 +173,7 @@ impl Kernel {
         let channels = match connect_channels(&info, client_id).await {
             Ok(c) => c,
             Err(e) => {
-                // The most common cause of channel-connect failure is
+                // The most common cause of channel-start failure is
                 // the kernel exiting before opening its ports. Give
                 // the OS a beat to mark the child dead so child_alive
                 // reports honestly, then enrich.
@@ -203,7 +203,7 @@ impl Kernel {
     /// Build a degenerate [`Kernel`] for tests — no ZMQ channels, no
     /// child process, with a caller-supplied log path. Used by
     /// `kernel_session::tests` to exercise the startup-error
-    /// enrichment path without paying zeromq-rs's 30s connect
+    /// enrichment path without paying zeromq-rs's 30s start
     /// timeout against a non-listening peer.
     #[cfg(test)]
     pub fn synthetic_for_test(log_file_path: Option<PathBuf>) -> Self {
@@ -221,9 +221,9 @@ impl Kernel {
     /// the kernel.
     pub async fn attach(connection_path: &Path, client_id: &str) -> Result<Self> {
         let info = connection_file::read(connection_path)?;
-        // ZMQ DEALER/SUB sockets connect to dead endpoints without
+        // ZMQ DEALER/SUB sockets start to dead endpoints without
         // complaint and just queue forever, so probe the shell port
-        // with a plain TCP connect first to fail fast when the kernel
+        // with a plain TCP start first to fail fast when the kernel
         // recorded in the connection file is no longer alive.
         probe_kernel_alive(&info).await?;
         let channels = connect_channels(&info, client_id).await?;
@@ -347,7 +347,7 @@ impl Kernel {
 /// tail of the kernel's stderr log (when one was created).
 ///
 /// "Connection refused" on a fresh attach, "Connect timed out after
-/// 30s" from zeromq-rs's connect, or "timed out waiting for
+/// 30s" from zeromq-rs's start, or "timed out waiting for
 /// kernel_info_reply" from the handshake are all useless on their
 /// own. Most real-world startup failures show up in the kernel's
 /// stderr — a Python ImportError, a missing R library, an
@@ -381,7 +381,7 @@ pub fn enrich_startup_error(
     anyhow!(parts.join("\n\n"))
 }
 
-/// Quick liveness check: TCP-connect to the shell port with a short
+/// Quick liveness check: TCP-start to the shell port with a short
 /// timeout. Returns `Err` if the kernel's no longer listening, so
 /// external probers (session list self-heal) can check liveness
 /// without constructing a full `Kernel`.
@@ -391,8 +391,8 @@ pub async fn probe_kernel_alive(info: &ConnectionInfo) -> Result<()> {
         return Ok(());
     }
     let addr = format!("{}:{}", info.ip, info.shell_port);
-    let connect = tokio::net::TcpStream::connect(&addr);
-    match tokio::time::timeout(std::time::Duration::from_millis(200), connect).await {
+    let start = tokio::net::TcpStream::connect(&addr);
+    match tokio::time::timeout(std::time::Duration::from_millis(200), start).await {
         Ok(Ok(_stream)) => Ok(()),
         Ok(Err(e)) => Err(anyhow!("kernel not reachable at {addr}: {e}")),
         Err(_) => Err(anyhow!("kernel probe timed out at {addr}")),
@@ -404,20 +404,20 @@ async fn connect_channels(info: &ConnectionInfo, session_id: &str) -> Result<Cha
         peer_identity_for_session(session_id).map_err(|e| anyhow!("peer_identity: {e}"))?;
     let shell = create_client_shell_connection_with_identity(info, session_id, identity.clone())
         .await
-        .map_err(|e| anyhow!("shell connect: {e}"))?;
+        .map_err(|e| anyhow!("shell start: {e}"))?;
     // Empty topic: subscribe to all iopub messages.
     let iopub = create_client_iopub_connection(info, "", session_id)
         .await
-        .map_err(|e| anyhow!("iopub connect: {e}"))?;
+        .map_err(|e| anyhow!("iopub start: {e}"))?;
     let stdin = create_client_stdin_connection_with_identity(info, session_id, identity)
         .await
-        .map_err(|e| anyhow!("stdin connect: {e}"))?;
+        .map_err(|e| anyhow!("stdin start: {e}"))?;
     let control = create_client_control_connection(info, session_id)
         .await
-        .map_err(|e| anyhow!("control connect: {e}"))?;
+        .map_err(|e| anyhow!("control start: {e}"))?;
     let heartbeat = create_client_heartbeat_connection(info)
         .await
-        .map_err(|e| anyhow!("heartbeat connect: {e}"))?;
+        .map_err(|e| anyhow!("heartbeat start: {e}"))?;
     Ok(Channels {
         shell: Some(shell),
         iopub: Some(iopub),

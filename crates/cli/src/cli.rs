@@ -34,7 +34,7 @@ pub struct Args {
 pub enum Command {
     /// Spawn a Jupyter kernel and open a REPL on it.
     #[command(alias = "c")]
-    Connect(ConnectArgs),
+    Start(StartArgs),
 
     /// Attach a REPL to a kernel that's already running, identified by its
     /// connection file. The kernel keeps running after you exit.
@@ -68,7 +68,7 @@ pub enum Command {
 impl Command {
     pub fn global(&self) -> &GlobalArgs {
         match self {
-            Command::Connect(c) => &c.global,
+            Command::Start(c) => &c.global,
             Command::Attach(c) => &c.global,
             Command::ListSessions(c) => &c.global,
             Command::ListKernels(c) => &c.global,
@@ -124,12 +124,12 @@ pub struct GlobalArgs {
 }
 
 #[derive(Parser, Debug)]
-#[command(group(clap::ArgGroup::new("connect-target").args(["session_id", "connection_file"])))]
-pub struct ConnectArgs {
+#[command(group(clap::ArgGroup::new("start-target").args(["session_id", "connection_file"])))]
+pub struct StartArgs {
     /// Path to a Jupyter `kernel.json` kernelspec. Argv and language are taken from the spec;
     /// `{connection_file}` placeholders are substituted with the path we generate. If
     /// omitted, an interactive picker is shown over the kernels discovered on disk (same set
-    /// as `jet list-kernels`). Example: jet connect ~/Library/Jupyter/kernels/ark/kernel.json
+    /// as `jet list-kernels`). Example: jet start ~/Library/Jupyter/kernels/ark/kernel.json
     pub kernelspec: Option<PathBuf>,
 
     /// Override the location of the kernel connection file. Defaults to
@@ -174,7 +174,7 @@ pub struct AttachArgs {
     /// is shown over open sessions in the current working directory.
     pub session_id: Option<String>,
 
-    /// Path to a connection file, e.g. written by an earlier `jet connect --persist`. Use
+    /// Path to a connection file, e.g. written by an earlier `jet start --persist`. Use
     /// this to attach to a kernel that wasn't tracked as a jet session. Mutually exclusive
     /// with the positional `session_id`.
     // If the path resolves to a tracked session (via
@@ -204,7 +204,7 @@ pub struct ExecuteArgs {
     /// `--kernelspec` is given.
     pub session_id: Option<String>,
 
-    /// Path to a connection file, e.g. written by an earlier `jet connect
+    /// Path to a connection file, e.g. written by an earlier `jet start
     /// --persist`. Alternative to the positional `session_id`. When combined
     /// with `--kernelspec`, the file must not already exist — jet writes it
     /// for the kernel it spawns.
@@ -280,7 +280,7 @@ pub struct StopArgs {
     /// is shown over open sessions in the current working directory.
     pub session_id: Option<String>,
 
-    /// Path to a connection file, e.g. written by an earlier `jet connect
+    /// Path to a connection file, e.g. written by an earlier `jet start
     /// --persist`. Use this to stop a kernel that wasn't tracked
     /// as a jet session. Mutually exclusive with the positional
     /// `session_id`.

@@ -209,10 +209,10 @@ pub struct Client {
     /// see which client triggered a message.
     client_id: String,
     /// SessionStore id (the `session.json` slug). `Some` when this Client was started
-    /// against a tracked Jet session — either spawning into one (`jet connect` without an
+    /// against a tracked Jet session — either spawning into one (`jet start` without an
     /// explicit `--connection-file`) or attaching to a connection file that lives inside
     /// a tracked session dir. `None` when the caller manages the connection file directly
-    /// (`jet connect --connection-file P` / `jet attach --connection-file P` where P isn't
+    /// (`jet start --connection-file P` / `jet attach --connection-file P` where P isn't
     /// tracked) — there's no session.json to write back to.
     session_id: Option<String>,
     shell_tx: UnboundedSender<JupyterMessage>,
@@ -288,7 +288,7 @@ impl Client {
     where
         F: Fn(Frame) + Send + Sync + 'static,
     {
-        // shell/iopub/stdin always present immediately after connect; the Options exist
+        // shell/iopub/stdin always present immediately after start; the Options exist
         // for the post-take state (control stays on kernel; heartbeat moves out below for
         // attached kernels only).
         let mut shell = kernel.channels.shell.take().expect("shell channel");
@@ -769,7 +769,7 @@ mod tests {
 
     /// Unit-test the enrichment function directly with a synthetic
     /// log file and a fake kernel handle. We don't drive a full
-    /// handshake here — zeromq-rs's 30s connect timeout against a
+    /// handshake here — zeromq-rs's 30s start timeout against a
     /// non-listening peer would dominate the test, and the
     /// `enrich_startup_error` logic is what we actually want to
     /// guard against regressing.

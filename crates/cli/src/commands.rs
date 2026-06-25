@@ -1,4 +1,4 @@
-//! Subcommand handlers for `jet` (connect, attach, list-sessions, list-kernels).
+//! Subcommand handlers for `jet` (start, attach, list-sessions, list-kernels).
 
 use anyhow::Result;
 
@@ -7,7 +7,7 @@ use jet_core::kernel::Kernel;
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
-    AttachArgs, ConnectArgs, ExecuteArgs, ListArgs, ListKernelsArgs, SendArgs, StatusFilter,
+    AttachArgs, StartArgs, ExecuteArgs, ListArgs, ListKernelsArgs, SendArgs, StatusFilter,
     StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
@@ -88,7 +88,7 @@ pub async fn run_list(args: ListArgs) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_connect(args: ConnectArgs) -> Result<()> {
+pub async fn run_connect(args: StartArgs) -> Result<()> {
     let kernelspec = match args.kernelspec {
         Some(p) => p,
         None => match pick_kernelspec().await? {

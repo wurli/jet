@@ -208,7 +208,7 @@ end
 
 ---@alias jet.kernel.callback fun(): jet.kernel.response?
 
----@class jet.connect.response
+---@class jet.start.response
 ---@field session_id? string
 ---@field client_id string
 ---@field kernel_info table
@@ -223,8 +223,8 @@ end
 ---@field kernel_protocol_version string?
 
 ---@class jet.engine
----@field connect fun(spec_path: string, connection_file: string?, session_name: string?): jet.connect.response
----@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.connect.response
+---@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.start.response
+---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.start.response
 ---@field stop fun(session_id: string)
 ---@field interrupt fun(session_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }

@@ -1,4 +1,4 @@
-//! The interactive REPL loop driven by `jet connect` / `jet attach`.
+//! The interactive REPL loop driven by `jet start` / `jet attach`.
 //!
 //! Owns: rustyline prompt, is-complete polling, execute-request dispatch,
 //! the kernel-liveness watchers (waitpid for spawned kernels, heartbeat
@@ -199,7 +199,7 @@ async fn wait_for_idle(
 /// between `.detach()` and `.shutdown()`.
 /// How `drive_repl` should bring up its [`Client`]. Spawn vs Attach decides whether the
 /// renderer sink suppresses the `kernel_info_reply` (so reconnects don't reprint the
-/// banner the first connect already drew).
+/// banner the first start already drew).
 pub enum ReplTarget<'a> {
     Spawn {
         spec: &'a KernelSpec,

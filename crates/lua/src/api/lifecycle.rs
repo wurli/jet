@@ -11,14 +11,14 @@ use std::time::SystemTime;
 
 use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 
-/// `jet.connect(spec_path, connection_file?, session_name?) -> (client_id, info)`
+/// `jet.start(spec_path, connection_file?, session_name?) -> (client_id, info)`
 ///
-/// Spawn a kernel from `spec_path`. Mirrors `jet connect`:
+/// Spawn a kernel from `spec_path`. Mirrors `jet start`:
 /// - no `connection_file` → create a tracked SessionStore entry and use its connection path;
 ///   the resulting Client carries the SessionStore id.
 /// - `connection_file` given → caller owns the path; no SessionStore entry is written and
 ///   the Client has no `session_id`. The path must not already exist (use `jet.attach`).
-pub fn connect(
+pub fn start(
     lua: &Lua,
     (spec_path, connection_file, session_name): (String, Option<String>, Option<String>),
 ) -> LuaResult<LuaTable> {
@@ -224,7 +224,7 @@ pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 ///
 /// Mint a session id in jet's canonical format
 /// (`<timestamp>_<lang>_<basename>_<rand>`). Use this to pre-allocate an
-/// id from Lua, then pass it to `jet connect --session-id <id>` so both
+/// id from Lua, then pass it to `jet start --session-id <id>` so both
 /// sides share the same handle without baking the format into Lua.
 pub fn make_session_id(_: &Lua, lang: String) -> LuaResult<String> {
     Ok(generate_session_name(

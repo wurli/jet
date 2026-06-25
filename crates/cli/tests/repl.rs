@@ -88,7 +88,7 @@ fn drive_jet_with_interrupt(
 
     let bin = env!("CARGO_BIN_EXE_jet");
     let mut cmd = CommandBuilder::new(bin);
-    cmd.args(["connect", kernel_json.to_str().unwrap()]);
+    cmd.args(["start", kernel_json.to_str().unwrap()]);
     cmd.env("XDG_DATA_HOME", xdg);
     cmd.cwd(std::env::current_dir()?);
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
@@ -209,7 +209,7 @@ fn jet_exits_on_eof() {
     let xdg = scratch_xdg_dir();
 
     let mut child = Command::new(bin)
-        .args(["connect", kernel_json.to_str().unwrap()])
+        .args(["start", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -260,7 +260,7 @@ fn jet_exits_when_kernel_dies_mid_execute() {
 
     use std::io::Write;
     let mut child = Command::new(bin)
-        .args(["connect", kernel_json.to_str().unwrap()])
+        .args(["start", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -317,7 +317,7 @@ fn jet_exits_when_kernel_quits() {
 
     use std::io::Write;
     let mut child = Command::new(bin)
-        .args(["connect", kernel_json.to_str().unwrap()])
+        .args(["start", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -381,7 +381,7 @@ fn jet_exits_when_r_kernel_quits_spawn() {
 
     use std::io::Write;
     let mut child = Command::new(bin)
-        .args(["connect", kernel_json.to_str().unwrap()])
+        .args(["start", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -439,7 +439,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
         use std::io::Write;
         let mut child = Command::new(bin)
             .args([
-                "connect",
+                "start",
                 "--connection-file",
                 &conn_str,
                 "--persist",
@@ -644,7 +644,7 @@ fn detach_and_attach_round_trip() {
     let _ = drive(
         bin,
         &[
-            "connect",
+            "start",
             "--connection-file",
             &conn_str,
             "--persist",
@@ -713,7 +713,7 @@ fn input_request_prompts_user_and_replies() {
 
     let bin = env!("CARGO_BIN_EXE_jet");
     let mut cmd = CommandBuilder::new(bin);
-    cmd.args(["connect", kernel_json.to_str().unwrap()]);
+    cmd.args(["start", kernel_json.to_str().unwrap()]);
     cmd.env("XDG_DATA_HOME", &xdg);
     cmd.cwd(std::env::current_dir().expect("cwd"));
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
@@ -828,7 +828,7 @@ fn spawn_jet_pty(
 
     let bin = env!("CARGO_BIN_EXE_jet");
     let mut cmd = CommandBuilder::new(bin);
-    cmd.args(["connect", kernel_json.to_str().unwrap()]);
+    cmd.args(["start", kernel_json.to_str().unwrap()]);
     cmd.env("XDG_DATA_HOME", xdg);
     cmd.cwd(std::env::current_dir().expect("cwd"));
     let child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
@@ -1094,7 +1094,7 @@ fn session_marked_closed_on_graceful_exit() {
     let xdg = scratch_xdg_dir();
 
     let mut child = Command::new(bin)
-        .args(["connect", kernel_json.to_str().unwrap()])
+        .args(["start", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -1153,7 +1153,7 @@ fn session_left_open_with_persist() {
     let xdg = scratch_xdg_dir();
 
     let mut child = Command::new(bin)
-        .args(["connect", "--persist", kernel_json.to_str().unwrap()])
+        .args(["start", "--persist", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -1244,7 +1244,7 @@ fn jet_stop_shuts_down_persisted_kernel() {
     // that opts out of session tracking, which we need below to recover
     // the kernel pid.
     let mut spawn = Command::new(bin)
-        .args(["connect", "--persist", kernel_json.to_str().unwrap()])
+        .args(["start", "--persist", kernel_json.to_str().unwrap()])
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -1316,7 +1316,7 @@ fn jet_stop_shuts_down_persisted_kernel() {
     );
 }
 
-/// `jet connect --connection-file <path>` opts out of session tracking:
+/// `jet start --connection-file <path>` opts out of session tracking:
 /// no session.json is written and `jet list-sessions` shows nothing.
 #[test]
 fn connect_with_connection_file_skips_session_tracking() {
@@ -1341,7 +1341,7 @@ fn connect_with_connection_file_skips_session_tracking() {
 
     let mut child = Command::new(bin)
         .args([
-            "connect",
+            "start",
             "--connection-file",
             &conn_str,
             kernel_json.to_str().unwrap(),
@@ -1393,7 +1393,7 @@ fn connect_with_connection_file_skips_session_tracking() {
     );
 }
 
-/// Spawn an ipykernel via `jet connect --persist --connection-file <path>`
+/// Spawn an ipykernel via `jet start --persist --connection-file <path>`
 /// in a child process, then EOF its stdin to exit jet (kernel keeps
 /// running). Returns the connection-file path; caller is responsible for
 /// killing the kernel and cleaning up.
@@ -1419,7 +1419,7 @@ fn spawn_persisted_ipykernel() -> Option<(std::path::PathBuf, std::path::PathBuf
 
     let mut child = Command::new(bin)
         .args([
-            "connect",
+            "start",
             "--connection-file",
             &conn_str,
             "--persist",
@@ -1585,7 +1585,7 @@ fn execute_requires_session_or_connection_file() {
     );
 }
 
-/// `jet connect` refuses to spawn if the target connection file already
+/// `jet start` refuses to spawn if the target connection file already
 /// exists. Error message tells the user how to reconnect — by session id
 /// when the path resolves to a tracked session, by --connection-file
 /// otherwise.
@@ -1604,13 +1604,13 @@ fn connect_refuses_if_connection_file_exists() {
         "jet-collide-{:x}.json",
         rand::thread_rng().r#gen::<u64>()
     ));
-    // Pre-create the connection file so connect bails before kernel launch.
+    // Pre-create the connection file so start bails before kernel launch.
     std::fs::write(&conn, b"{}").unwrap();
     let conn_str = conn.to_string_lossy().to_string();
 
     let out = Command::new(bin)
         .args([
-            "connect",
+            "start",
             "--connection-file",
             &conn_str,
             kernel_json.to_str().unwrap(),
@@ -1618,14 +1618,14 @@ fn connect_refuses_if_connection_file_exists() {
         .env("XDG_DATA_HOME", &xdg)
         .stdin(Stdio::null())
         .output()
-        .expect("run jet connect");
+        .expect("run jet start");
 
     let _ = std::fs::remove_file(&conn);
     let _ = std::fs::remove_dir_all(&xdg);
 
     assert!(
         !out.status.success(),
-        "jet connect should have failed; stdout={} stderr={}",
+        "jet start should have failed; stdout={} stderr={}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
@@ -1672,7 +1672,7 @@ fn write_python_kernelspec_with_env(env: &[(&str, &str)]) -> Result<std::path::P
     Ok(path)
 }
 
-/// Spawn `jet connect --persist` with extra args and a parent env, then
+/// Spawn `jet start --persist` with extra args and a parent env, then
 /// EOF stdin to exit. Returns the connection file path on success.
 fn spawn_persisted_with_env(
     kernel_json: &std::path::Path,
@@ -1687,7 +1687,7 @@ fn spawn_persisted_with_env(
     let conn_str = conn.to_string_lossy().to_string();
 
     let mut cmd = Command::new(bin);
-    cmd.args(["connect", "--connection-file", &conn_str, "--persist"]);
+    cmd.args(["start", "--connection-file", &conn_str, "--persist"]);
     cmd.arg(kernel_json);
     cmd.env("XDG_DATA_HOME", xdg);
     for (k, v) in parent_env {

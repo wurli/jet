@@ -41,7 +41,7 @@ function Kernel:connect_cmd()
 
 	return {
 		config.options.jet_binary,
-		"connect",
+		"start",
 		self.spec_path,
 		"--session-id",
 		self.session_id,

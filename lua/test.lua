@@ -1,8 +1,8 @@
 Jet = require("jet.core.engine")
 
 -- local k = jet.attach("con.json")
--- K = Jet.connect("/Users/JACOB.SCOTT1/Repos/jet/kernels/ark/kernel.json", "con.json")
-K = Jet.connect("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json", "con.json")
+-- K = Jet.start("/Users/JACOB.SCOTT1/Repos/jet/kernels/ark/kernel.json", "con.json")
+K = Jet.start("/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json", "con.json")
 
 vim.print({ session = K })
 

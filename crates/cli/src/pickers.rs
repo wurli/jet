@@ -1,4 +1,4 @@
-//! Interactive pickers for kernels (jet connect) and sessions (jet attach).
+//! Interactive pickers for kernels (jet start) and sessions (jet attach).
 
 use std::path::PathBuf;
 

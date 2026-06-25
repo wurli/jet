@@ -38,9 +38,9 @@ end
 
 ---@param jet jet.engine
 M.start_kernel = function(jet, spec)
-	local con = jet.connect(spec)
+	local con = jet.start(spec)
 
-	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from connect")
+	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from start")
 	assert(type(con.kernel_info) == "table", "expected kernel info table")
 
 	return {
