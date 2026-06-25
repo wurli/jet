@@ -93,11 +93,23 @@ pub fn pick(prompt: &str, rows: &[Vec<Cell>], sort_by: Option<usize>) -> Result<
         .prompt();
 
     match picked {
-        Ok(line) => Ok(labels.iter().position(|l| l == &line).map(|i| order[i])),
+        Ok(line) => {
+            clear_echo();
+            Ok(labels.iter().position(|l| l == &line).map(|i| order[i]))
+        }
         Err(inquire::InquireError::OperationCanceled)
         | Err(inquire::InquireError::OperationInterrupted) => Ok(None),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Erase the "> prompt answer" line inquire prints after a successful
+/// selection. Move up one line, clear it, and park the cursor at column 1.
+fn clear_echo() {
+    use std::io::Write;
+    let mut err = std::io::stderr();
+    let _ = err.write_all(b"\x1b[1A\x1b[2K\r");
+    let _ = err.flush();
 }
 
 /// Multi-select variant of [`pick`]. Same row formatting; user toggles
@@ -131,10 +143,13 @@ pub fn pick_multi(prompt: &str, rows: &[Vec<Cell>]) -> Result<Vec<usize>> {
         .prompt();
 
     match picked {
-        Ok(chosen) => Ok(chosen
-            .into_iter()
-            .filter_map(|line| labels.iter().position(|l| l == &line))
-            .collect()),
+        Ok(chosen) => {
+            clear_echo();
+            Ok(chosen
+                .into_iter()
+                .filter_map(|line| labels.iter().position(|l| l == &line))
+                .collect())
+        }
         Err(inquire::InquireError::OperationCanceled)
         | Err(inquire::InquireError::OperationInterrupted) => Ok(vec![]),
         Err(e) => Err(e.into()),
