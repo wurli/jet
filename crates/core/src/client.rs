@@ -196,11 +196,10 @@ impl FrameRouter {
 
 /// A long-lived session over a single [`Kernel`].
 ///
-/// After [`Client::start`] returns, the shell/iopub/stdin sockets
-/// have been moved into background tasks; the [`Kernel`] retains only
-/// `control` + `heartbeat` + (for spawned kernels) the child process
-/// guard, which is what [`Client::interrupt`] /
-/// [`Client::shutdown`] need.
+/// After construction (via [`Client::spawn`] / [`Client::attach`]) the shell/iopub/stdin
+/// sockets have been moved into background tasks; the [`Kernel`] retains only `control` +
+/// `heartbeat` + (for spawned kernels) the child process guard, which is what
+/// [`Client::interrupt`] / [`Client::shutdown`] need.
 pub struct Client {
     kernel: Kernel,
     /// Like `<name>---repl---<rand>`. Kernels report this back in the parent header so we can
@@ -227,16 +226,8 @@ impl Client {
     /// Spawn a kernel and bring up a fully-handshaked client over it. The session name
     /// is mixed into a fresh client id (see [`make_client_id`]); `'jet'` keeps the id
     /// invisible to the CLI's renderer, anything else surfaces as a foreign-client tag.
-    pub async fn spawn(
-        spec: &crate::kernel::KernelSpec,
-        connection_path: Option<std::path::PathBuf>,
-        session_name: Option<&str>,
-    ) -> Result<(Self, Value)> {
-        Self::spawn_with_sink(spec, connection_path, session_name, |_| {}).await
-    }
-
-    /// Like [`Client::spawn`] but installs a frame sink (see [`Client::start_with_sink`]).
-    pub async fn spawn_with_sink<F>(
+    /// Pass `|_| {}` for `sink` when you don't need a global frame view.
+    pub async fn spawn<F>(
         spec: &crate::kernel::KernelSpec,
         connection_path: Option<std::path::PathBuf>,
         session_name: Option<&str>,
@@ -251,15 +242,8 @@ impl Client {
     }
 
     /// Attach to a running kernel and bring up a fully-handshaked client over it.
-    pub async fn attach(
-        connection_path: &std::path::Path,
-        session_name: Option<&str>,
-    ) -> Result<(Self, Value)> {
-        Self::attach_with_sink(connection_path, session_name, |_| {}).await
-    }
-
-    /// Like [`Client::attach`] but installs a frame sink (see [`Client::start_with_sink`]).
-    pub async fn attach_with_sink<F>(
+    /// Pass `|_| {}` for `sink` when you don't need a global frame view.
+    pub async fn attach<F>(
         connection_path: &std::path::Path,
         session_name: Option<&str>,
         sink: F,
@@ -272,31 +256,18 @@ impl Client {
         Self::start_with_sink(kernel, client_id, sink).await
     }
 
-    /// Take the shell/iopub/stdin channels out of the kernel and spawn
-    /// the long-running reader/writer tasks. Out-of-band frames
-    /// (anything not consumed by a [`RequestStream`]) are dropped.
-    pub async fn start(kernel: Kernel, client_id: String) -> Result<(Self, Value)> {
-        Self::start_with_sink(kernel, client_id, |_| {}).await
-    }
-
-    /// Like [`Client::start`] but every routed frame is also
-    /// handed to `sink`. Use when the consumer has a global view (a
-    /// renderer, a logger) that needs every frame regardless of
-    /// which request — if any — it belongs to.
+    /// Take the shell/iopub/stdin channels out of the kernel, perform the
+    /// `kernel_info` handshake (fast-fail probe that the kernel is answering), and spawn
+    /// the long-running reader/writer tasks. Every routed frame is also handed to `sink`,
+    /// which a renderer/logger uses for its global view.
     ///
-    /// Performs a synchronous `kernel_info` handshake before spawning
-    /// the socket loop. The reply is fed through the sink (so a
-    /// renderer sink draws the banner) and returned as JSON. iopub
-    /// `status: busy`/`idle` for our own handshake request are
-    /// dropped — the client didn't initiate the request, so surfacing
-    /// idle for it would mislead any "wait for idle" consumer. Other
-    /// iopub frames (kernel-side startup prints) are forwarded to the
-    /// sink in order.
-    ///
-    /// The handshake doubles as the "is the kernel actually
-    /// answering" probe. Owning both sockets exclusively here means
-    /// no concurrent socket-loop dispatch can race the banner write.
-    pub async fn start_with_sink<F>(
+    /// The reply is fed through the sink as the last step of the handshake (so a renderer
+    /// sink draws the banner before [`Client::spawn`] returns) and returned as
+    /// JSON. iopub `status: busy`/`idle` for our own handshake request are dropped — the
+    /// consumer didn't initiate the request, so signalling idle for it would mislead any
+    /// later "wait for idle" logic. Other iopub frames (kernel-side startup prints) flow
+    /// through the sink in arrival order.
+    async fn start_with_sink<F>(
         mut kernel: Kernel,
         client_id: String,
         sink: F,
@@ -304,9 +275,12 @@ impl Client {
     where
         F: Fn(Frame) + Send + Sync + 'static,
     {
-        let mut shell = kernel.channels.take_shell()?;
-        let mut iopub = kernel.channels.take_iopub()?;
-        let stdin_sock = kernel.channels.take_stdin()?;
+        // shell/iopub/stdin always present immediately after connect; the Options exist
+        // for the post-take state (control stays on kernel; heartbeat moves out below for
+        // attached kernels only).
+        let mut shell = kernel.channels.shell.take().expect("shell channel");
+        let mut iopub = kernel.channels.iopub.take().expect("iopub channel");
+        let stdin_sock = kernel.channels.stdin.take().expect("stdin channel");
 
         let (status_tx, _status_rx) = watch::channel(KernelStatus::Starting);
         let status_tx = Arc::new(status_tx);
@@ -362,7 +336,7 @@ impl Client {
         // time.
         let mut watchers = Vec::new();
         if kernel.is_attached() {
-            let hb = kernel.channels.take_heartbeat()?;
+            let hb = kernel.channels.heartbeat.take().expect("heartbeat channel");
             watchers.push(spawn_heartbeat_watcher(hb, status_tx.clone()));
         }
         if let Some(pid) = kernel.child_pid() {
@@ -387,14 +361,8 @@ impl Client {
         &self.client_id
     }
 
-    /// Current kernel liveness/execution state.
-    pub fn status(&self) -> KernelStatus {
-        *self.status_tx.borrow()
-    }
-
-    /// Watch handle for kernel status transitions. Latest-value channel:
-    /// callers can `borrow()` for the current state or
-    /// `changed().await` to park until it moves.
+    /// Watch handle for kernel liveness/execution state. Latest-value channel: callers can
+    /// `borrow()` for the current state or `changed().await` to park until it moves.
     pub fn watch_status(&self) -> watch::Receiver<KernelStatus> {
         self.status_tx.subscribe()
     }
@@ -430,25 +398,15 @@ impl Client {
         self.kernel.child_pid()
     }
 
-    /// `true` if this client attached to an externally-managed kernel (we don't own the child).
-    pub fn is_attached(&self) -> bool {
-        self.kernel.is_attached()
-    }
-
     /// Forward a ^C-equivalent to the kernel.
     pub async fn interrupt(&mut self) -> Result<()> {
         self.kernel.interrupt().await
     }
 
-    /// Shutdown the kernel (best-effort). Consumes the session because
-    /// the reader/writer tasks will tear down once their sockets close.
-    pub async fn shutdown(mut self) -> Result<()> {
-        self.kernel.shutdown().await
-    }
-
-    /// Like [`Client::shutdown`] but borrows instead of consuming. Used when the
-    /// caller still holds a shared reference and can't drop the client yet.
-    pub async fn shutdown_in_place(&mut self) -> Result<()> {
+    /// Shutdown the kernel (best-effort). Drop the [`Client`] afterwards to tear down the
+    /// reader/writer tasks; if you want the kernel to outlive this process, call
+    /// [`Client::detach`] before dropping instead.
+    pub async fn shutdown(&mut self) -> Result<()> {
         self.kernel.shutdown().await
     }
 

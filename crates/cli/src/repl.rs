@@ -251,9 +251,9 @@ pub async fn drive_repl(
         ReplTarget::Spawn {
             spec,
             connection_path,
-        } => Client::spawn_with_sink(spec, connection_path, session_name.as_deref(), sink).await?,
+        } => Client::spawn(spec, connection_path, session_name.as_deref(), sink).await?,
         ReplTarget::Attach { connection_path } => {
-            Client::attach_with_sink(connection_path, session_name.as_deref(), sink).await?
+            Client::attach(connection_path, session_name.as_deref(), sink).await?
         }
     };
     let child_pid = session.child_pid();

@@ -33,7 +33,7 @@ pub fn connect(
     }
 
     let (client, info) = runtime()
-        .block_on(Client::spawn(&spec, conn_path, session_name.as_deref()))
+        .block_on(Client::spawn(&spec, conn_path, session_name.as_deref(), |_| {}))
         .into_lua_err()?;
     Ok(register(lua, client, info)?)
 }
@@ -48,7 +48,7 @@ pub fn attach(
 ) -> LuaResult<(String, LuaValue)> {
     let path = PathBuf::from(&connection_file);
     let (client, info) = runtime()
-        .block_on(Client::attach(&path, session_name.as_deref()))
+        .block_on(Client::attach(&path, session_name.as_deref(), |_| {}))
         .into_lua_err()?;
     register(lua, client, info)
 }

@@ -94,10 +94,11 @@ pub fn log_path_for(connection_path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// The four ZMQ client connections. Stored as `Option`s so callers can
-/// `take_*()` ownership of one socket for a long-running task without
-/// borrowing the whole `Kernel`. Once taken, the slot stays `None`; the
-/// `Kernel` is the source of truth for which channels are still in-house.
+/// The five ZMQ client connections. `Client::start_with_sink` moves shell/iopub/stdin
+/// into background tasks (and, for attached kernels, heartbeat into a liveness watcher);
+/// control stays on the `Kernel` so `interrupt()` and `shutdown()` can use it. The slots
+/// are `Option`s so the owning Client can `.take()` them; for spawned kernels heartbeat
+/// is never taken (waitpid is used instead) and just drops with the kernel.
 #[derive(Default)]
 pub struct Channels {
     pub shell: Option<ClientShellConnection>,
@@ -105,29 +106,6 @@ pub struct Channels {
     pub stdin: Option<ClientStdinConnection>,
     pub control: Option<ClientControlConnection>,
     pub heartbeat: Option<ClientHeartbeatConnection>,
-}
-
-impl Channels {
-    pub fn take_shell(&mut self) -> Result<ClientShellConnection> {
-        self.shell
-            .take()
-            .ok_or_else(|| anyhow!("shell channel already taken"))
-    }
-    pub fn take_iopub(&mut self) -> Result<ClientIoPubConnection> {
-        self.iopub
-            .take()
-            .ok_or_else(|| anyhow!("iopub channel already taken"))
-    }
-    pub fn take_stdin(&mut self) -> Result<ClientStdinConnection> {
-        self.stdin
-            .take()
-            .ok_or_else(|| anyhow!("stdin channel already taken"))
-    }
-    pub fn take_heartbeat(&mut self) -> Result<ClientHeartbeatConnection> {
-        self.heartbeat
-            .take()
-            .ok_or_else(|| anyhow!("heartbeat channel already taken"))
-    }
 }
 
 pub struct Kernel {

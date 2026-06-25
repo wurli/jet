@@ -310,7 +310,7 @@ async fn open_target_client(
 ) -> Result<(Client, serde_json::Value, bool)> {
     match target {
         KernelTarget::Attach(conn_path) => {
-            let (client, info) = Client::attach(&conn_path, session_name).await?;
+            let (client, info) = Client::attach(&conn_path, session_name, |_| {}).await?;
             Ok((client, info, false))
         }
         KernelTarget::Spawn {
@@ -331,7 +331,7 @@ async fn open_target_client(
                 spec.language,
                 spec.argv,
             );
-            let (client, info) = Client::spawn(&spec, conn_path, session_name).await?;
+            let (client, info) = Client::spawn(&spec, conn_path, session_name, |_| {}).await?;
             Ok((client, info, true))
         }
     }
@@ -358,7 +358,7 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     // Client::spawn / Client::attach perform a kernel_info handshake — that's
     // the fast-fail probe that confirms the kernel is answering. We don't install
     // a sink, so the banner isn't rendered for execute.
-    let (session, _info, spawned) =
+    let (mut session, _info, spawned) =
         open_target_client(target, session_name.as_deref()).await?;
 
     let render_graphics = !no_graphics;
@@ -409,7 +409,7 @@ pub async fn run_send(args: SendArgs) -> Result<()> {
     let (target, code_arg) =
         resolve_kernel_target("send", session_id, connection_file, kernelspec, code)?;
     let code = code_or_stdin(code_arg)?;
-    let (session, _info, spawned) =
+    let (mut session, _info, spawned) =
         open_target_client(target, session_name.as_deref()).await?;
 
     let mut stream = session.request(
