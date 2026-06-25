@@ -7,8 +7,7 @@ use jet_core::kernel::Kernel;
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
-    AttachArgs, StartArgs, ExecuteArgs, ListArgs, ListKernelsArgs, SendArgs, StatusFilter,
-    StopArgs,
+    AttachArgs, ExecuteArgs, ListArgs, ListKernelsArgs, SendArgs, StartArgs, StatusFilter, StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::{ReplTarget, drive_repl};
@@ -477,9 +476,11 @@ pub async fn run_stop(args: StopArgs) -> Result<()> {
         match Kernel::attach(&path, &client_id).await {
             Ok(mut kernel) => {
                 if let Err(e) = kernel.shutdown().await {
+                    // TODO: show session id instead of client_id
                     eprintln!("shutdown failed for {}: {e}", client_id);
                     last_err = Some(e);
                 } else {
+                    // TODO: show session id instead of client_id
                     println!("Shut down kernel {}", client_id);
                 }
             }

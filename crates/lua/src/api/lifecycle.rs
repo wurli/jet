@@ -1,8 +1,8 @@
 //! Kernel lifecycle: start, attach, shutdown, interrupt, list.
 
 use anyhow::Context;
-use jet_core::client::Client;
-use jet_core::kernel::KernelSpec;
+use jet_core::client::{Client, make_client_id};
+use jet_core::kernel::{Kernel, KernelSpec};
 use jet_core::manager::{SessionStore, generate_session_name};
 use mlua::prelude::*;
 use std::path::PathBuf;
@@ -144,21 +144,23 @@ fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<Lua
     Ok(out)
 }
 
-/// `jet.stop(client_id)`
-pub fn shutdown_kernel(_lua: &Lua, client_id: String) -> LuaResult<()> {
-    let handle = get(&client_id).into_lua_err()?;
-    KERNELS.lock().unwrap().remove(&client_id);
+/// `jet.stop(session_id)`
+///
+/// Resolves the session via the on-disk SessionStore, attaches a fresh
+/// client to the kernel's connection file, and sends `shutdown_request`.
+/// Mirrors `jet stop <session_id>` — works for any tracked session,
+/// regardless of which process owns the live in-memory client.
+pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
+    let path = SessionStore::default()
+        .into_lua_err()?
+        .open(&session_id)
+        .into_lua_err()?
+        .connection_file_path();
     runtime()
         .block_on(async move {
-            let mut guard = handle.lock().await;
-            // Mark the SessionStore entry closed so disk-backed `list_sessions` reflects it.
-            if let Some(sid) = guard.session_id()
-                && let Ok(store) = SessionStore::default()
-                && let Ok(mut s) = store.open(sid)
-            {
-                s.mark_closed();
-            }
-            guard.shutdown().await
+            let client_id = make_client_id(None);
+            let mut kernel = Kernel::attach(&path, &client_id).await?;
+            kernel.shutdown().await
         })
         .into_lua_err()
 }
