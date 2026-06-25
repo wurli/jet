@@ -225,17 +225,17 @@ end
 ---@class jet.engine
 ---@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.start.response
 ---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.start.response
----@field stop fun(session_id: string)
----@field interrupt fun(session_id: string)
+---@field stop fun(client_id: string)
+---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }
 ---@field list_sessions fun(): table
 ---@field list_kernels fun(): { path: string, spec: jet.kernel.spec }[]
----@field execute_code fun(session_id: string, code: string, user_expression: table?): jet.kernel.callback
----@field is_complete fun(session_id: string, code: string): jet.kernel.callback
----@field get_completions fun(session_id: string, code: string): table?
----@field comm_open fun(session_id: string, comm_id: string, data: table): string, jet.kernel.callback
----@field comm_send fun(session_id: string, comm_id: string, data: table): jet.kernel.callback
----@field provide_stdin fun(session_id: string, parent_msg_id: string, value: string)
+---@field execute_code fun(client_id: string, code: string, user_expression: table?): jet.kernel.callback
+---@field is_complete fun(client_id: string, code: string): jet.kernel.callback
+---@field get_completions fun(client_id: string, code: string): table?
+---@field comm_open fun(client_id: string, comm_id: string, data: table): string, jet.kernel.callback
+---@field comm_send fun(client_id: string, comm_id: string, data: table): jet.kernel.callback
+---@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string)
 ---@field make_session_id fun(lang: string): string
 local out = loader()
 
