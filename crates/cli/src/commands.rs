@@ -137,7 +137,9 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
 
     let kernel =
         Kernel::spawn(&spec, Some(conn_path.clone()), args.session_name.as_deref()).await?;
-    if let (Some(pid), Some(s)) = (kernel.child_pid(), session.as_mut()) {
+    if let Some(pid) = kernel.child_pid()
+        && let Some(s) = session.as_mut()
+    {
         s.set_kernel_pid(pid);
     }
 
