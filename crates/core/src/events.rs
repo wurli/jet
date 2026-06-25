@@ -94,10 +94,7 @@ pub enum Channel {
 
 /// Convert a single message into an [`Event`].
 pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
-    let parent_session = match msg.parent_header {
-        Some(ref h) => Some(h.session.clone()),
-        None => None,
-    };
+    let parent_session = msg.parent_header.as_ref().map(|h| h.session.clone());
     let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
 
     let event_data = match (&channel, &msg.content) {

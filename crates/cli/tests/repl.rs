@@ -1,3 +1,8 @@
+// Tests explicitly `.kill()` their children and the process exits shortly after; the OS
+// reaps before any zombie lingers. Wiring `.wait()` into every error path adds noise
+// without changing behaviour.
+#![allow(clippy::zombie_processes)]
+
 //! End-to-end tests that drive the `jet` binary through a real PTY.
 //! Skipped (printed as `SKIP: …` and pass) if `python -m ipykernel` or
 //! the ark R kernel are missing.
@@ -25,6 +30,7 @@
 //!   storage is per-test;
 //! - killing only its own kernel — by recorded pid where possible, else
 //!   `pkill -f <connection-file-path>` which is unique to the test.
+//!
 //! Don't reintroduce `pkill -f ark` / `pkill -f ipykernel_launcher` —
 //! those cross-kill concurrent tests.
 
@@ -130,13 +136,11 @@ fn drive_jet_with_interrupt(
         if !saw_interrupt && s.contains(interrupt_marker) {
             saw_interrupt = true;
         }
-        if saw_interrupt {
-            if let Some(idx) = s.find(interrupt_marker) {
-                if s[idx + interrupt_marker.len()..].contains("> ") {
+        if saw_interrupt
+            && let Some(idx) = s.find(interrupt_marker)
+                && s[idx + interrupt_marker.len()..].contains("> ") {
                     break;
                 }
-            }
-        }
         std::thread::sleep(Duration::from_millis(100));
     }
 
@@ -611,11 +615,10 @@ fn detach_and_attach_round_trip() {
         // kernel a beat to handle the line.
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
-            if let Some(needle) = expected {
-                if output.lock().unwrap().contains(needle) {
+            if let Some(needle) = expected
+                && output.lock().unwrap().contains(needle) {
                     break;
                 }
-            }
             std::thread::sleep(Duration::from_millis(100));
         }
         // ^D to exit.
@@ -625,8 +628,8 @@ fn detach_and_attach_round_trip() {
         let _ = child.wait();
         drop(pair.master);
         let _ = h.join();
-        let final_out = output.lock().unwrap().clone();
-        final_out
+        
+        output.lock().unwrap().clone()
     }
 
     let bin = env!("CARGO_BIN_EXE_jet");
@@ -798,6 +801,7 @@ fn input_request_prompts_user_and_replies() {
 /// Spawn jet under a pty, return (child, writer, output buffer, reader thread).
 /// Waits for the first `> ` prompt before returning so callers don't race
 /// the banner.
+#[allow(clippy::type_complexity)]
 fn spawn_jet_pty(
     kernel_json: &std::path::Path,
     xdg: &std::path::Path,

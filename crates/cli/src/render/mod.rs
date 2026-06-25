@@ -375,7 +375,7 @@ mod tests {
         .unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(
-            std::str::from_utf8(&*bytes).unwrap(),
+            std::str::from_utf8(&bytes).unwrap(),
             &format!(
                 "{} Error\n{} Something went wrong",
                 ansi::dim("[my-session]"),
@@ -402,7 +402,7 @@ mod tests {
         }
         let bytes = captured.lock().unwrap();
         assert_eq!(
-            std::str::from_utf8(&*bytes).unwrap(),
+            std::str::from_utf8(&bytes).unwrap(),
             &format!("{} hello world\n{} bye", ansi::dim("[s]"), ansi::dim("[s]"))
         );
     }
@@ -433,7 +433,7 @@ mod tests {
 
         let bytes = captured.lock().unwrap();
         assert_eq!(
-            std::str::from_utf8(&*bytes).unwrap(),
+            std::str::from_utf8(&bytes).unwrap(),
             &format!("mine\n{} theirs\n", ansi::dim("[bob]"))
         );
     }
@@ -454,7 +454,7 @@ mod tests {
         .unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(
-            std::str::from_utf8(&*bytes).unwrap(),
+            std::str::from_utf8(&bytes).unwrap(),
             &format!("{} frame1\r{} frame2", ansi::dim("[s]"), ansi::dim("[s]"))
         );
     }
@@ -474,7 +474,7 @@ mod tests {
         })
         .unwrap();
         let bytes = captured.lock().unwrap();
-        assert_eq!(std::str::from_utf8(&*bytes).unwrap(), "a\nb");
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), "a\nb");
     }
 
     #[test]

@@ -19,6 +19,7 @@ pub struct SessionStore {
 
 impl SessionStore {
     /// `$XDG_DATA_HOME/jet`, falling back to `$HOME/.local/share/jet`.
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Result<Self> {
         Ok(Self {
             dir: jet_data_dir()?,
@@ -78,11 +79,10 @@ impl SessionStore {
         let mut out = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
-                if let Ok(meta) = read_meta(&path) {
+            if path.is_dir()
+                && let Ok(meta) = read_meta(&path) {
                     out.push(meta);
                 }
-            }
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(out)

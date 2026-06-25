@@ -35,7 +35,7 @@ pub fn connect(
     let (client, info) = runtime()
         .block_on(Client::spawn(&spec, conn_path, session_name.as_deref(), |_| {}))
         .into_lua_err()?;
-    Ok(register(lua, client, info)?)
+    register(lua, client, info)
 }
 
 /// `jet.attach(connection_file) -> (client_id, info)`

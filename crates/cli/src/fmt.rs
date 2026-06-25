@@ -8,21 +8,19 @@ use std::path::{Path, PathBuf};
 pub fn shorten_path(path: &Path, cwd: bool) -> String {
     let mut best = path.to_string_lossy().into_owned();
 
-    if cwd && let Ok(cwd) = std::env::current_dir() {
-        if let Ok(rel) = path.strip_prefix(&cwd) {
+    if cwd && let Ok(cwd) = std::env::current_dir()
+        && let Ok(rel) = path.strip_prefix(&cwd) {
             let cand = format!("./{}", rel.display());
             if cand.len() < best.len() {
                 best = cand;
             }
         }
-    }
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        if let Ok(rel) = path.strip_prefix(&home) {
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from)
+        && let Ok(rel) = path.strip_prefix(&home) {
             let cand = format!("~/{}", rel.display());
             if cand.len() < best.len() {
                 best = cand;
             }
         }
-    }
     best
 }

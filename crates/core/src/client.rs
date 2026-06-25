@@ -96,6 +96,9 @@ pub struct Frame {
     pub message: JupyterMessage,
 }
 
+// Frame is ~472 bytes (JupyterMessage). Idle is the terminal item and rare per request;
+// boxing the hot variant just to balance an enum we move once per message isn't worth it.
+#[allow(clippy::large_enum_variant)]
 enum RoutedFrame {
     Frame(Frame),
     Idle,
@@ -172,11 +175,10 @@ impl FrameRouter {
         }
 
         if is_idle {
-            if let Some(pid) = parent_id.as_deref() {
-                if let Some(tx) = self.by_parent.lock().unwrap().remove(pid) {
+            if let Some(pid) = parent_id.as_deref()
+                && let Some(tx) = self.by_parent.lock().unwrap().remove(pid) {
                     let _ = tx.send(RoutedFrame::Idle);
                 }
-            }
         } else if let Some(pid) = parent_id.as_deref() {
             let sender = self.by_parent.lock().unwrap().get(pid).cloned();
             if let Some(tx) = sender {
@@ -432,6 +434,7 @@ pub struct RequestStream {
     router: Arc<FrameRouter>,
 }
 
+#[allow(clippy::large_enum_variant)] // see RoutedFrame
 pub enum TryRecv {
     Frame(Frame),
     Empty,
@@ -573,100 +576,6 @@ async fn handshake(
         .map_err(|_| anyhow!("timed out waiting for kernel_info_reply"))?
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::kernel::Kernel;
-    use jupyter_protocol::{JupyterMessage, Status};
-
-    fn with_parent(mut m: JupyterMessage, parent_id: &str) -> JupyterMessage {
-        let mut header = m.header.clone();
-        header.msg_id = parent_id.to_string();
-        m.parent_header = Some(header);
-        m
-    }
-
-    #[test]
-    fn router_drives_status_busy_and_idle() {
-        let (tx, _rx) = watch::channel(KernelStatus::Idle);
-        let tx = Arc::new(tx);
-        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
-
-        let busy: JupyterMessage = with_parent(Status::busy().into(), "exec-1");
-        router.dispatch(Channel::IoPub, busy);
-        assert_eq!(*tx.borrow(), KernelStatus::Busy);
-
-        let idle: JupyterMessage = with_parent(Status::idle().into(), "exec-1");
-        router.dispatch(Channel::IoPub, idle);
-        assert_eq!(*tx.borrow(), KernelStatus::Idle);
-    }
-
-    #[test]
-    fn exited_is_terminal_against_trailing_idle() {
-        let (tx, _rx) = watch::channel(KernelStatus::Busy);
-        let tx = Arc::new(tx);
-        // Simulate the socket loop flipping the kernel to Exited.
-        transition(&tx, KernelStatus::Exited);
-        assert_eq!(*tx.borrow(), KernelStatus::Exited);
-
-        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
-        // Trailing iopub idle from a kernel that just quit cleanly
-        // must not resurrect the session.
-        let idle: JupyterMessage = with_parent(Status::idle().into(), "exec-1");
-        router.dispatch(Channel::IoPub, idle);
-        assert_eq!(*tx.borrow(), KernelStatus::Exited);
-
-        // Same for a trailing busy.
-        let busy: JupyterMessage = with_parent(Status::busy().into(), "exec-1");
-        router.dispatch(Channel::IoPub, busy);
-        assert_eq!(*tx.borrow(), KernelStatus::Exited);
-    }
-
-    /// Unit-test the enrichment function directly with a synthetic
-    /// log file and a fake kernel handle. We don't drive a full
-    /// handshake here — zeromq-rs's 30s connect timeout against a
-    /// non-listening peer would dominate the test, and the
-    /// `enrich_startup_error` logic is what we actually want to
-    /// guard against regressing.
-    #[test]
-    fn enrich_includes_log_tail() {
-        let dir =
-            std::env::temp_dir().join(format!("jet-enrich-unit-{:x}", rand::random::<u64>(),));
-        std::fs::create_dir_all(&dir).unwrap();
-        let log_path = dir.join("conn.json.log");
-        std::fs::write(
-            &log_path,
-            "line one\nline two\nBROKEN_KERNEL_MARKER_xyz\nlast line\n",
-        )
-        .unwrap();
-
-        let kernel = Kernel::synthetic_for_test(Some(log_path));
-        let base = anyhow!("timed out waiting for kernel_info_reply");
-        let err = crate::kernel::enrich_startup_error(
-            base,
-            kernel.child_pid(),
-            kernel.child_alive(),
-            kernel.log_file_path.as_deref(),
-        );
-        let msg = format!("{err:#}");
-
-        let _ = std::fs::remove_dir_all(&dir);
-
-        assert!(
-            msg.contains("timed out waiting for kernel_info_reply"),
-            "original error preserved; got: {msg}",
-        );
-        assert!(
-            msg.contains("BROKEN_KERNEL_MARKER_xyz"),
-            "stderr tail included; got: {msg}",
-        );
-        assert!(
-            msg.contains("kernel stderr"),
-            "stderr section header present; got: {msg}",
-        );
-    }
-}
-
 /// Poll the heartbeat REQ/REP echo every 2 seconds with a 5s timeout.
 /// After two consecutive timeouts, or any send/recv error, declare the
 /// kernel dead by transitioning status to `Exited`. Returns when the
@@ -790,4 +699,98 @@ fn spawn_socket_loop(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::Kernel;
+    use jupyter_protocol::{JupyterMessage, Status};
+
+    fn with_parent(mut m: JupyterMessage, parent_id: &str) -> JupyterMessage {
+        let mut header = m.header.clone();
+        header.msg_id = parent_id.to_string();
+        m.parent_header = Some(header);
+        m
+    }
+
+    #[test]
+    fn router_drives_status_busy_and_idle() {
+        let (tx, _rx) = watch::channel(KernelStatus::Idle);
+        let tx = Arc::new(tx);
+        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
+
+        let busy: JupyterMessage = with_parent(Status::busy().into(), "exec-1");
+        router.dispatch(Channel::IoPub, busy);
+        assert_eq!(*tx.borrow(), KernelStatus::Busy);
+
+        let idle: JupyterMessage = with_parent(Status::idle().into(), "exec-1");
+        router.dispatch(Channel::IoPub, idle);
+        assert_eq!(*tx.borrow(), KernelStatus::Idle);
+    }
+
+    #[test]
+    fn exited_is_terminal_against_trailing_idle() {
+        let (tx, _rx) = watch::channel(KernelStatus::Busy);
+        let tx = Arc::new(tx);
+        // Simulate the socket loop flipping the kernel to Exited.
+        transition(&tx, KernelStatus::Exited);
+        assert_eq!(*tx.borrow(), KernelStatus::Exited);
+
+        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
+        // Trailing iopub idle from a kernel that just quit cleanly
+        // must not resurrect the session.
+        let idle: JupyterMessage = with_parent(Status::idle().into(), "exec-1");
+        router.dispatch(Channel::IoPub, idle);
+        assert_eq!(*tx.borrow(), KernelStatus::Exited);
+
+        // Same for a trailing busy.
+        let busy: JupyterMessage = with_parent(Status::busy().into(), "exec-1");
+        router.dispatch(Channel::IoPub, busy);
+        assert_eq!(*tx.borrow(), KernelStatus::Exited);
+    }
+
+    /// Unit-test the enrichment function directly with a synthetic
+    /// log file and a fake kernel handle. We don't drive a full
+    /// handshake here — zeromq-rs's 30s connect timeout against a
+    /// non-listening peer would dominate the test, and the
+    /// `enrich_startup_error` logic is what we actually want to
+    /// guard against regressing.
+    #[test]
+    fn enrich_includes_log_tail() {
+        let dir =
+            std::env::temp_dir().join(format!("jet-enrich-unit-{:x}", rand::random::<u64>(),));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log_path = dir.join("conn.json.log");
+        std::fs::write(
+            &log_path,
+            "line one\nline two\nBROKEN_KERNEL_MARKER_xyz\nlast line\n",
+        )
+        .unwrap();
+
+        let kernel = Kernel::synthetic_for_test(Some(log_path));
+        let base = anyhow!("timed out waiting for kernel_info_reply");
+        let err = crate::kernel::enrich_startup_error(
+            base,
+            kernel.child_pid(),
+            kernel.child_alive(),
+            kernel.log_file_path.as_deref(),
+        );
+        let msg = format!("{err:#}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            msg.contains("timed out waiting for kernel_info_reply"),
+            "original error preserved; got: {msg}",
+        );
+        assert!(
+            msg.contains("BROKEN_KERNEL_MARKER_xyz"),
+            "stderr tail included; got: {msg}",
+        );
+        assert!(
+            msg.contains("kernel stderr"),
+            "stderr section header present; got: {msg}",
+        );
+    }
 }
