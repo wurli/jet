@@ -31,7 +31,7 @@ pub fn connect(
             let path = PathBuf::from(p);
             if path.exists() {
                 return Err(LuaError::external(anyhow::anyhow!(
-                    "connection file already exists at {0}: remove it or call jet.attach({0:?}) to reconnect",
+                    "connection file already exists at {0}: remove it or call jet.attach(nil, {0:?}) to reconnect",
                     path.display(),
                 )));
             }
@@ -71,20 +71,47 @@ pub fn connect(
     register(lua, client, info)
 }
 
-/// `jet.attach(connection_file, session_name?) -> (client_id, info)`
+/// `jet.attach(session_id, connection_file?, session_name?) -> (client_id, info)`
 ///
-/// Attach to a kernel already running on `connection_file`. If the path lives inside a
-/// tracked SessionStore entry, the Client carries its `session_id`; otherwise `session_id`
-/// is `None`. Mirrors `jet attach --connection-file`.
+/// Attach to a kernel already running. Mirrors `jet attach`:
+/// - `session_id` given (and no `connection_file`) → resolve the connection file via the
+///   SessionStore; the Client carries the session id.
+/// - `connection_file` given (and no `session_id`) → attach to the path. If it lives inside
+///   a tracked SessionStore entry, the Client carries that session id; otherwise none.
+/// - both `nil` → error (Lua has no picker; pass one of them).
+/// - both set → error (mutually exclusive, matching the CLI's ArgGroup).
 pub fn attach(
     lua: &Lua,
-    (connection_file, session_name): (String, Option<String>),
+    (session_id, connection_file, session_name): (Option<String>, Option<String>, Option<String>),
 ) -> LuaResult<LuaTable> {
-    let path = PathBuf::from(&connection_file);
-    let session_id = SessionStore::default()
-        .ok()
-        .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
-        .map(|s| s.meta().id.clone());
+    let (path, session_id) = match (session_id, connection_file) {
+        (Some(id), None) => {
+            let path = SessionStore::default()
+                .into_lua_err()?
+                .open(&id)
+                .into_lua_err()?
+                .connection_file_path();
+            (path, Some(id))
+        }
+        (None, Some(p)) => {
+            let path = PathBuf::from(p);
+            let id = SessionStore::default()
+                .ok()
+                .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
+                .map(|s| s.meta().id.clone());
+            (path, id)
+        }
+        (None, None) => {
+            return Err(LuaError::external(anyhow::anyhow!(
+                "jet.attach: pass either a session_id or a connection_file"
+            )));
+        }
+        (Some(_), Some(_)) => {
+            return Err(LuaError::external(anyhow::anyhow!(
+                "jet.attach: session_id and connection_file are mutually exclusive"
+            )));
+        }
+    };
 
     let (client, info) = runtime()
         .block_on(Client::attach(
@@ -199,10 +226,10 @@ pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 /// (`<timestamp>_<lang>_<basename>_<rand>`). Use this to pre-allocate an
 /// id from Lua, then pass it to `jet connect --session-id <id>` so both
 /// sides share the same handle without baking the format into Lua.
-pub fn make_session_id(_: &Lua, (lang, cwd): (String, Option<String>)) -> LuaResult<String> {
-    let cwd = match cwd {
-        Some(p) => PathBuf::from(p),
-        None => std::env::current_dir().into_lua_err()?,
-    };
-    Ok(generate_session_name(SystemTime::now(), &lang, &cwd))
+pub fn make_session_id(_: &Lua, lang: String) -> LuaResult<String> {
+    Ok(generate_session_name(
+        SystemTime::now(),
+        &lang,
+        &std::env::current_dir().into_lua_err()?,
+    ))
 }
