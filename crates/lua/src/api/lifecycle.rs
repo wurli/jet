@@ -122,12 +122,9 @@ pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let table = lua.create_table()?;
     for (path, spec) in KernelSpec::find_valid() {
         let entry = lua.create_table()?;
-        entry.set("language", spec.language)?;
-        if let Some(d) = spec.display_name {
-            entry.set("display_name", d)?;
-        }
-        entry.set("argv", spec.argv)?;
-        table.set(path.to_string_lossy().to_string(), entry)?;
+        entry.set("spec", lua.to_value(&spec)?)?;
+        entry.set("path", path.to_string_lossy().to_string())?;
+        table.push(entry)?;
     }
     Ok(table)
 }

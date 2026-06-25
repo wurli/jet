@@ -222,7 +222,7 @@ end
 ---@field stop fun(session_id: string)
 ---@field interrupt fun(session_id: string)
 ---@field list_sessions fun(): table
----@field list_kernels fun(): table
+---@field list_kernels fun(): { path: string, spec: table }[]
 ---@field execute_code fun(session_id: string, code: string, user_expression: table?): jet.kernel.callback
 ---@field is_complete fun(session_id: string, code: string): jet.kernel.callback
 ---@field get_completions fun(session_id: string, code: string): table?

@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// How the kernel expects to be interrupted: `Signal` (default) means
 /// SIGINT to the kernel process group; `Message` means an
 /// `interrupt_request` on the control channel.
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InterruptMode {
     #[default]
@@ -24,7 +24,7 @@ pub enum InterruptMode {
 }
 
 /// A parsed Jupyter `kernel.json` kernelspec.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KernelSpec {
     /// Command line used to start the kernel. `{connection_file}` in any
     /// argument is replaced with the connection file path at spawn time.
