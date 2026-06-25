@@ -66,20 +66,8 @@ fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<(St
 pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
     let handle = get(&session_id).into_lua_err()?;
     KERNELS.lock().unwrap().remove(&session_id);
-    // Drop our registry reference; if no other handle holds it, take
-    // ownership of the session and call shutdown (which consumes self).
     runtime()
-        .block_on(async move {
-            match Arc::try_unwrap(handle) {
-                Ok(mutex) => mutex.into_inner().shutdown().await,
-                Err(arc) => {
-                    // Another caller is still holding a handle (unusual);
-                    // best-effort interrupt+drop instead.
-                    let mut guard = arc.lock().await;
-                    guard.shutdown_in_place().await
-                }
-            }
-        })
+        .block_on(async move { handle.lock().await.shutdown().await })
         .into_lua_err()
 }
 

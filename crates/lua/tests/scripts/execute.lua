@@ -30,12 +30,15 @@ assert(ok1, "expected '2' in stream output")
 -- Error message --------------------------------------------------------------
 local ok2 = false
 for msg in kernel.execute("raise ValueError('bananas')") do
-	print(utils.dump(msg))
-	ok2 = msg.status == "busy"
+	if
+		msg.status == "busy"
 		and msg.type == "error"
 		and msg.data
 		and msg.data.traceback
 		and table.concat(msg.data.traceback):find("bananas")
+	then
+		ok2 = true
+	end
 end
 assert(ok2, "expected 'bananas' in error message")
 
