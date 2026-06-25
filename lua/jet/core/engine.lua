@@ -167,14 +167,6 @@ end
 -- -- parses these into this format.
 -- -------------------------------------------------------------------------------
 --
--- ---@class Jet.Kernel.Spec
--- ---@field argv string[]
--- ---@field display_name string
--- ---@field language string
--- ---@field interrupt_mode "signal" | "message" | nil
--- ---@field env table<string, string>?
--- ---@field metadata table<string, any>?
--- ---@field kernel_protocol_version string?
 --
 -- ------ Jet engine -------------------------------------------------------------
 -- -- The Jet engine (rust) exposes the following functions to interact with
@@ -221,6 +213,15 @@ end
 ---@field client_id string
 ---@field kernel_info table
 
+---@class jet.kernel.spec
+---@field argv string[]
+---@field display_name string
+---@field language string
+---@field interrupt_mode "signal" | "message" | nil
+---@field env table<string, string>?
+---@field metadata table<string, any>
+---@field kernel_protocol_version string?
+
 ---@class jet.engine
 ---@field connect fun(spec_path: string, connection_file: string?, session_name: string?): jet.connect.response
 ---@field attach fun(connection_file: string?, session_name: string?): jet.connect.response
@@ -228,13 +229,14 @@ end
 ---@field interrupt fun(session_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }
 ---@field list_sessions fun(): table
----@field list_kernels fun(): { path: string, spec: table }[]
+---@field list_kernels fun(): { path: string, spec: jet.kernel.spec }[]
 ---@field execute_code fun(session_id: string, code: string, user_expression: table?): jet.kernel.callback
 ---@field is_complete fun(session_id: string, code: string): jet.kernel.callback
 ---@field get_completions fun(session_id: string, code: string): table?
 ---@field comm_open fun(session_id: string, comm_id: string, data: table): string, jet.kernel.callback
 ---@field comm_send fun(session_id: string, comm_id: string, data: table): jet.kernel.callback
 ---@field provide_stdin fun(session_id: string, parent_msg_id: string, value: string)
+---@field make_session_id fun(lang: string): string
 local out = loader()
 
 return out

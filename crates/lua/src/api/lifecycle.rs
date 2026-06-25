@@ -3,10 +3,11 @@
 use anyhow::Context;
 use jet_core::client::Client;
 use jet_core::kernel::KernelSpec;
-use jet_core::manager::SessionStore;
+use jet_core::manager::{SessionStore, generate_session_name};
 use mlua::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 
@@ -190,4 +191,18 @@ pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
         table.push(entry)?;
     }
     Ok(table)
+}
+
+/// `jet.make_session_id(lang, cwd?) -> string`
+///
+/// Mint a session id in jet's canonical format
+/// (`<timestamp>_<lang>_<basename>_<rand>`). Use this to pre-allocate an
+/// id from Lua, then pass it to `jet connect --session-id <id>` so both
+/// sides share the same handle without baking the format into Lua.
+pub fn make_session_id(_: &Lua, (lang, cwd): (String, Option<String>)) -> LuaResult<String> {
+    let cwd = match cwd {
+        Some(p) => PathBuf::from(p),
+        None => std::env::current_dir().into_lua_err()?,
+    };
+    Ok(generate_session_name(SystemTime::now(), &lang, &cwd))
 }

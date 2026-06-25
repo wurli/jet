@@ -124,6 +124,7 @@ pub struct GlobalArgs {
 }
 
 #[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("connect-target").args(["session_id", "connection_file"])))]
 pub struct ConnectArgs {
     /// Path to a Jupyter `kernel.json` kernelspec. Argv and language are taken from the spec;
     /// `{connection_file}` placeholders are substituted with the path we generate. If
@@ -139,6 +140,13 @@ pub struct ConnectArgs {
     // file into the session dir.
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
+
+    /// Pre-formed session id to use instead of having jet generate one. The id becomes the
+    /// session-dir name under the jet data dir, so it must not collide with an existing
+    /// session. Use `jet.make_session_id()` from Lua to mint one. Mutually exclusive with
+    /// `--connection-file`.
+    #[arg(long)]
+    pub session_id: Option<String>,
 
     /// Leave the spawned kernel running after jet exits, so a later `jet attach
     /// <connection-file>` can reuse it.

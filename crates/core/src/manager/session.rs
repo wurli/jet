@@ -58,10 +58,49 @@ impl Session {
         name: &str,
         kernelspec_path: &Path,
         working_dir: &Path,
+    ) -> Result<Session> {
+        let now = SystemTime::now();
+        let id = generate_session_name(now, lang, working_dir);
+        Self::create_inner(data_dir, &id, lang, name, kernelspec_path, working_dir, now)
+    }
+
+    /// Like [`Self::create`], but uses the caller-supplied `id` as the
+    /// session-dir name instead of generating one. Fails if the dir
+    /// already exists — collisions almost certainly mean the caller is
+    /// confused about which session it owns.
+    pub(super) fn create_with_id(
+        data_dir: &Path,
+        id: &str,
+        lang: &str,
+        name: &str,
+        kernelspec_path: &Path,
+        working_dir: &Path,
+    ) -> Result<Session> {
+        Self::create_inner(
+            data_dir,
+            id,
+            lang,
+            name,
+            kernelspec_path,
+            working_dir,
+            SystemTime::now(),
+        )
+    }
+
+    fn create_inner(
+        data_dir: &Path,
+        id: &str,
+        lang: &str,
+        name: &str,
+        kernelspec_path: &Path,
+        working_dir: &Path,
         now: SystemTime,
     ) -> Result<Session> {
-        let id = generate_session_name(now, lang, working_dir);
+        let id = id.to_string();
         let dir = data_dir.join(&id);
+        if dir.exists() {
+            anyhow::bail!("session dir already exists: {}", dir.display());
+        }
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("creating session dir {}", dir.display()))?;
 
@@ -144,14 +183,13 @@ mod tests {
     use std::time::{Duration, UNIX_EPOCH};
     use tempfile::TempDir;
 
-    fn create(dir: &Path, cwd: &Path, now: SystemTime) -> Result<Session> {
+    fn create(dir: &Path, cwd: &Path) -> Result<Session> {
         Session::create(
             dir,
             "python",
             "python3",
             Path::new("/fake/kernels/python3/kernel.json"),
             cwd,
-            now,
         )
     }
 
@@ -159,8 +197,7 @@ mod tests {
     fn create_writes_session_json() {
         let data = TempDir::new().unwrap();
         let cwd = PathBuf::from("/Users/x/Repos/jet");
-        let t = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
-        let sess = create(data.path(), &cwd, t).unwrap();
+        let sess = create(data.path(), &cwd).unwrap();
 
         assert!(sess.connection_file_path().parent().unwrap().exists());
         assert!(
@@ -176,7 +213,7 @@ mod tests {
         );
         assert_eq!(sess.meta().lang, "python");
         assert_eq!(sess.meta().working_dir, cwd);
-        assert_eq!(sess.meta().created_at, "2026-06-22T14:03:11Z");
+        assert!(!sess.meta().created_at.is_empty());
         assert_eq!(sess.meta().status, SessionStatus::Open);
         assert_eq!(sess.meta().closed_at, None);
         assert_eq!(sess.meta().kernel_pid, None);
@@ -186,9 +223,8 @@ mod tests {
     fn mark_closed_persists() {
         let data = TempDir::new().unwrap();
         let cwd = PathBuf::from("/tmp/foo");
-        let t0 = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
         let t1 = UNIX_EPOCH + Duration::from_secs(1_782_140_000);
-        let mut sess = create(data.path(), &cwd, t0).unwrap();
+        let mut sess = create(data.path(), &cwd).unwrap();
         sess.set_kernel_pid(12345);
         sess.mark_closed_at(t1);
 
@@ -204,8 +240,7 @@ mod tests {
     #[test]
     fn open_round_trips() {
         let data = TempDir::new().unwrap();
-        let t = UNIX_EPOCH + Duration::from_secs(1_782_136_991);
-        let created = create(data.path(), Path::new("/tmp/foo"), t).unwrap();
+        let created = create(data.path(), Path::new("/tmp/foo")).unwrap();
         let opened = Session::open(data.path(), &created.meta().id).unwrap();
         assert_eq!(created.meta(), opened.meta());
     }

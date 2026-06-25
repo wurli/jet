@@ -110,12 +110,15 @@ pub async fn run_connect(args: ConnectArgs) -> Result<()> {
     // path). In that mode we don't create a session.json — the session
     // store only tracks kernels jet owns end-to-end.
     let mut session = match args.connection_file.clone() {
-        None => Some(SessionStore::default()?.create(
-            &spec.language,
-            &spec.display_name.clone().unwrap_or_default(),
-            &kernelspec,
-            &cwd,
-        )?),
+        None => {
+            let store = SessionStore::default()?;
+            let name = spec.display_name.clone().unwrap_or_default();
+            let session = match args.session_id.as_deref() {
+                Some(id) => store.create_with_id(id, &spec.language, &name, &kernelspec, &cwd)?,
+                None => store.create(&spec.language, &name, &kernelspec, &cwd)?,
+            };
+            Some(session)
+        }
         Some(_) => None,
     };
 

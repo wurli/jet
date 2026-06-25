@@ -3,14 +3,19 @@ local config = require("jet.config")
 
 local Api = {}
 
-local connect_impl = function(spec_path)
+---@param opts { path: string, spec: jet.kernel.spec }
+local connect_impl = function(opts)
 	local buf = vim.api.nvim_create_buf(false, true)
+
+	local session_id = engine.make_session_id(opts.spec.language, vim.fn.getcwd())
 
 	vim.api.nvim_buf_call(buf, function()
 		vim.fn.jobstart({
 			config.options.jet_binary,
 			"connect",
-			spec_path,
+			opts.path,
+			"--session-id",
+			session_id,
 		}, {
 			term = true,
 		})
@@ -28,7 +33,7 @@ local choose_kernel = function(callback)
 		end,
 	}, function(choice)
 		if choice then
-			callback(choice.path)
+			callback(choice)
 		end
 	end)
 end

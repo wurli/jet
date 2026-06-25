@@ -21,7 +21,7 @@ pub(super) fn format_iso8601(now: SystemTime) -> String {
 /// empty, substitutes `unknown`. Timestamp is local-time
 /// `YYYY-MM-DD_HHMMSS` — sortable within one timezone; the canonical
 /// UTC instant lives in `created_at`.
-pub(super) fn generate_session_name(now: SystemTime, lang: &str, cwd: &Path) -> String {
+pub fn generate_session_name(now: SystemTime, lang: &str, cwd: &Path) -> String {
     let ts = DateTime::<Local>::from(now).format("%Y-%m-%d_%H%M%S");
     let lang = {
         let s = sanitize(lang);

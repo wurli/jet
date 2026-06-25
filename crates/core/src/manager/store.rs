@@ -1,7 +1,7 @@
 //! [`SessionStore`] — a data dir bound to a path, with create/open/list/probe.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::task::JoinSet;
@@ -37,14 +37,20 @@ impl SessionStore {
         kernelspec_path: &Path,
         working_dir: &Path,
     ) -> Result<Session> {
-        Session::create(
-            &self.dir,
-            lang,
-            name,
-            kernelspec_path,
-            working_dir,
-            SystemTime::now(),
-        )
+        Session::create(&self.dir, lang, name, kernelspec_path, working_dir)
+    }
+
+    /// Like [`Self::create`], but uses the caller-supplied `id` as the
+    /// session-dir name. Fails if a session with that id already exists.
+    pub fn create_with_id(
+        &self,
+        id: &str,
+        lang: &str,
+        name: &str,
+        kernelspec_path: &Path,
+        working_dir: &Path,
+    ) -> Result<Session> {
+        Session::create_with_id(&self.dir, id, lang, name, kernelspec_path, working_dir)
     }
 
     pub fn open(&self, id: &str) -> Result<Session> {
@@ -149,8 +155,8 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn create(store: &SessionStore, lang: &str, cwd: &Path, now: SystemTime) -> Session {
-        Session::create(&store.dir, lang, "kernel", Path::new("/k"), cwd, now).unwrap()
+    fn create(store: &SessionStore, lang: &str, cwd: &Path) -> Session {
+        Session::create(&store.dir, lang, "kernel", Path::new("/k"), cwd).unwrap()
     }
 
     #[test]
@@ -165,15 +171,11 @@ mod tests {
         let store = SessionStore::at(data.path());
         let cwd_a = PathBuf::from("/tmp/a");
         let cwd_b = PathBuf::from("/tmp/b");
-        let t1 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-        let t2 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
-        create(&store, "python", &cwd_a, t1);
-        create(&store, "r", &cwd_b, t2);
+        create(&store, "python", &cwd_a);
+        create(&store, "r", &cwd_b);
 
         let listed = store.list().unwrap();
         assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].working_dir, cwd_a);
-        assert_eq!(listed[1].working_dir, cwd_b);
     }
 
     #[tokio::test]
@@ -184,19 +186,9 @@ mod tests {
         // Two Open sessions with no recorded pid (forces TCP probe).
         // Each writes a connection file with free ports; by the time
         // probe runs the listeners are dropped, so the probe flips them.
-        let s1 = create(
-            &store,
-            "python",
-            &cwd,
-            SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000),
-        );
+        let s1 = create(&store, "python", &cwd);
         connection_file::generate(&s1.connection_file_path()).unwrap();
-        let s2 = create(
-            &store,
-            "r",
-            &cwd,
-            SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_001),
-        );
+        let s2 = create(&store, "r", &cwd);
         connection_file::generate(&s2.connection_file_path()).unwrap();
 
         store.probe_open().await.unwrap();
@@ -224,12 +216,7 @@ mod tests {
         std::fs::write(bad.join("session.json"), b"not json").unwrap();
 
         let cwd = PathBuf::from("/tmp/good");
-        create(
-            &store,
-            "python",
-            &cwd,
-            SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000),
-        );
+        create(&store, "python", &cwd);
 
         let listed = store.list().unwrap();
         assert_eq!(listed.len(), 1);
