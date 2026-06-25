@@ -14,6 +14,18 @@ mod poll;
 mod runtime;
 
 use mlua::prelude::*;
+use mlua::SerializeOptions;
+use serde::Serialize;
+
+/// `LuaSerdeExt::to_value` with `None`/`()` mapped to Lua `nil` instead of
+/// mlua's `Null` userdata sentinel. Use this everywhere we hand serde data
+/// back to Lua so optional fields show up as absent keys, not userdata.
+pub(crate) fn to_lua_value<T: Serialize + ?Sized>(lua: &Lua, value: &T) -> LuaResult<LuaValue> {
+    let opts = SerializeOptions::new()
+        .serialize_none_to_null(false)
+        .serialize_unit_to_null(false);
+    lua.to_value_with(value, opts)
+}
 
 use api::lifecycle::{
     attach, start, interrupt, list_available_kernels, list_connections, list_sessions,

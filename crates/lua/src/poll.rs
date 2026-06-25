@@ -26,7 +26,7 @@ pub fn make_poll(lua: &Lua, stream: RequestStream) -> LuaResult<LuaFunction> {
                 let t = lua.create_table()?;
                 t.set("status", "busy")?;
                 t.set("type", msg_type)?;
-                t.set("data", lua.to_value(&content)?)?;
+                t.set("data", crate::to_lua_value(lua, &content)?)?;
                 Ok(LuaValue::Table(t))
             }
             TryRecv::Empty => {

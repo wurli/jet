@@ -135,7 +135,7 @@ fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<Lua
     let out = lua.create_table()?;
 
     out.set("client_id", client_id.clone())?;
-    out.set("kernel_info", lua.to_value(&info)?)?;
+    out.set("kernel_info", crate::to_lua_value(lua, &info)?)?;
 
     if let Some(session_id) = session_id {
         out.set("session_id", session_id)?;
@@ -225,7 +225,7 @@ pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
 
     let table = lua.create_table()?;
     for session in sessions {
-        table.push(lua.to_value(&session)?)?;
+        table.push(crate::to_lua_value(lua, &session)?)?;
     }
     Ok(table)
 }
@@ -236,7 +236,7 @@ pub fn list_available_kernels(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let table = lua.create_table()?;
     for (path, spec) in KernelSpec::find_valid() {
         let entry = lua.create_table()?;
-        entry.set("spec", lua.to_value(&spec)?)?;
+        entry.set("spec", crate::to_lua_value(lua, &spec)?)?;
         entry.set("path", path.to_string_lossy().to_string())?;
         table.push(entry)?;
     }
