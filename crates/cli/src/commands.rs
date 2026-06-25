@@ -56,7 +56,11 @@ pub async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
         .map(|s| s.session_id.len())
         .max()
         .unwrap_or(0);
-    let name_w = sessions.iter().map(|s| s.name.len()).max().unwrap_or(0);
+    let name_w = sessions
+        .iter()
+        .map(|s| s.display_name.len())
+        .max()
+        .unwrap_or(0);
     let created_w = sessions
         .iter()
         .map(|s| s.created_at.len())
@@ -70,12 +74,12 @@ pub async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
             };
             println!(
                 "{:<id_w$}  {:<name_w$}  {:<created_w$}  {}",
-                s.session_id, s.name, s.created_at, st,
+                s.session_id, s.display_name, s.created_at, st,
             );
         } else {
             println!(
                 "{:<id_w$}  {:<name_w$}  {}",
-                s.session_id, s.name, s.created_at,
+                s.session_id, s.display_name, s.created_at,
             );
         }
     }

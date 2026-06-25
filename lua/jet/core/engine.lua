@@ -222,13 +222,25 @@ end
 ---@field metadata table<string, any>
 ---@field kernel_protocol_version string?
 
+---@class jet.session_info
+---@field session_id string
+---@field closed_at string?
+---@field connection_file string
+---@field created_at string
+---@field kernel_pid number?
+---@field kernelspec_path string
+---@field language string
+---@field display_name string
+---@field status "open" | "closed"
+---@field working_dir string
+
 ---@class jet.engine
 ---@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.start.response
 ---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.start.response
 ---@field stop fun(session_id: string)
 ---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }
----@field list_sessions fun(): table
+---@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.session_info[]
 ---@field list_kernels fun(): { path: string, spec: jet.kernel.spec }[]
 ---@field execute_code fun(client_id: string, code: string, user_expression: table?): jet.kernel.callback
 ---@field is_complete fun(client_id: string, code: string): jet.kernel.callback

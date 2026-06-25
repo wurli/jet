@@ -32,8 +32,10 @@ pub struct SessionMeta {
     pub session_id: String,
     pub created_at: String,
     pub working_dir: PathBuf,
-    pub lang: String,
-    pub name: String,
+    /// Lifted from the kernelspec.json
+    pub language: String,
+    /// Lifted from the kernelspec.json
+    pub display_name: String,
     pub kernelspec_path: PathBuf,
     /// Relative to the session dir.
     pub connection_file: String,
@@ -109,8 +111,8 @@ impl Session {
                 session_id: id,
                 created_at: format_iso8601(now),
                 working_dir: working_dir.to_path_buf(),
-                lang: lang.to_string(),
-                name: name.to_string(),
+                language: lang.to_string(),
+                display_name: name.to_string(),
                 kernelspec_path: kernelspec_path.to_path_buf(),
                 connection_file: CONNECTION_FILE.to_string(),
                 status: SessionStatus::Open,
@@ -212,7 +214,7 @@ mod tests {
             sess.connection_file_path().file_name().unwrap(),
             "connection-file.json"
         );
-        assert_eq!(sess.meta().lang, "python");
+        assert_eq!(sess.meta().language, "python");
         assert_eq!(sess.meta().working_dir, cwd);
         assert!(!sess.meta().created_at.is_empty());
         assert_eq!(sess.meta().status, SessionStatus::Open);

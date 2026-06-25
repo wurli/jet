@@ -85,7 +85,7 @@ async fn open_sessions_in_cwd()
         .map(|s| {
             vec![
                 picker::Cell::dim(&s.session_id),
-                picker::Cell::plain(&s.name),
+                picker::Cell::plain(&s.display_name),
                 picker::Cell::plain(&s.created_at),
             ]
         })
