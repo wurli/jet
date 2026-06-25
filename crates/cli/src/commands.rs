@@ -51,7 +51,11 @@ pub async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
     }
 
     let show_status = matches!(args.status, StatusFilter::All);
-    let id_w = sessions.iter().map(|s| s.id.len()).max().unwrap_or(0);
+    let id_w = sessions
+        .iter()
+        .map(|s| s.session_id.len())
+        .max()
+        .unwrap_or(0);
     let name_w = sessions.iter().map(|s| s.name.len()).max().unwrap_or(0);
     let created_w = sessions
         .iter()
@@ -66,10 +70,13 @@ pub async fn run_list_sessions(args: ListSessionsArgs) -> Result<()> {
             };
             println!(
                 "{:<id_w$}  {:<name_w$}  {:<created_w$}  {}",
-                s.id, s.name, s.created_at, st,
+                s.session_id, s.name, s.created_at, st,
             );
         } else {
-            println!("{:<id_w$}  {:<name_w$}  {}", s.id, s.name, s.created_at,);
+            println!(
+                "{:<id_w$}  {:<name_w$}  {}",
+                s.session_id, s.name, s.created_at,
+            );
         }
     }
     Ok(())
@@ -117,7 +124,7 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
     if conn_path.exists() {
         let store = SessionStore::default()?;
         let reattach = match store.find_by_connection_file(&conn_path)? {
-            Some(s) => format!("jet attach {}", s.meta().id),
+            Some(s) => format!("jet attach {}", s.meta().session_id),
             None => format!("jet attach --connection-file {}", conn_path.display()),
         };
         anyhow::bail!(
@@ -127,7 +134,7 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
     }
 
     let render_graphics = !args.no_graphics;
-    let session_id = session.as_ref().map(|s| s.meta().id.clone());
+    let session_id = session.as_ref().map(|s| s.meta().session_id.clone());
     let mut kernel_session = drive_repl(
         ReplTarget::Spawn {
             spec: &spec,
@@ -172,7 +179,7 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
             let id = SessionStore::default()
                 .ok()
                 .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
-                .map(|s| s.meta().id.clone());
+                .map(|s| s.meta().session_id.clone());
             (path, id)
         }
         (None, None) => {
@@ -305,7 +312,7 @@ async fn open_target_client(
             let session_id = SessionStore::default()
                 .ok()
                 .and_then(|s| s.find_by_connection_file(&conn_path).ok().flatten())
-                .map(|s| s.meta().id.clone());
+                .map(|s| s.meta().session_id.clone());
             let (client, info) =
                 Client::attach(&conn_path, session_name, session_id, |_| {}).await?;
             Ok((client, info, false))

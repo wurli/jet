@@ -43,7 +43,7 @@ pub async fn pick_session(message: &str) -> Result<Option<String>> {
     };
     let message = message.to_owned();
     let idx = tokio::task::spawn_blocking(move || picker::pick(&message, &rows, None)).await??;
-    Ok(idx.map(|i| sessions[i].id.clone()))
+    Ok(idx.map(|i| sessions[i].session_id.clone()))
 }
 
 /// Multi-select variant of [`pick_session`]. Returns the ids of every
@@ -56,7 +56,10 @@ pub async fn pick_sessions_multi(message: &str) -> Result<Vec<String>> {
     };
     let message = message.to_owned();
     let idxs = tokio::task::spawn_blocking(move || picker::pick_multi(&message, &rows)).await??;
-    Ok(idxs.into_iter().map(|i| sessions[i].id.clone()).collect())
+    Ok(idxs
+        .into_iter()
+        .map(|i| sessions[i].session_id.clone())
+        .collect())
 }
 
 /// List open sessions in the current working directory and build picker
@@ -81,7 +84,7 @@ async fn open_sessions_in_cwd()
         .iter()
         .map(|s| {
             vec![
-                picker::Cell::dim(&s.id),
+                picker::Cell::dim(&s.session_id),
                 picker::Cell::plain(&s.name),
                 picker::Cell::plain(&s.created_at),
             ]

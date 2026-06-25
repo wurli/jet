@@ -48,7 +48,7 @@ pub fn start(
                     &cwd,
                 )
                 .into_lua_err()?;
-            let id = entry.meta().id.clone();
+            let id = entry.meta().session_id.clone();
             let path = entry.connection_file_path();
             (Some(path), Some(id), Some(entry))
         }
@@ -98,7 +98,7 @@ pub fn attach(
             let id = SessionStore::default()
                 .ok()
                 .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
-                .map(|s| s.meta().id.clone());
+                .map(|s| s.meta().session_id.clone());
             (path, id)
         }
         (None, None) => {

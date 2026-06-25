@@ -27,7 +27,9 @@ impl std::str::FromStr for StatusFilter {
             "open" => Ok(Self::Open),
             "closed" => Ok(Self::Closed),
             "all" => Ok(Self::All),
-            other => anyhow::bail!("invalid status {other:?}: expected \"open\", \"closed\", or \"all\""),
+            other => {
+                anyhow::bail!("invalid status {other:?}: expected \"open\", \"closed\", or \"all\"")
+            }
         }
     }
 }
@@ -85,10 +87,10 @@ impl SessionStore {
     pub fn find_by_connection_file(&self, path: &Path) -> Result<Option<Session>> {
         let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         for meta in self.list()? {
-            let candidate = self.dir.join(&meta.id).join(&meta.connection_file);
+            let candidate = self.dir.join(&meta.session_id).join(&meta.connection_file);
             let canonical = std::fs::canonicalize(&candidate).unwrap_or(candidate);
             if canonical == target {
-                return Ok(Some(self.open(&meta.id)?));
+                return Ok(Some(self.open(&meta.session_id)?));
             }
         }
         Ok(None)
@@ -112,7 +114,7 @@ impl SessionStore {
                 out.push(meta);
             }
         }
-        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out.sort_by(|a, b| a.session_id.cmp(&b.session_id));
         Ok(out)
     }
 
@@ -153,10 +155,13 @@ impl SessionStore {
                 if probe_one(&dir, &meta).await {
                     return;
                 }
-                log::warn!("probe: session {} appears dead, marking closed", meta.id);
-                match Session::open(&dir, &meta.id) {
+                log::warn!(
+                    "probe: session {} appears dead, marking closed",
+                    meta.session_id
+                );
+                match Session::open(&dir, &meta.session_id) {
                     Ok(mut s) => s.mark_closed(),
-                    Err(e) => log::warn!("probe: failed to reopen {}: {e}", meta.id),
+                    Err(e) => log::warn!("probe: failed to reopen {}: {e}", meta.session_id),
                 }
             });
         }
@@ -173,7 +178,7 @@ async fn probe_one(data_dir: &Path, meta: &SessionMeta) -> bool {
         // SAFETY: signal 0 is the standard liveness check; never sends a real signal.
         return unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
     }
-    let conn_path = data_dir.join(&meta.id).join(&meta.connection_file);
+    let conn_path = data_dir.join(&meta.session_id).join(&meta.connection_file);
     let Ok(info) = connection_file::read(&conn_path) else {
         return false;
     };
@@ -243,7 +248,7 @@ mod tests {
                 m.status,
                 SessionStatus::Closed,
                 "{} not flipped: {m:?}",
-                m.id
+                m.session_id
             );
             assert!(m.closed_at.is_some());
         }

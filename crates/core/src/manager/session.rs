@@ -29,7 +29,7 @@ pub enum SessionStatus {
 /// Contents of `session.json`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionMeta {
-    pub id: String,
+    pub session_id: String,
     pub created_at: String,
     pub working_dir: PathBuf,
     pub lang: String,
@@ -106,7 +106,7 @@ impl Session {
 
         let session = Session {
             meta: SessionMeta {
-                id,
+                session_id: id,
                 created_at: format_iso8601(now),
                 working_dir: working_dir.to_path_buf(),
                 lang: lang.to_string(),
@@ -228,7 +228,7 @@ mod tests {
         sess.set_kernel_pid(12345);
         sess.mark_closed_at(t1);
 
-        let reopened = Session::open(data.path(), &sess.meta().id).unwrap();
+        let reopened = Session::open(data.path(), &sess.meta().session_id).unwrap();
         assert_eq!(reopened.meta().status, SessionStatus::Closed);
         assert_eq!(
             reopened.meta().closed_at.as_deref(),
@@ -241,7 +241,7 @@ mod tests {
     fn open_round_trips() {
         let data = TempDir::new().unwrap();
         let created = create(data.path(), Path::new("/tmp/foo")).unwrap();
-        let opened = Session::open(data.path(), &created.meta().id).unwrap();
+        let opened = Session::open(data.path(), &created.meta().session_id).unwrap();
         assert_eq!(created.meta(), opened.meta());
     }
 
