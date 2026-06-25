@@ -176,9 +176,10 @@ impl FrameRouter {
 
         if is_idle {
             if let Some(pid) = parent_id.as_deref()
-                && let Some(tx) = self.by_parent.lock().unwrap().remove(pid) {
-                    let _ = tx.send(RoutedFrame::Idle);
-                }
+                && let Some(tx) = self.by_parent.lock().unwrap().remove(pid)
+            {
+                let _ = tx.send(RoutedFrame::Idle);
+            }
         } else if let Some(pid) = parent_id.as_deref() {
             let sender = self.by_parent.lock().unwrap().get(pid).cloned();
             if let Some(tx) = sender {

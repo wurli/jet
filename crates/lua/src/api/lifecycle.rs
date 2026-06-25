@@ -33,7 +33,12 @@ pub fn connect(
     }
 
     let (client, info) = runtime()
-        .block_on(Client::spawn(&spec, conn_path, session_name.as_deref(), |_| {}))
+        .block_on(Client::spawn(
+            &spec,
+            conn_path,
+            session_name.as_deref(),
+            |_| {},
+        ))
         .into_lua_err()?;
     register(lua, client, info)
 }

@@ -80,9 +80,10 @@ impl SessionStore {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir()
-                && let Ok(meta) = read_meta(&path) {
-                    out.push(meta);
-                }
+                && let Ok(meta) = read_meta(&path)
+            {
+                out.push(meta);
+            }
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(out)

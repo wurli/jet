@@ -67,10 +67,11 @@ pub fn read(path: &Path) -> Result<ConnectionInfo> {
 
 fn write_to(info: &ConnectionInfo, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating dir {}", parent.display()))?;
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating dir {}", parent.display()))?;
+    }
     let json = serde_json::to_vec_pretty(info).map_err(|e| anyhow!("serialize: {e}"))?;
     std::fs::write(path, json).with_context(|| format!("writing {}", path.display()))?;
     Ok(())

@@ -7,9 +7,10 @@ use anyhow::{Context, Result};
 
 pub(super) fn jet_data_dir() -> Result<PathBuf> {
     if let Some(xdg) = std::env::var_os("XDG_DATA_HOME")
-        && !xdg.is_empty() {
-            return Ok(PathBuf::from(xdg).join("jet"));
-        }
+        && !xdg.is_empty()
+    {
+        return Ok(PathBuf::from(xdg).join("jet"));
+    }
     let home = std::env::var_os("HOME").context("$HOME not set")?;
     Ok(PathBuf::from(home).join(".local/share/jet"))
 }

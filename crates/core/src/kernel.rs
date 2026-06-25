@@ -327,9 +327,10 @@ impl Kernel {
         let req = jupyter_protocol::ShutdownRequest { restart: false };
         let msg: JupyterMessage = req.into();
         if let Some(control) = self.channels.control.as_mut()
-            && let Err(e) = control.send(msg).await {
-                log::warn!("shutdown_request send failed: {e}");
-            }
+            && let Err(e) = control.send(msg).await
+        {
+            log::warn!("shutdown_request send failed: {e}");
+        }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         // Clean up the on-disk stderr log on graceful shutdown. Detach
         // skips this path, so detached kernels leave the log in place
@@ -361,9 +362,10 @@ pub fn enrich_startup_error(
     let mut parts = vec![err.to_string()];
 
     if let Some(pid) = child_pid
-        && !child_alive {
-            parts.push(format!("kernel process (pid {pid}) has already exited"));
-        }
+        && !child_alive
+    {
+        parts.push(format!("kernel process (pid {pid}) has already exited"));
+    }
 
     if let Some(path) = log_path {
         match std::fs::read_to_string(path) {
@@ -512,4 +514,3 @@ mod tests {
         );
     }
 }
-

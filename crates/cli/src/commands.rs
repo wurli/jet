@@ -358,8 +358,7 @@ pub async fn run_execute(args: ExecuteArgs) -> Result<()> {
     // Client::spawn / Client::attach perform a kernel_info handshake — that's
     // the fast-fail probe that confirms the kernel is answering. We don't install
     // a sink, so the banner isn't rendered for execute.
-    let (mut session, _info, spawned) =
-        open_target_client(target, session_name.as_deref()).await?;
+    let (mut session, _info, spawned) = open_target_client(target, session_name.as_deref()).await?;
 
     let render_graphics = !no_graphics;
     if render_graphics {
@@ -409,8 +408,7 @@ pub async fn run_send(args: SendArgs) -> Result<()> {
     let (target, code_arg) =
         resolve_kernel_target("send", session_id, connection_file, kernelspec, code)?;
     let code = code_or_stdin(code_arg)?;
-    let (mut session, _info, spawned) =
-        open_target_client(target, session_name.as_deref()).await?;
+    let (mut session, _info, spawned) = open_target_client(target, session_name.as_deref()).await?;
 
     let mut stream = session.request(
         ExecuteRequest {

@@ -138,9 +138,10 @@ fn drive_jet_with_interrupt(
         }
         if saw_interrupt
             && let Some(idx) = s.find(interrupt_marker)
-                && s[idx + interrupt_marker.len()..].contains("> ") {
-                    break;
-                }
+            && s[idx + interrupt_marker.len()..].contains("> ")
+        {
+            break;
+        }
         std::thread::sleep(Duration::from_millis(100));
     }
 
@@ -616,9 +617,10 @@ fn detach_and_attach_round_trip() {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             if let Some(needle) = expected
-                && output.lock().unwrap().contains(needle) {
-                    break;
-                }
+                && output.lock().unwrap().contains(needle)
+            {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(100));
         }
         // ^D to exit.
@@ -628,7 +630,7 @@ fn detach_and_attach_round_trip() {
         let _ = child.wait();
         drop(pair.master);
         let _ = h.join();
-        
+
         output.lock().unwrap().clone()
     }
 
@@ -1652,7 +1654,12 @@ fn write_python_kernelspec_with_env(env: &[(&str, &str)]) -> Result<std::path::P
     let path = dir.join("kernel.json");
     let env_map: serde_json::Map<String, serde_json::Value> = env
         .iter()
-        .map(|(k, v)| ((*k).to_string(), serde_json::Value::String((*v).to_string())))
+        .map(|(k, v)| {
+            (
+                (*k).to_string(),
+                serde_json::Value::String((*v).to_string()),
+            )
+        })
         .collect();
     let spec = json!({
         "argv": [python, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
@@ -1775,4 +1782,3 @@ fn connect_inherits_parent_env_with_spec_winning_on_conflict() {
         "spec env did not override parent on conflict; got:\n{out}",
     );
 }
-
