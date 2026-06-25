@@ -9,15 +9,18 @@ local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 ---@field buf integer
 ---@field win? integer
 
+---@alias jet.kernel.paritalspec { display_name: string, language: string }
+
 ---@class jet.kernel
 ---@field session_name string
----@field spec jet.kernel.spec
+---@field spec jet.kernel.spec | jet.kernel.paritalspec
 ---@field spec_path string
 ---@field kernel_info table
 ---@field session_id? string
 ---@field client_id? string
 ---@field term? jet.term
 ---@field connection_file? string
+---@field cmd string[]
 local Kernel = {}
 Kernel.__index = Kernel
 
@@ -30,7 +33,7 @@ setmetatable(Kernel, {
 
 ---@class jet.kernel.start.opts
 ---@field session_name? string
----@field spec jet.kernel.spec
+---@field spec jet.kernel.spec | jet.kernel.paritalspec
 ---@field spec_path string
 ---@field connection_file? string
 
@@ -38,13 +41,16 @@ setmetatable(Kernel, {
 function Kernel.new(opts)
 	opts.session_name = opts.session_name or "nvim"
 	local out = setmetatable(opts, Kernel)
+	out.cmd = out:connect_cmd()
 	table.insert(manager.kernels, out)
 	return out
 end
 
 function Kernel:connect_cmd()
 	assert(self.spec_path, "Kernel spec path is not set")
-	assert(self.session_id, "Kernel session ID is not set")
+	assert(not self.session_id, "Kernel session ID is already set")
+
+	self.session_id = engine.make_session_id(self.spec.language)
 
 	local out = {
 		config.jet_binary,
@@ -65,6 +71,25 @@ function Kernel:connect_cmd()
 	return out
 end
 
+---@class jet.kernel_from_external.opts
+---@field session_id string
+
+---@param opts jet.kernel_from_external.opts
+---@return jet.kernel
+function Kernel.from_external(opts)
+	assert(opts.session_id, "Kernel session ID is not set")
+
+	local out = setmetatable({
+		session_id = opts.session_id,
+		spec = engine.show(opts.session_id).spec,
+	}, Kernel)
+
+	out.cmd = out:attach_cmd()
+
+	table.insert(manager.kernels, out)
+	return out
+end
+
 function Kernel:attach_cmd()
 	assert(self.session_id, "Kernel session ID is not set")
 
@@ -78,12 +103,6 @@ function Kernel:attach_cmd()
 end
 
 function Kernel:init_term()
-	if self.session_id then
-		error("TODO: implement attach")
-	end
-
-	self.session_id = engine.make_session_id(self.spec.language)
-
 	---@diagnostic disable-next-line: missing-fields
 	self.term = {}
 	self.term.buf = vim.api.nvim_create_buf(false, true)
@@ -99,7 +118,7 @@ function Kernel:init_term()
 	end
 
 	vim.api.nvim_buf_call(self.term.buf, function()
-		self.term.job_id = vim.fn.jobstart(self:connect_cmd(), { term = true })
+		self.term.job_id = vim.fn.jobstart(self.cmd, { term = true })
 	end)
 end
 
@@ -123,7 +142,7 @@ function Kernel:open_term(opts)
 	vim.wo[self.term.win].relativenumber = false
 end
 
-function Kernel:attach()
+function Kernel:attach_lua_client()
 	if not self.term then
 		self:init_term()
 	end
