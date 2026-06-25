@@ -225,7 +225,7 @@ end
 ---@class jet.engine
 ---@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.start.response
 ---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.start.response
----@field stop fun(client_id: string)
+---@field stop fun(session_id: string)
 ---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }
 ---@field list_sessions fun(): table

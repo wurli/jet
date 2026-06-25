@@ -5,6 +5,7 @@ M.version = "4.14.1" -- x-release-please-version
 ---@class jet.config
 M.defaults = {
 	jet_binary = "jet",
+	stop_on_exit = true,
 }
 
 ---@type jet.config

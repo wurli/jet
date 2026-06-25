@@ -1,6 +1,8 @@
 local engine = require("jet.core.engine")
 local manager = require("jet.core.manager")
-local config = require("jet.config")
+local config = require("jet.config").options
+
+local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 
 ---@class jet.term
 ---@field job_id integer
@@ -8,12 +10,14 @@ local config = require("jet.config")
 ---@field win? integer
 
 ---@class jet.kernel
+---@field session_name string
 ---@field spec jet.kernel.spec
 ---@field spec_path string
 ---@field kernel_info table
 ---@field session_id? string
 ---@field client_id? string
 ---@field term? jet.term
+---@field connection_file? string
 local Kernel = {}
 Kernel.__index = Kernel
 
@@ -24,13 +28,16 @@ setmetatable(Kernel, {
 	end,
 })
 
----@param spec jet.kernel.spec
----@param spec_path string
-function Kernel.new(spec, spec_path)
-	local out = setmetatable({
-		spec = spec,
-		spec_path = spec_path,
-	}, Kernel)
+---@class jet.kernel.start.opts
+---@field session_name? string
+---@field spec jet.kernel.spec
+---@field spec_path string
+---@field connection_file? string
+
+---@param opts jet.kernel.start.opts
+function Kernel.new(opts)
+	opts.session_name = opts.session_name or "nvim"
+	local out = setmetatable(opts, Kernel)
 	table.insert(manager.kernels, out)
 	return out
 end
@@ -39,8 +46,8 @@ function Kernel:connect_cmd()
 	assert(self.spec_path, "Kernel spec path is not set")
 	assert(self.session_id, "Kernel session ID is not set")
 
-	return {
-		config.options.jet_binary,
+	local out = {
+		config.jet_binary,
 		"start",
 		self.spec_path,
 		"--session-id",
@@ -48,13 +55,21 @@ function Kernel:connect_cmd()
 		"--session-name",
 		"nvim",
 	}
+
+	-- TODO: remove this?
+	if self.connection_file then
+		table.insert(out, "--connection-file")
+		table.insert(out, self.connection_file)
+	end
+
+	return out
 end
 
 function Kernel:attach_cmd()
 	assert(self.session_id, "Kernel session ID is not set")
 
 	return {
-		config.options.jet_binary,
+		config.jet_binary,
 		"attach",
 		self.session_id,
 		"--session-name",
@@ -62,7 +77,7 @@ function Kernel:attach_cmd()
 	}
 end
 
-function Kernel:init_term(buf)
+function Kernel:init_term()
 	if self.session_id then
 		error("TODO: implement attach")
 	end
@@ -71,15 +86,26 @@ function Kernel:init_term(buf)
 
 	---@diagnostic disable-next-line: missing-fields
 	self.term = {}
-	self.term.buf = buf or vim.api.nvim_create_buf(false, true)
+	self.term.buf = vim.api.nvim_create_buf(false, true)
+
+	if config.stop_on_exit then
+		vim.api.nvim_create_autocmd("BufWipeout", {
+			buffer = self.term.buf,
+			group = augroup,
+			callback = function()
+				self:stop()
+			end,
+		})
+	end
 
 	vim.api.nvim_buf_call(self.term.buf, function()
 		self.term.job_id = vim.fn.jobstart(self:connect_cmd(), { term = true })
 	end)
 end
 
----@param opts vim.api.keyset.win_config
+---@param opts? vim.api.keyset.win_config
 function Kernel:open_term(opts)
+	opts = opts or {}
 	if not self.term then
 		self:init_term()
 	end
@@ -104,6 +130,29 @@ function Kernel:attach()
 	local out = engine.attach(self.session_id, nil, "nvim")
 	self.client_id = out.client_id
 	self.kernel_info = out.kernel_info
+end
+
+function Kernel:stop()
+	if not self.session_id then
+		error("Kernel has no session id")
+	end
+
+	for i, k in ipairs(manager.kernels) do
+		if k == self then
+			table.remove(manager.kernels, i)
+			break
+		end
+	end
+
+	vim.schedule(function()
+		if vim.api.nvim_buf_is_valid(self.term.buf) then
+			vim.api.nvim_buf_delete(self.term.buf, { force = true })
+		end
+	end)
+
+	engine.stop(self.session_id)
+
+	vim.notify("Stopped kernel " .. self.spec.display_name)
 end
 
 -- ---@param code string | string[]

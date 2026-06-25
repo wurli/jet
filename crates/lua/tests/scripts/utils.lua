@@ -65,7 +65,7 @@ M.start_kernel = function(jet, spec)
 			jet.provide_stdin(con.client_id, parent_id, value)
 		end,
 		stop = function()
-			jet.stop(con.client_id)
+			jet.stop(con.session_id)
 		end,
 	}
 end
