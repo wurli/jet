@@ -2,7 +2,8 @@
 
 use anyhow::Context;
 use jet_core::client::{Client, make_client_id};
-use jet_core::kernel::{Kernel, KernelSpec};
+use jet_core::connection_file;
+use jet_core::kernel::{Kernel, KernelSpec, probe_kernel_alive};
 use jet_core::manager::{SessionStore, generate_session_name};
 use mlua::prelude::*;
 use std::path::PathBuf;
@@ -158,9 +159,14 @@ pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
         .connection_file_path();
     runtime()
         .block_on(async move {
-            let client_id = make_client_id(None);
-            let mut kernel = Kernel::attach(&path, &client_id).await?;
-            kernel.shutdown().await
+            let connection = connection_file::read(path.as_path())?;
+            if probe_kernel_alive(&connection).await.is_ok() {
+                let client_id = make_client_id(None);
+                let mut kernel = Kernel::attach(&path, &client_id).await?;
+                kernel.shutdown().await
+            } else {
+                Ok(())
+            }
         })
         .into_lua_err()
 }
