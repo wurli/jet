@@ -181,7 +181,7 @@ Api.start = function(opts)
 	if #kernels == 0 then
 		vim.notify("Could not find any kernels on the system", vim.log.levels.WARN)
 	else
-		-- Select even if only 1 kernel available
+		-- Show user the choices even if only 1 kernel available
 		select_kernel(kernels, "Select a kernel to start", start_impl, opts)
 	end
 end
