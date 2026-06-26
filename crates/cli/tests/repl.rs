@@ -1284,6 +1284,76 @@ fn session_left_open_with_persist() {
     let _ = std::fs::remove_dir_all(&xdg);
 }
 
+/// If the jet parent process dies abruptly (terminal closed, SIGKILL,
+/// crash) without --persist, the kernel must NOT outlive it. Drop on
+/// `ChildGuard` won't run after SIGKILL, so the kernel layer has to
+/// arrange its own death — otherwise every closed terminal leaks a
+/// kernel that only `jet stop` can clean up.
+#[test]
+fn kernel_dies_when_parent_killed_without_persist() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let xdg = scratch_xdg_dir();
+
+    let mut child = Command::new(bin)
+        .args(["start", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn jet");
+
+    std::thread::sleep(Duration::from_secs(3));
+
+    let meta = read_only_session(&xdg);
+    let kernel_pid = meta["kernel_pid"].as_i64().expect("kernel_pid recorded") as i32;
+    assert_eq!(
+        unsafe { libc::kill(kernel_pid, 0) },
+        0,
+        "kernel pid {kernel_pid} should be alive while jet is running"
+    );
+
+    // SIGKILL the jet parent — no chance for Drop or a Rust signal
+    // handler to clean up. Simulates the harshest version of "terminal
+    // closed": kernel must die anyway.
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut died = false;
+    while Instant::now() < deadline {
+        if unsafe { libc::kill(kernel_pid, 0) } != 0 {
+            died = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    if !died {
+        unsafe {
+            libc::kill(kernel_pid, libc::SIGKILL);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&xdg);
+
+    assert!(
+        died,
+        "kernel pid {kernel_pid} still alive 10s after jet parent killed — \
+         kernel leaked instead of shutting down with its owner"
+    );
+}
+
 /// `jet stop --connection-file <path>` attaches to a persisted kernel,
 /// sends shutdown_request on control, and the kernel actually dies.
 #[test]

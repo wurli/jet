@@ -61,6 +61,100 @@ impl Drop for ChildGuard {
     }
 }
 
+/// Out-of-process reaper that kills the kernel pgrp if jet dies without
+/// running drop glue (SIGKILL, terminal close → SIGHUP with no handler,
+/// segfault). Implementation: fork() a tiny peer that blocks reading
+/// the read end of a pipe; jet holds the write end. However jet's
+/// process-table entry disappears, the write end closes, the peer
+/// wakes with EOF and SIGTERMs (then SIGKILLs) the kernel group.
+///
+/// On any path where jet's Drop chain *does* run — graceful exit or
+/// [`Kernel::detach`] — Drop here SIGKILLs the watchdog before it sees
+/// EOF, so it doesn't redundantly (or, worse, racily against a recycled
+/// pid) kill the kernel itself.
+#[cfg(unix)]
+struct Watchdog {
+    pid: libc::pid_t,
+    /// Write end of the EOF pipe. Holding it open keeps the peer parked
+    /// in read(); closing it is what wakes the peer on jet's death.
+    _write_fd: std::os::fd::OwnedFd,
+}
+
+#[cfg(unix)]
+impl Watchdog {
+    /// Fork a watchdog that will kill `kernel_pgid` (negated to address
+    /// the whole group) on EOF over its inherited pipe.
+    ///
+    /// Safety: fork() in a multithreaded program is allowed, but the
+    /// child must use only async-signal-safe libc calls until exec or
+    /// _exit. We confine the child to `close`/`read`/`nanosleep`/
+    /// `kill`/`_exit`, all of which are signal-safe.
+    fn spawn(kernel_pgid: libc::pid_t) -> std::io::Result<Self> {
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+        let mut fds = [0i32; 2];
+        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let read_fd = unsafe { OwnedFd::from_raw_fd(fds[0]) };
+        let write_fd = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+
+        match unsafe { libc::fork() } {
+            -1 => Err(std::io::Error::last_os_error()),
+            0 => unsafe { watchdog_child(read_fd.as_raw_fd(), write_fd.as_raw_fd(), kernel_pgid) },
+            pid => Ok(Self {
+                pid,
+                _write_fd: write_fd,
+            }),
+        }
+    }
+}
+
+/// Forked watchdog body — runs only in the child after fork(). Returns
+/// `!` because every exit path goes through `_exit`. Uses only async-
+/// signal-safe libc calls.
+#[cfg(unix)]
+unsafe fn watchdog_child(read_fd: i32, write_fd: i32, kernel_pgid: libc::pid_t) -> ! {
+    unsafe {
+        libc::close(write_fd);
+        let mut buf = [0u8; 1];
+        loop {
+            let n = libc::read(read_fd, buf.as_mut_ptr() as *mut _, 1);
+            if n == 0 {
+                // EOF: parent gone. SIGTERM, brief grace, SIGKILL.
+                libc::kill(-kernel_pgid, libc::SIGTERM);
+                let ts = libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: 500_000_000,
+                };
+                libc::nanosleep(&ts, std::ptr::null_mut());
+                libc::kill(-kernel_pgid, libc::SIGKILL);
+                libc::_exit(0);
+            }
+            // n < 0 → EINTR or a real error; we can't read errno
+            // portably from inside a fork()ed child without pulling
+            // in OS-specific symbols. Loop until EOF. n > 0 is
+            // unused — nobody writes to the pipe.
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        // SIGKILL + reap. Reached only on paths where jet's Drop chain
+        // runs — graceful exit (ChildGuard has already killed the
+        // kernel) or detach (the kernel should outlive us). Either
+        // way, we want the watchdog gone before its pipe-EOF fires a
+        // now-redundant kill.
+        unsafe {
+            libc::kill(self.pid, libc::SIGKILL);
+            let mut status = 0;
+            let _ = libc::waitpid(self.pid, &mut status, 0);
+        }
+    }
+}
+
 /// Where the connection file lives — temp (cleaned up on drop) or a
 /// caller-chosen persistent path (left in place so a later `attach` can
 /// find it).
@@ -120,6 +214,12 @@ pub struct Kernel {
     /// (so it survives detach for later inspection / a future attach);
     /// `None` for temp-path spawns. Cleaned up on graceful shutdown.
     pub log_file_path: Option<PathBuf>,
+    /// Out-of-process reaper armed to kill the kernel pgrp if jet dies
+    /// without running drop glue (terminal closed, SIGKILL, crash).
+    /// Disarmed on [`Kernel::detach`]; replaced with the no-op
+    /// `Watchdog::Drop` on normal shutdown.
+    #[cfg(unix)]
+    watchdog: Option<Watchdog>,
 }
 
 impl Kernel {
@@ -191,12 +291,32 @@ impl Kernel {
             }
         };
 
+        // Arm an out-of-process watchdog that kills the kernel pgrp if
+        // jet's process dies without running destructors (terminal
+        // closed → SIGHUP, SIGKILL, segfault, etc.). Best-effort: if
+        // fork fails we log and continue — leaking a kernel on crash
+        // is worse than dropping this safety net, but failing to start
+        // because of it would be far worse.
+        #[cfg(unix)]
+        let watchdog = match guard.id() {
+            Some(pid) => match Watchdog::spawn(pid as libc::pid_t) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    log::warn!("failed to start kernel watchdog: {e}");
+                    None
+                }
+            },
+            None => None,
+        };
+
         Ok(Self {
             child: Some(guard),
             _connection_path: conn_path,
             interrupt_mode: spec.interrupt_mode,
             channels,
             log_file_path,
+            #[cfg(unix)]
+            watchdog,
         })
     }
 
@@ -213,6 +333,8 @@ impl Kernel {
             interrupt_mode: InterruptMode::Signal,
             channels: Channels::default(),
             log_file_path,
+            #[cfg(unix)]
+            watchdog: None,
         }
     }
 
@@ -238,6 +360,8 @@ impl Kernel {
             interrupt_mode: InterruptMode::Signal,
             channels,
             log_file_path,
+            #[cfg(unix)]
+            watchdog: None,
         })
     }
 
@@ -247,6 +371,12 @@ impl Kernel {
     pub fn detach(&mut self) {
         if let Some(g) = self.child.as_mut() {
             g.detach();
+        }
+        // Drop the watchdog so the kernel survives jet's exit. Drop
+        // SIGKILLs + reaps before the peer can read EOF and fire.
+        #[cfg(unix)]
+        {
+            self.watchdog.take();
         }
     }
 
