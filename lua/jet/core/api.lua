@@ -7,7 +7,7 @@ local Api = {}
 
 ---@param choice jet.kernels.item
 local start_impl = function(choice, opts)
-	local k = kernel.new({
+	local k = kernel.init_owned({
 		spec_path = choice.spec_path,
 		spec = choice.spec,
 		connection_file = opts.connection_file,
@@ -36,7 +36,7 @@ local attach_impl = function(choice, opts)
 		error("No external instance to attach to")
 	end
 
-	local k = kernel.from_external({ session_id = choice.external_instance.session_id })
+	local k = kernel.init_external({ session_id = choice.external_instance.session_id })
 	k:open_term()
 end
 
@@ -77,7 +77,7 @@ local list_kernels = function()
 	end
 
 	-- Add connected (nvim) instances
-	for _, k in ipairs(connected_kernels) do
+	for _, k in pairs(connected_kernels) do
 		if not all[k.spec_path] then
 			all[k.spec_path] = {
 				spec = k.spec,

@@ -142,25 +142,6 @@ end
 -- ---@field info Jet.Kernel.Info
 -- ---@field start_time number
 --
--- ---@class Jet.Kernel.Info
--- ---@field status "ok" | "error"
--- ---@field protocol_version? string
--- ---@field implementation? string
--- ---@field language_info Jet.Kernel.LanguageInfo
--- ---@field banner string
--- ---@field debugger? boolean
--- ---@field help_links table<string, string>
--- ---@field supported_features? table<string>
---
--- ---@class Jet.Kernel.LanguageInfo
--- ---@field name string
--- ---@field version string
--- ---@field mimetype string
--- ---@field file_extension string
--- ---@field pygments_lexer string?
--- ---@field codemirror_mode table?
--- ---@field nbconvert_exporter string?
--- ---@field positron table?
 --
 -- ------ Kernel spec ------------------------------------------------------------
 -- -- Kernels make thesmelves available through JSON spec files. Jet detects and
@@ -201,6 +182,26 @@ end
 -- ---@alias Jet.Kernel.Id string
 -- ---@alias Jet.Kernel.Spec.Path string
 
+---@class jet.kernel.languageinfo
+---@field name string
+---@field version string
+---@field mimetype string
+---@field file_extension string
+---@field pygments_lexer string?
+---@field codemirror_mode table?
+---@field nbconvert_exporter string?
+---@field positron table?
+
+---@class jet.kernel.info
+---@field status "ok" | "error"
+---@field protocol_version? string
+---@field implementation? string
+---@field language_info jet.kernel.languageinfo
+---@field banner string
+---@field debugger? boolean
+---@field help_links table<string, string>
+---@field supported_features? table<string>
+
 ---@class jet.kernel.response
 ---@field status "busy" | "pending"
 ---@field type string
@@ -211,7 +212,7 @@ end
 ---@class jet.start.response
 ---@field session_id? string
 ---@field client_id string
----@field kernel_info table
+---@field kernel_info jet.kernel.info
 
 ---@class jet.kernel.spec
 ---@field argv string[]

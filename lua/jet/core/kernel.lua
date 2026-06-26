@@ -15,13 +15,14 @@ local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 ---@field session_name string
 ---@field spec jet.kernel.spec | jet.kernel.paritalspec
 ---@field spec_path string
----@field kernel_info table
+---@field kernel_info? jet.kernel.info
 ---@field session_id? string
 ---@field client_id? string
 ---@field term? jet.term
 ---@field connection_file? string
 ---@field cmd string[]
 ---@field owned boolean
+---@field filetype? string
 local Kernel = {}
 Kernel.__index = Kernel
 
@@ -32,82 +33,78 @@ setmetatable(Kernel, {
 	end,
 })
 
----@class jet.kernel.start.opts
----@field session_name? string
----@field spec jet.kernel.spec | jet.kernel.paritalspec
----@field spec_path string
----@field connection_file? string
-
----@param opts jet.kernel.start.opts
-function Kernel.new(opts)
-	opts.session_name = opts.session_name or "nvim"
-	local out = setmetatable(opts, Kernel)
-	out.owned = true
-	out.cmd = out:connect_cmd()
-	table.insert(manager.kernels, out)
-	return out
-end
-
-function Kernel:connect_cmd()
-	assert(self.spec_path, "Kernel spec path is not set")
-	assert(not self.session_id, "Kernel session ID is already set")
-
-	self.session_id = engine.make_session_id(self.spec.language)
+---@param spec_path string
+---@param language string
+---@param connection_file? string
+local connect_cmd = function(spec_path, language, connection_file)
+	assert(spec_path, "Kernel spec path is not set")
 
 	local out = {
 		config.jet_binary,
 		"start",
-		self.spec_path,
+		spec_path,
 		"--session-id",
-		self.session_id,
+		engine.make_session_id(language),
 		"--session-name",
 		"nvim",
 	}
 
 	-- TODO: remove this?
-	if self.connection_file then
+	if connection_file then
 		table.insert(out, "--connection-file")
-		table.insert(out, self.connection_file)
+		table.insert(out, connection_file)
 	end
 
 	return out
 end
 
----@class jet.kernel_from_external.opts
----@field session_id string
-
----@param opts jet.kernel_from_external.opts
----@return jet.kernel
-function Kernel.from_external(opts)
-	assert(opts.session_id, "Kernel session ID is not set")
-	local view = engine.show(opts.session_id)
-
-	local out = setmetatable({
-		session_id = opts.session_id,
-		spec = view.spec,
-		spec_path = view.session.kernelspec_path,
-		owned = false,
-	}, Kernel)
-
-	out.cmd = out:attach_cmd()
-
-	table.insert(manager.kernels, out)
-	return out
-end
-
-function Kernel:attach_cmd()
-	assert(self.session_id, "Kernel session ID is not set")
-
+---@param session_id string
+local make_attach_cmd = function(session_id)
 	return {
 		config.jet_binary,
 		"attach",
-		self.session_id,
+		session_id,
 		"--session-name",
 		"nvim",
 	}
 end
 
-function Kernel:init_term()
+---@class jet.kernel.init_owned.opts
+---@field session_name? string
+---@field spec jet.kernel.spec | jet.kernel.paritalspec
+---@field spec_path string
+---@field connection_file? string
+
+---@param opts jet.kernel.init_owned.opts
+function Kernel.init_owned(opts)
+	local obj = vim.tbl_extend("force", opts, {
+		session_name = opts.session_name or "nvim",
+		cmd = connect_cmd(opts.spec_path, opts.spec.language, opts.connection_file),
+		owned = true,
+	})
+
+	return setmetatable(obj, Kernel)
+end
+
+---@class jet.kernel.init_external.opts
+---@field session_id string
+
+---@param opts jet.kernel.init_external.opts
+---@return jet.kernel
+function Kernel.init_external(opts)
+	assert(opts.session_id, "Kernel session ID is not set")
+	local view = engine.show(opts.session_id)
+
+	return setmetatable({
+		session_id = opts.session_id,
+		cmd = make_attach_cmd(opts.session_id),
+		spec = view.spec,
+		spec_path = view.session.kernelspec_path,
+		owned = false,
+	}, Kernel)
+end
+
+function Kernel:run()
 	---@diagnostic disable-next-line: missing-fields
 	self.term = {}
 	self.term.buf = vim.api.nvim_create_buf(false, true)
@@ -116,20 +113,75 @@ function Kernel:init_term()
 		buffer = self.term.buf,
 		group = augroup,
 		callback = function()
-			self:stop()
+			self:remove()
 		end,
 	})
 
+	-- buf_call since the buf is not yet attached to a window.
 	vim.api.nvim_buf_call(self.term.buf, function()
 		self.term.job_id = vim.fn.jobstart(self.cmd, { term = true })
 	end)
+
+	-- On TermEnter, record this kernel as the last used
+	-- TODO: configure whether or not this should automatically happen
+	if config.auto_set_primary then
+		vim.api.nvim_create_autocmd("TermEnter", {
+			buffer = self.term.buf,
+			group = augroup,
+			callback = function()
+				self:set_as_primary()
+			end,
+		})
+	end
+
+	self:attach_lua_client()
+	self:try_resolve_filetype()
+	manager:insert(self)
+
+	table.insert(manager.kernels, self)
+end
+
+function Kernel:set_as_primary()
+	assert(self.filetype, "Kernel has no filetype")
+	manager.primary[self.filetype] = self.session_id
+end
+
+function Kernel:attach_lua_client()
+	if not self.term then
+		self:run()
+	end
+	local out = engine.attach(self.session_id, nil, self.session_name)
+	self.client_id = out.client_id
+	self.kernel_info = out.kernel_info
+end
+
+--- Can only be done after the kernel is connected and we have the kernel info,
+--- since we need the file extension to resolve the filetype (kernelspec has
+--- language, but this is not the same).
+---
+--- TODO: let the user override the filetype per-kernel
+function Kernel:try_resolve_filetype()
+	if
+		not self.filetype
+		and self.kernel_info
+		and self.kernel_info.language_info
+		and self.kernel_info.language_info.file_extension
+	then
+		local ft, _, is_fallback = vim.filetype.match({
+			-- Idk if 'dummy-file' is ever gonna make a difference, felt right tho
+			filename = "dummy-file" .. self.kernel_info.language_info.file_extension,
+		})
+		if ft and not is_fallback then
+			self.filetype = ft
+		end
+	end
 end
 
 ---@param opts? vim.api.keyset.win_config
 function Kernel:open_term(opts)
 	opts = opts or {}
 	if not self.term then
-		self:init_term()
+		self:run()
 	end
 
 	self.term.win = vim.api.nvim_open_win(
@@ -145,22 +197,14 @@ function Kernel:open_term(opts)
 	vim.wo[self.term.win].relativenumber = false
 end
 
-function Kernel:attach_lua_client()
-	if not self.term then
-		self:init_term()
-	end
-	local out = engine.attach(self.session_id, nil, "nvim")
-	self.client_id = out.client_id
-	self.kernel_info = out.kernel_info
-end
-
-function Kernel:stop()
+function Kernel:remove()
 	assert(self.session_id, "Kernel has no session id")
 
-	for i, k in ipairs(manager.kernels) do
-		if k == self then
-			table.remove(manager.kernels, i)
-			break
+	manager.kernels[self.session_id] = nil
+
+	for ft, session_id in pairs(manager.primary) do
+		if session_id == self.session_id then
+			manager.primary[ft] = nil
 		end
 	end
 

@@ -173,6 +173,11 @@ M.path_shorten = function(path)
 	return path
 end
 
+---@return string[]
+M.get_all_filetypes = function()
+	return vim.fn.getcompletion("", "filetype")
+end
+
 M.log_debug = function(msg, ...)
 	vim.notify(msg:format(...), vim.log.levels.DEBUG, {})
 end
