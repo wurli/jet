@@ -1131,7 +1131,7 @@ fn session_marked_closed_on_graceful_exit() {
         meta["kernel_pid"].is_null(),
         "kernel_pid should be cleared on close: {meta}"
     );
-    assert_eq!(meta["lang"], "python");
+    assert_eq!(meta["language"], "python");
     let conn_path = std::path::PathBuf::from(meta["working_dir"].as_str().unwrap());
     assert!(conn_path.is_absolute());
 
