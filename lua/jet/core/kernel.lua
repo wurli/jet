@@ -1,4 +1,3 @@
-local engine = require("jet.core.engine")
 local manager = require("jet.core.manager")
 local config = require("jet.config").options
 
@@ -81,7 +80,7 @@ end
 
 ---@param opts jet.kernel.init_owned.opts
 function Kernel.init_owned(opts)
-	local session_id = engine.make_session_id(opts.spec.language)
+	local session_id = require("jet.core.engine").make_session_id(opts.spec.language)
 	local obj = vim.tbl_extend("force", opts, {
 		session_id = session_id,
 		session_name = opts.session_name or "nvim",
@@ -99,7 +98,7 @@ end
 ---@return jet.kernel
 function Kernel.init_external(opts)
 	assert(opts.session_id, "Kernel session ID is not set")
-	local view = engine.show(opts.session_id)
+	local view = require("jet.core.engine").show(opts.session_id)
 
 	return setmetatable({
 		session_id = opts.session_id,
@@ -158,7 +157,7 @@ function Kernel:attach_lua_client()
 	if not self.term then
 		self:run()
 	end
-	local out = engine.attach(self.session_id, nil, self.session_name)
+	local out = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
 	self.client_id = out.client_id
 	self.kernel_info = out.kernel_info
 end
@@ -223,7 +222,7 @@ function Kernel:remove()
 	end)
 
 	if self.owned and config.stop_on_buf_wipeout then
-		engine.stop(self.session_id)
+		require("jet.core.engine").stop(self.session_id)
 		vim.notify("Stopped kernel " .. self.spec.display_name)
 	end
 end

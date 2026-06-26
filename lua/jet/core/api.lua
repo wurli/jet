@@ -1,4 +1,3 @@
-local engine = require("jet.core.engine")
 local kernel = require("jet.core.kernel")
 local utils = require("jet.core.utils")
 local manager = require("jet.core.manager")
@@ -61,8 +60,8 @@ end
 ---@return jet.kernels.item[]
 local list_kernels = function()
 	local connected_kernels = manager.kernels
-	local active_sessions = engine.list_sessions()
-	local all_kernels = engine.list_kernels()
+	local active_sessions = require("jet.core.engine").list_sessions()
+	local all_kernels = require("jet.core.engine").list_kernels()
 
 	---@type table<string, { spec: { display_name: string, language: string }, connected_instances: jet.kernel[], external_instances: jet.session_info[] }>
 	local all = {}
@@ -266,8 +265,5 @@ Api.repl = function(opts)
 		select_kernel(running, "Start a kernel or attach to a running one", repl_impl, opts)
 	end
 end
-
--- vim.print(engine.list_sessions({}))
-Api.repl()
 
 return Api
