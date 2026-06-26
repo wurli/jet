@@ -33,10 +33,10 @@ setmetatable(Kernel, {
 	end,
 })
 
+---@param session_id string
 ---@param spec_path string
----@param language string
 ---@param connection_file? string
-local connect_cmd = function(spec_path, language, connection_file)
+local connect_cmd = function(session_id, spec_path, connection_file)
 	assert(spec_path, "Kernel spec path is not set")
 
 	local out = {
@@ -44,10 +44,14 @@ local connect_cmd = function(spec_path, language, connection_file)
 		"start",
 		spec_path,
 		"--session-id",
-		engine.make_session_id(language),
+		session_id,
 		"--session-name",
 		"nvim",
 	}
+
+	if not config.stop_on_nvim_quit then
+		table.insert(out, "--persist")
+	end
 
 	-- TODO: remove this?
 	if connection_file then
@@ -77,9 +81,11 @@ end
 
 ---@param opts jet.kernel.init_owned.opts
 function Kernel.init_owned(opts)
+	local session_id = engine.make_session_id(opts.spec.language)
 	local obj = vim.tbl_extend("force", opts, {
+		session_id = session_id,
 		session_name = opts.session_name or "nvim",
-		cmd = connect_cmd(opts.spec_path, opts.spec.language, opts.connection_file),
+		cmd = connect_cmd(session_id, opts.spec_path, opts.connection_file),
 		owned = true,
 	})
 
@@ -134,11 +140,13 @@ function Kernel:run()
 		})
 	end
 
-	self:attach_lua_client()
-	self:try_resolve_filetype()
-	manager:insert(self)
-
-	table.insert(manager.kernels, self)
+	-- Give the kernel a bit of time to start up
+	-- TODO: find a more robust solution, e.g. watch for a session.json
+	vim.defer_fn(function()
+		self:attach_lua_client()
+		self:try_resolve_filetype()
+		manager:insert(self)
+	end, 500)
 end
 
 function Kernel:set_as_primary()
@@ -214,11 +222,10 @@ function Kernel:remove()
 		end
 	end)
 
-	if self.owned and config.stop_on_exit then
+	if self.owned and config.stop_on_buf_wipeout then
 		engine.stop(self.session_id)
+		vim.notify("Stopped kernel " .. self.spec.display_name)
 	end
-
-	vim.notify("Stopped kernel " .. self.spec.display_name)
 end
 
 -- ---@param code string | string[]

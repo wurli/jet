@@ -5,7 +5,8 @@ M.version = "4.14.1" -- x-release-please-version
 ---@class jet.config
 M.defaults = {
 	jet_binary = "jet",
-	stop_on_exit = true,
+	stop_on_buf_wipeout = true,
+	stop_on_nvim_quit = true,
 	auto_set_primary = true,
 }
 
