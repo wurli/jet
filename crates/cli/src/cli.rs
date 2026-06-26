@@ -33,7 +33,7 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Spawn a Jupyter kernel and open a REPL on it.
-    #[command(alias = "c")]
+    #[command(alias = "s")]
     Start(StartArgs),
 
     /// Attach a REPL to a kernel that's already running, identified by its
@@ -50,10 +50,11 @@ pub enum Command {
     ListKernels(ListKernelsArgs),
 
     /// Stop a running kernel
-    #[command(alias = "s")]
+    #[command()]
     Stop(StopArgs),
 
     /// Show a session's metadata alongside its kernelspec.
+    #[command(alias = "sh")]
     Show(ShowArgs),
 
     /// Execute code against a running kernel and stream the result to stdout.
