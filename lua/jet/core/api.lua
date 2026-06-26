@@ -5,6 +5,7 @@ local manager = require("jet.core.manager")
 local Api = {}
 
 ---@param choice jet.kernels.item
+---@param opts table
 local start_impl = function(choice, opts)
 	local k = kernel.init_owned({
 		spec_path = choice.spec_path,
@@ -13,22 +14,27 @@ local start_impl = function(choice, opts)
 		session_name = opts.session_name,
 	})
 
-	k:open_term()
+	if not opts.hidden then
+		k:open_term()
+	end
 end
 
 ---@param choice jet.kernels.item
----@param opts? table
+---@param opts table
 local open_impl = function(choice, opts)
 	if not choice.connected_instance then
 		-- Should never happen
 		error("No instance to attach to")
 	end
 
-	choice.connected_instance:open_term()
+	local k = choice.connected_instance
+	if not opts.hidden then
+		k:open_term()
+	end
 end
 
 ---@param choice jet.kernels.item
----@param opts? table
+---@param opts table
 local attach_impl = function(choice, opts)
 	if not choice.external_instance then
 		-- Should never happen
@@ -36,11 +42,14 @@ local attach_impl = function(choice, opts)
 	end
 
 	local k = kernel.init_external({ session_id = choice.external_instance.session_id })
-	k:open_term()
+
+	if not opts.hidden then
+		k:open_term()
+	end
 end
 
 ---@param choice jet.kernels.item
----@param opts? table
+---@param opts table
 local repl_impl = function(choice, opts)
 	if choice.connected_instance then
 		open_impl(choice, opts)
@@ -163,6 +172,7 @@ end
 ---@field spec_path? string
 ---@field connection_file string?
 ---@field session_name string?
+---@field hidden boolean
 
 ---Start a fresh kernel
 ---
@@ -189,6 +199,7 @@ end
 ---@field connection_file string?
 ---@field session_name string?
 ---@field persist boolean Default `true`
+---@field hidden boolean
 
 ---Open a kernel which is already running in Neovim
 ---
@@ -240,6 +251,7 @@ end
 ---@field connection_file string?
 ---@field session_name string?
 ---@field persist boolean Default `true`
+---@field hidden boolean If `true`, do not open a terminal window right away.
 
 ---Open a REPL for a kernel.
 ---
@@ -261,7 +273,7 @@ Api.repl = function(opts)
 	if #running == 0 then
 		vim.notify("Could not find any kernels on the system", vim.log.levels.WARN)
 	elseif #running == 1 then
-		repl_impl(running[1])
+		repl_impl(running[1], opts)
 	else
 		select_kernel(running, "Start a kernel or attach to a running one", repl_impl, opts)
 	end
