@@ -243,7 +243,8 @@ end
 ---@field list_connections fun(): { client_id: string, session_id: string? }
 ---@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.session_info[]
 ---@field list_kernels fun(): { path: string, spec: jet.kernel.spec }[]
----@field show fun(session_id: string): { session: jet.session_info, spec: jet.kernel.spec }
+---@field show_spec fun(path: string): jet.kernel.spec
+---@field show_session fun(session_id: string): { session: jet.session_info, spec: jet.kernel.spec }
 ---@field execute_code fun(client_id: string, code: string, user_expression: table?): jet.kernel.callback
 ---@field is_complete fun(client_id: string, code: string): jet.kernel.callback
 ---@field get_completions fun(client_id: string, code: string): table?

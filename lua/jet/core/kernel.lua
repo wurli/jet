@@ -1,5 +1,6 @@
 local manager = require("jet.core.manager")
 local config = require("jet.config").options
+local utils = require("jet.core.utils")
 
 local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 
@@ -74,12 +75,16 @@ end
 
 ---@class jet.kernel.init_owned.opts
 ---@field session_name? string
----@field spec jet.kernel.spec | jet.kernel.paritalspec
+---@field spec? jet.kernel.spec | jet.kernel.paritalspec
 ---@field spec_path string
 ---@field connection_file? string
 
 ---@param opts jet.kernel.init_owned.opts
 function Kernel.init_owned(opts)
+	if not opts.spec then
+		opts.spec = require("jet.core.engine").show_spec(opts.spec_path)
+	end
+
 	local session_id = require("jet.core.engine").make_session_id(opts.spec.language)
 	local obj = vim.tbl_extend("force", opts, {
 		session_id = session_id,
@@ -98,7 +103,7 @@ end
 ---@return jet.kernel
 function Kernel.init_external(opts)
 	assert(opts.session_id, "Kernel session ID is not set")
-	local view = require("jet.core.engine").show(opts.session_id)
+	local view = require("jet.core.engine").show_session(opts.session_id)
 
 	return setmetatable({
 		session_id = opts.session_id,
@@ -222,8 +227,12 @@ function Kernel:remove()
 	end)
 
 	if self.owned and config.stop_on_buf_wipeout then
-		require("jet.core.engine").stop(self.session_id)
-		vim.notify("Stopped kernel " .. self.spec.display_name)
+		local ok, err = pcall(require("jet.core.engine").stop, self.session_id)
+		if ok then
+			utils.log_info("Stopped kernel '%s'", self.spec.display_name)
+		else
+			utils.log_error("Failed to stop kernel '%s': %s", self.spec.display_name, vim.inspect(err))
+		end
 	end
 end
 

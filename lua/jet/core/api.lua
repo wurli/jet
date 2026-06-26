@@ -163,7 +163,6 @@ end
 ---@field spec_path? string
 ---@field connection_file string?
 ---@field session_name string?
----@field persist boolean efault `true`
 
 ---Start a fresh kernel
 ---
@@ -172,7 +171,7 @@ Api.start = function(opts)
 	opts = opts or {}
 
 	if opts.spec_path then
-		error("Passing spec path is TODO")
+		return kernel.init_owned({ spec_path = opts.spec_path }):open_term()
 	end
 
 	local kernels = list_kernels()
@@ -251,8 +250,10 @@ end
 Api.repl = function(opts)
 	opts = opts or {}
 
-	if opts.session_id or opts.spec_path then
-		error("Passing session id/spec path is TODO")
+	if opts.session_id then
+		return kernel.init_external({ session_id = opts.session_id }):open_term()
+	elseif opts.spec_path then
+		return kernel.init_owned({ spec_path = opts.spec_path }):open_term()
 	end
 
 	local running = list_kernels()

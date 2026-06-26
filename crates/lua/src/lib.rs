@@ -13,8 +13,8 @@ mod api;
 mod poll;
 mod runtime;
 
-use mlua::prelude::*;
 use mlua::SerializeOptions;
+use mlua::prelude::*;
 use serde::Serialize;
 
 /// `LuaSerdeExt::to_value` with `None`/`()` mapped to Lua `nil` instead of
@@ -28,8 +28,8 @@ pub(crate) fn to_lua_value<T: Serialize + ?Sized>(lua: &Lua, value: &T) -> LuaRe
 }
 
 use api::lifecycle::{
-    attach, start, interrupt, list_available_kernels, list_connections, list_sessions,
-    make_session_id, show, shutdown_kernel,
+    attach, interrupt, list_available_kernels, list_connections, list_sessions, make_session_id,
+    show_session, show_spec, shutdown_kernel, start,
 };
 use api::request::{comm_open, comm_send, execute_code, get_completions, is_complete};
 use api::stdin::provide_stdin;
@@ -52,7 +52,8 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("list_connections", lua.create_function(list_connections)?)?;
     exports.set("list_sessions", lua.create_function(list_sessions)?)?;
     exports.set("list_kernels", lua.create_function(list_available_kernels)?)?;
-    exports.set("show", lua.create_function(show)?)?;
+    exports.set("show_spec", lua.create_function(show_spec)?)?;
+    exports.set("show_session", lua.create_function(show_session)?)?;
     exports.set("make_session_id", lua.create_function(make_session_id)?)?;
     exports.set("execute_code", lua.create_function(execute_code)?)?;
     exports.set("is_complete", lua.create_function(is_complete)?)?;

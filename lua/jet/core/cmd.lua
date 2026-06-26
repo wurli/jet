@@ -15,7 +15,7 @@ M.setup = function()
 		end
 
 		if args[1] == "start" then
-			return api.start()
+			return api.start({ spec_path = args[2] })
 		end
 
 		if args[1] == "attach" then
@@ -38,6 +38,13 @@ M.setup = function()
 					"start",
 					"attach",
 				}
+			end
+
+			if args[2] == "start" then
+				local specs = require("jet.core.engine").list_kernels()
+				return vim.tbl_map(function(spec)
+					return spec.path
+				end, specs)
 			end
 		end,
 	})
