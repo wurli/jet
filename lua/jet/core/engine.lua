@@ -202,19 +202,38 @@ end
 ---@field help_links table<string, string>
 ---@field supported_features? table<string>
 
+---@alias jet.channel "shell" | "iopub" | "stdin" | "control"
+
+---@alias jet.msg_type
+---| "execute_request" | "execute_reply" | "execute_input" | "execute_result"
+---| "inspect_request" | "inspect_reply"
+---| "complete_request" | "complete_reply"
+---| "history_request" | "history_reply"
+---| "is_complete_request" | "is_complete_reply"
+---| "comm_info_request" | "comm_info_reply"
+---| "kernel_info_request" | "kernel_info_reply"
+---| "shutdown_request" | "shutdown_reply"
+---| "interrupt_request" | "interrupt_reply"
+---| "debug_request" | "debug_reply"
+---| "stream" | "display_data" | "update_display_data" | "clear_output"
+---| "error" | "status" | "debug_event"
+---| "input_request" | "input_reply"
+---| "comm_open" | "comm_msg" | "comm_close"
+
 ---@class jet.kernel.response
 ---@field status "busy" | "pending"
----@field channel? "shell" | "iopub" | "stdin" | "control"
----@field type string
+---@field channel? jet.channel
+---@field type jet.msg_type
 ---@field data table
 
 ---@alias jet.kernel.callback fun(): jet.kernel.response?
 
 ---@class jet.listen.opts
----@field channel? string | string[]
----@field msg_type? string | string[]
+---@field channel? jet.channel | jet.channel[]
+---@field msg_type? jet.msg_type | jet.msg_type[]
 
----@class jet.start.response
+---@class jet.init.response
+---@field status "ready" | "pending"
 ---@field session_id? string
 ---@field client_id string
 ---@field kernel_info jet.kernel.info
@@ -233,8 +252,8 @@ end
 ---@field working_dir string
 
 ---@class jet.engine
----@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.start.response
----@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.start.response
+---@field start fun(spec_path: string, connection_file: string?, session_name: string?): fun(): jet.init.response?
+---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): fun(): jet.init.response?
 ---@field stop fun(session_id: string)
 ---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }
