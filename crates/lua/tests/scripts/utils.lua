@@ -36,6 +36,22 @@ M.print = function(obj, level)
 	print(M.dump(obj, level))
 end
 
+-- Wrap a poll closure as a stateful iterator: skips "pending" frames,
+-- returns each "busy" frame, ends when the kernel goes idle (poll → nil).
+local function iter(cb)
+	return function()
+		while true do
+			local res = cb()
+			if not res then
+				return nil
+			end
+			if res.status ~= "pending" then
+				return res
+			end
+		end
+	end
+end
+
 ---@param jet jet.engine
 M.start_kernel = function(jet, spec)
 	local con = jet.start(spec)
@@ -48,18 +64,14 @@ M.start_kernel = function(jet, spec)
 		session_id = con.session_id,
 		kernel_info = con.kernel_info,
 		execute = function(code)
-			local cb = jet.execute_code(con.client_id, code, {})
-			return function()
-				while true do
-					local res = cb()
-					if not res then
-						return nil
-					end
-					if res.status ~= "pending" then
-						return res
-					end
-				end
-			end
+			return iter(jet.execute_code(con.client_id, code, {}))
+		end,
+		comm_open = function(target_name, data)
+			local comm_id, cb = jet.comm_open(con.client_id, target_name, data)
+			return comm_id, iter(cb)
+		end,
+		comm_info = function(target_name)
+			return iter(jet.comm_info(con.client_id, target_name))
 		end,
 		provide_stdin = function(parent_id, value)
 			jet.provide_stdin(con.client_id, parent_id, value)

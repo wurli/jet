@@ -93,18 +93,47 @@ fn walkdir(root: &Path) -> Box<dyn Iterator<Item = PathBuf>> {
     }))
 }
 
+/// Locate the user's ark kernelspec, if installed. Unlike ipykernel we
+/// don't synthesize one — ark is a real binary, not a `python -m` invocation.
+fn find_ark_kernelspec() -> Option<PathBuf> {
+    let p = PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join("Library/Jupyter/kernels/ark/kernel.json");
+    p.exists().then_some(p)
+}
+
+enum TestKernel {
+    Python,
+    Ark,
+}
+
 fn run_lua_test(script_name: &str) {
+    run_lua_test_with(script_name, TestKernel::Python);
+}
+
+fn run_lua_test_with(script_name: &str, which_kernel: TestKernel) {
     let Some(luajit) = which("luajit") else {
         skip("luajit not on PATH");
         return;
     };
-    if !ipykernel_available() {
-        skip("ipykernel not installed (`pip install ipykernel`)");
-        return;
-    }
-    let Some(kernelspec) = ensure_python_kernelspec() else {
-        skip("could not prepare a python kernelspec");
-        return;
+    let kernelspec = match which_kernel {
+        TestKernel::Python => {
+            if !ipykernel_available() {
+                skip("ipykernel not installed (`pip install ipykernel`)");
+                return;
+            }
+            let Some(p) = ensure_python_kernelspec() else {
+                skip("could not prepare a python kernelspec");
+                return;
+            };
+            p
+        }
+        TestKernel::Ark => {
+            let Some(p) = find_ark_kernelspec() else {
+                skip("ark kernelspec not installed at ~/Library/Jupyter/kernels/ark");
+                return;
+            };
+            p
+        }
     };
 
     let Some(dylib) = find_cdylib() else {
@@ -140,4 +169,9 @@ fn execute_smoke() {
 #[test]
 fn input_request_smoke() {
     run_lua_test("input.lua");
+}
+
+#[test]
+fn comm_lsp_smoke() {
+    run_lua_test_with("comm_lsp.lua", TestKernel::Ark);
 }

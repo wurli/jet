@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use jupyter_protocol::{JupyterMessage, KernelInfoRequest};
+use jupyter_protocol::{CommInfoRequest, JupyterMessage, KernelInfoRequest};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -407,6 +407,14 @@ impl Client {
             rx: Some(rx),
             router: self.router.clone(),
         })
+    }
+
+    /// Send a `comm_info_request` and return a stream of routed frames.
+    /// Optionally filter by `target_name`; passing `None` asks the kernel
+    /// to list all open comms.
+    pub fn comm_info(&self, target_name: Option<String>) -> Result<RequestStream> {
+        let req: JupyterMessage = CommInfoRequest { target_name }.into();
+        self.request(req)
     }
 
     /// Send an `input_reply` (or other stdin-channel message). Jupyter

@@ -31,7 +31,7 @@ use api::lifecycle::{
     attach, interrupt, list_available_kernels, list_connections, list_sessions, make_session_id,
     show_session, show_spec, shutdown_kernel, start,
 };
-use api::request::{comm_open, comm_send, execute_code, get_completions, is_complete};
+use api::request::{comm_info, comm_open, comm_send, execute_code, get_completions, is_complete};
 use api::stdin::provide_stdin;
 
 #[mlua::lua_module]
@@ -60,6 +60,7 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("get_completions", lua.create_function(get_completions)?)?;
     exports.set("comm_open", lua.create_function(comm_open)?)?;
     exports.set("comm_send", lua.create_function(comm_send)?)?;
+    exports.set("comm_info", lua.create_function(comm_info)?)?;
     exports.set("provide_stdin", lua.create_function(provide_stdin)?)?;
     Ok(exports)
 }

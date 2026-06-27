@@ -98,6 +98,18 @@ pub fn comm_open(
     Ok((comm_id, poll))
 }
 
+pub fn comm_info(
+    lua: &Lua,
+    (session_id, target_name): (String, Option<String>),
+) -> LuaResult<LuaFunction> {
+    let handle = get(&session_id).into_lua_err()?;
+    let session = handle.clone();
+    let stream = runtime()
+        .block_on(async move { session.lock().await.comm_info(target_name) })
+        .into_lua_err()?;
+    make_poll(lua, stream)
+}
+
 pub fn comm_send(
     lua: &Lua,
     (session_id, comm_id, data): (String, String, LuaValue),
