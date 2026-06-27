@@ -84,36 +84,70 @@ local make_attach_cmd = function(session_id)
 	}
 end
 
-function Kernel:run()
-	---@diagnostic disable-next-line: missing-fields
-	self.term = {}
-	self.term.buf = vim.api.nvim_create_buf(false, true)
+---@param opts? vim.api.keyset.win_config
+function Kernel:open_term(opts)
+	opts = opts or {}
+	local open = function()
+		self.term.win = vim.api.nvim_open_win(
+			self.term.buf,
+			false,
+			vim.tbl_extend("force", {
+				split = "right",
+				style = "minimal",
+			}, opts or {})
+		)
 
-	vim.api.nvim_create_autocmd("BufWipeout", {
-		buffer = self.term.buf,
-		group = augroup,
-		callback = function()
-			self:remove()
-		end,
-	})
+		vim.wo[self.term.win].number = false
+		vim.wo[self.term.win].relativenumber = false
+	end
 
-	self:start_lua_client()
+	if self.term then
+		open()
+	else
+		self:connect_term(open)
+	end
+end
 
-	-- buf_call since the buf is not yet attached to a window.
-	vim.api.nvim_buf_call(self.term.buf, function()
-		self.term.job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), { term = true })
-	end)
+---@param callback fun()
+function Kernel:connect_term(callback)
+	local connect = function()
+		---@diagnostic disable-next-line: missing-fields
+		self.term = { buf = vim.api.nvim_create_buf(false, true) }
 
-	-- On TermEnter, record this kernel as the last used
-	-- TODO: configure whether or not this should automatically happen
-	if config.auto_set_primary then
-		vim.api.nvim_create_autocmd("TermEnter", {
+		vim.api.nvim_create_autocmd("BufWipeout", {
 			buffer = self.term.buf,
 			group = augroup,
 			callback = function()
-				self:set_as_primary()
+				self:remove()
 			end,
 		})
+
+		-- buf_call since the buf is not yet attached to a window.
+		vim.api.nvim_buf_call(self.term.buf, function()
+			self.term.job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), { term = true })
+		end)
+
+		-- On TermEnter, record this kernel as the last used
+		-- TODO: configure whether or not this should automatically happen
+		if config.auto_set_primary then
+			vim.api.nvim_create_autocmd("TermEnter", {
+				buffer = self.term.buf,
+				group = augroup,
+				callback = function()
+					self:set_as_primary()
+				end,
+			})
+		end
+
+		if callback then
+			callback()
+		end
+	end
+
+	if self.client_id then
+		connect()
+	else
+		self:start_lua_client(connect)
 	end
 end
 
@@ -122,23 +156,33 @@ function Kernel:set_as_primary()
 	manager.primary[self.filetype] = self.session_id
 end
 
-function Kernel:start_lua_client()
+---@param callback fun()
+function Kernel:start_lua_client(callback)
+	local cb
+
 	if self.owned then
 		assert(self.spec_path, "Kernel spec_path is not set")
-		local out = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
-		self.session_id = out.session_id
-		self.client_id = out.client_id
-		self.kernel_info = out.kernel_info
-		self.stream = out.stream
+		cb = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
 	else
 		assert(self.session_id, "Kernel session_id is not set")
-		local out = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
-		self.client_id = out.client_id
-		self.kernel_info = out.kernel_info
-		self.stream = out.stream
+		cb = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
 	end
-	self:try_resolve_filetype()
-	manager:insert(self)
+
+	---@param res jet.init.response?
+	utils.poll(cb, function(res)
+		if res.status == "ready" then
+			self.session_id = res.session_id
+			self.client_id = res.client_id
+			self.kernel_info = res.kernel_info
+			self.stream = res.stream
+			self:try_resolve_filetype()
+			manager:insert(self)
+			callback()
+			return "exit"
+		else
+			return "wait"
+		end
+	end, { interval = 30 })
 end
 
 -- function Kernel:attach_lua_client()
@@ -170,26 +214,6 @@ function Kernel:try_resolve_filetype()
 			self.filetype = ft
 		end
 	end
-end
-
----@param opts? vim.api.keyset.win_config
-function Kernel:open_term(opts)
-	opts = opts or {}
-	if not self.term then
-		self:run()
-	end
-
-	self.term.win = vim.api.nvim_open_win(
-		self.term.buf,
-		false,
-		vim.tbl_extend("force", {
-			split = "right",
-			style = "minimal",
-		}, opts or {})
-	)
-
-	vim.wo[self.term.win].number = false
-	vim.wo[self.term.win].relativenumber = false
 end
 
 function Kernel:remove()

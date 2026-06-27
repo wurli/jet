@@ -72,7 +72,7 @@ end
 
 ---@param jet jet.engine
 M.start_kernel = function(jet, spec)
-	---@type jet.start.response
+	---@type jet.init.response
 	local con = await(jet.start(spec))
 
 	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from start")

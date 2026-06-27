@@ -1,35 +1,32 @@
 local M = {}
 
----@class jet.utils.poll.options
----
----Polling interval in milliseconds. Default is 50.
----@field interval number
----@field handler fun(result): "exit" Terminate
----| "continue" Pass the result to `handler()`
----| "wait" Continue polling after `interval` milliseconds
----@field on_exit? fun(): any
-
 ---Repeatedly run a callback until a particular result is returned
 ---
+---Opts:
+---	- interval: number (default: 50) - polling interval in milliseconds
+---	- handler: function(result) - called with the result of the callback, should return
+---	    either "exit", "continue", or "wait" to control the polling behavior
+---
 ---@param callback fun(): any
----@param opts jet.utils.poll.options
-M.poll = function(callback, opts)
-	local on_exit = opts.on_exit or function() end
-
+---@param handler fun(result): "exit" Terminate
+---| "continue" Pass the result to `handler()`
+---| "wait" Continue polling after `interval` milliseconds
+---@param opts? { interval?: number }
+M.poll = function(callback, handler, opts)
+	opts = opts or {}
 	local function run()
 		while true do
 			local result = callback()
-			local action = opts.handler(result)
+			local action = handler(result)
 
 			if action == "exit" then
-				on_exit()
 				return
 			elseif action == "wait" then
 				return vim.defer_fn(run, opts.interval or 50)
 			elseif action == "continue" then
 				-- If we've got a valid result, process it and then and then
 				-- immediately (i.e. with no delay) poll again.
-				opts.handler(result)
+				handler(result)
 			else
 				error(("Unexpected action '%s'"):format(tostring(action)))
 			end
