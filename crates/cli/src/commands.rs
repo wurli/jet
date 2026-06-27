@@ -205,6 +205,7 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
         ReplTarget::Attach {
             connection_path: &conn_path,
             session_id,
+            banner: args.banner,
         },
         render_graphics,
         args.session_name,

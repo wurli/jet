@@ -211,6 +211,9 @@ pub enum ReplTarget<'a> {
         connection_path: &'a Path,
         /// SessionStore id this kernel is bound to (the `session.json` slug).
         session_id: Option<String>,
+        /// Render the kernel banner on attach. Defaults to false so reconnects
+        /// don't reprint the banner the original spawn already drew.
+        banner: bool,
     },
 }
 
@@ -240,7 +243,10 @@ pub async fn drive_repl(
     // (a no-filter `listen` registered before the dispatch). We then synchronously
     // pull that first frame to render the banner before drawing any prompt, so
     // banner-then-prompt ordering is preserved without a sink callback.
-    let is_attached = matches!(target, ReplTarget::Attach { .. });
+    let render_banner = match &target {
+        ReplTarget::Spawn { .. } => true,
+        ReplTarget::Attach { banner, .. } => *banner,
+    };
     let (mut session, _info, mut boot_stream) = match target {
         ReplTarget::Spawn {
             spec,
@@ -258,13 +264,15 @@ pub async fn drive_repl(
         ReplTarget::Attach {
             connection_path,
             session_id,
+            banner: _,
         } => Client::attach(connection_path, session_name.as_deref(), session_id).await?,
     };
     // Synchronously consume the first frame — the kernel_info_reply. On spawn we
-    // render it (welcome banner); on attach we drop it so reconnects don't reprint
-    // the banner the original spawn already drew.
+    // render it (welcome banner); on attach we drop it by default so reconnects
+    // don't reprint the banner the original spawn already drew, unless --banner
+    // was passed.
     if let Some(f) = boot_stream.recv().await
-        && !is_attached
+        && render_banner
         && let Err(e) = renderer.handle_event(from_message(f.channel, &f.message))
     {
         log::warn!("renderer (banner): {e}");
@@ -300,7 +308,6 @@ pub async fn drive_repl(
     // do that inline at the two sites where the REPL observes Exited
     // (the prompt-loop select and the wait-for-idle select), so no
     // separate bridge task is needed.
-    let _ = is_attached;
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 

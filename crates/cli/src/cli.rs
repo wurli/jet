@@ -206,6 +206,11 @@ pub struct AttachArgs {
     #[arg(long)]
     pub no_graphics: bool,
 
+    /// Render the kernel banner on attach. By default attach suppresses it
+    /// so reconnects don't reprint what the original spawn already drew.
+    #[arg(long)]
+    pub banner: bool,
+
     /// A name used to identify the client.
     #[arg(long)]
     pub session_name: Option<String>,
