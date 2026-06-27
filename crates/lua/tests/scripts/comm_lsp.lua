@@ -16,18 +16,14 @@ local utils = require("utils")
 -- Start ark ------------------------------------------------------------------
 local kernel = utils.start_kernel(jet, "/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
 
--- Open the 'lsp' comm. ark expects { ip_address = "<addr>" } — see
--- ark/crates/ark_test/src/dummy_frontend.rs:start_server. Drain to idle so
--- the open has been fully processed before we ask who's there.
-local comm_id, messages = kernel.comm_open("lsp", { ip_address = "127.0.0.1" })
-assert(type(comm_id) == "string" and #comm_id > 0, "expected comm_id from comm_open")
+-- Open LSP comm --------------------------------------------------------------
+local lsp_comm_id, lsp_comm_msgs = kernel.comm_open("lsp", { ip_address = "127.0.0.1" })
+assert(type(lsp_comm_id) == "string" and #lsp_comm_id > 0, "expected comm_id from comm_open")
 
----@diagnostic disable-next-line: empty-block
-for _ in messages do
-	-- Drain to ensure we don't move on until the comm is really open
-end
+-- Wait for the first reply to come back so we know the comm is ready
+lsp_comm_msgs()
 
--- comm_info_request — filter by target_name to keep the assertion tight.
+-- Check open comms -----------------------------------------------------------
 local found_lsp = false
 for msg in kernel.comm_info("lsp") do
 	if msg.type == "comm_info_reply" and msg.data and msg.data.comms then
@@ -39,5 +35,31 @@ for msg in kernel.comm_info("lsp") do
 	end
 end
 assert(found_lsp, "expected comm_info_reply to list a comm with target_name='lsp'")
+
+-- Open UI comm ---------------------------------------------------------------
+local ui_comm_id, ui_comm_messages = kernel.comm_open("positron.ui", {})
+assert(type(lsp_comm_id) == "string" and #lsp_comm_id > 0, "expected comm_id from comm_open")
+
+-- Wait for the first reply to come back so we know the comm is ready
+ui_comm_messages()
+
+-- Listen on the UI comm ------------------------------------------------------
+local ui_comm_notifications = kernel.comm_listen(ui_comm_id)
+local msg1 = ui_comm_notifications()
+local msg2 = ui_comm_notifications()
+
+local method1 = msg1 and msg1.data and msg1.data.data and msg1.data.data.method
+local method2 = msg2 and msg2.data and msg2.data.data and msg2.data.data.method
+
+if method1 == method2 then
+	error(
+		"Should not receive duplicate messages on the UI comm\n"
+			.. "Got 1: "
+			.. utils.dump(msg1)
+			.. "\n"
+			.. "Got 2: "
+			.. utils.dump(msg2)
+	)
+end
 
 kernel.stop()

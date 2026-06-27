@@ -98,6 +98,10 @@ M.start_kernel = function(jet, spec)
 		comm_info = function(target_name)
 			return iter(jet.comm_info(con.client_id, target_name))
 		end,
+		---@param comm_id string
+		comm_listen = function(comm_id)
+			return iter(jet.comm_listen(con.client_id, comm_id))
+		end,
 		provide_stdin = function(parent_id, value)
 			jet.provide_stdin(con.client_id, parent_id, value)
 		end,
