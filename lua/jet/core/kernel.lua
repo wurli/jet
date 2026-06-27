@@ -243,6 +243,54 @@ function Kernel:remove()
 	end
 end
 
+---@class jet.kernel.comm_open.opts
+---@field listener? fun(res: jet.kernel.response)
+---@field listener_interval? number In milliseconds, default 50ms
+
+---@param name string
+---@param data? table
+---@param opts? jet.kernel.comm_open.opts
+---@return string comm_id
+function Kernel:comm_open(name, data, opts)
+	assert(self.client_id, "Kernel has no client id")
+	local comm_id, _ = require("jet.core.engine").comm_open(self.client_id, name, data or {})
+
+	opts = opts or {}
+
+	if opts.listener then
+		local get_comm_msg = require("jet.core.engine").comm_listen(self.client_id, comm_id)
+
+		---@param res? jet.kernel.response
+		utils.poll(get_comm_msg, function(res)
+			if not res then
+				-- The comm has been closed, so stop polling
+				return "exit"
+			elseif res.status == "busy" then
+				opts.listener(res)
+				return "continue"
+			else
+				return "wait"
+			end
+		end, { interval = opts.listener_interval })
+	end
+
+	return comm_id
+end
+
+---@class jet.kernel.listen.opts : jet.listen.opts
+---This function can return:
+--- - `"wait"`: The listener will be called again after the `interval`
+--- - `"continue"`: The listener will be called again immediately
+--- - `"exit"`: Stop listening
+---@field listener fun(res: jet.kernel.response): "wait" | "continue" | "exit"
+---@field interval? number In milliseconds, default 50ms
+
+---@param opts jet.kernel.listen.opts
+function Kernel:listen(opts)
+	local listener = require("jet.core.engine").listen(self.client_id, opts or {})
+	utils.poll(listener, opts.listener, { interval = opts.interval })
+end
+
 -- ---@param code string | string[]
 -- ---@param user_expressions table<string, string>?
 -- function Kernel:execute(code, user_expressions)
