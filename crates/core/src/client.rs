@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use jupyter_protocol::{CommInfoRequest, JupyterMessage, KernelInfoRequest};
+use jupyter_protocol::{CommInfoRequest, JupyterMessage, JupyterMessageContent, KernelInfoRequest};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -115,6 +115,10 @@ type Sink = Arc<dyn Fn(Frame) + Send + Sync + 'static>;
 /// fall through to the [`Sink`] passed at session start.
 struct FrameRouter {
     by_parent: Mutex<HashMap<String, UnboundedSender<RoutedFrame>>>,
+    /// Per-comm subscribers — fed every `comm_msg` / `comm_close` for that
+    /// comm_id regardless of parent_msg_id. Closed (slot removed and
+    /// `RoutedFrame::Idle` sent) when we see a `comm_close` for the comm.
+    by_comm: Mutex<HashMap<String, UnboundedSender<RoutedFrame>>>,
     sink: Sink,
     status_tx: Arc<watch::Sender<KernelStatus>>,
 }
@@ -123,6 +127,7 @@ impl FrameRouter {
     fn new(sink: Sink, status_tx: Arc<watch::Sender<KernelStatus>>) -> Self {
         Self {
             by_parent: Mutex::new(HashMap::new()),
+            by_comm: Mutex::new(HashMap::new()),
             sink,
             status_tx,
         }
@@ -136,6 +141,16 @@ impl FrameRouter {
 
     fn forget(&self, parent_msg_id: &str) {
         self.by_parent.lock().unwrap().remove(parent_msg_id);
+    }
+
+    fn register_comm(&self, comm_id: String) -> UnboundedReceiver<RoutedFrame> {
+        let (tx, rx) = unbounded_channel();
+        self.by_comm.lock().unwrap().insert(comm_id, tx);
+        rx
+    }
+
+    fn forget_comm(&self, comm_id: &str) {
+        self.by_comm.lock().unwrap().remove(comm_id);
     }
 
     /// Route one parsed message:
@@ -188,6 +203,33 @@ impl FrameRouter {
                     message: msg.clone(),
                 }));
             }
+        }
+
+        // Fan out comm traffic to per-comm subscribers. comm_msg/comm_close
+        // from the kernel don't share a parent_msg_id with our outbound
+        // comm_open, so the by_parent path can't deliver them — route by
+        // comm_id instead. comm_close also tears the subscriber down.
+        match &msg.content {
+            JupyterMessageContent::CommMsg(m) => {
+                let sender = self.by_comm.lock().unwrap().get(&m.comm_id.0).cloned();
+                if let Some(tx) = sender {
+                    let _ = tx.send(RoutedFrame::Frame(Frame {
+                        channel,
+                        message: msg.clone(),
+                    }));
+                }
+            }
+            JupyterMessageContent::CommClose(c) => {
+                let tx = self.by_comm.lock().unwrap().remove(&c.comm_id.0);
+                if let Some(tx) = tx {
+                    let _ = tx.send(RoutedFrame::Frame(Frame {
+                        channel,
+                        message: msg.clone(),
+                    }));
+                    let _ = tx.send(RoutedFrame::Idle);
+                }
+            }
+            _ => {}
         }
 
         (self.sink)(Frame {
@@ -404,6 +446,7 @@ impl Client {
             .map_err(|e| anyhow!("shell_tx send: {e}"))?;
         Ok(RequestStream {
             msg_id,
+            kind: SlotKind::Parent,
             rx: Some(rx),
             router: self.router.clone(),
         })
@@ -415,6 +458,24 @@ impl Client {
     pub fn comm_info(&self, target_name: Option<String>) -> Result<RequestStream> {
         let req: JupyterMessage = CommInfoRequest { target_name }.into();
         self.request(req)
+    }
+
+    /// Subscribe to kernel→frontend traffic for one open comm. The stream
+    /// yields every `comm_msg` (and the terminating `comm_close`) the
+    /// kernel sends bearing this `comm_id`, regardless of which client
+    /// request — if any — they're parented to. The stream ends after the
+    /// `comm_close` for that comm.
+    ///
+    /// Dropping the stream before close just unsubscribes; the comm stays
+    /// open as far as the kernel is concerned.
+    pub fn comm_listen(&self, comm_id: String) -> RequestStream {
+        let rx = self.router.register_comm(comm_id.clone());
+        RequestStream {
+            msg_id: comm_id,
+            kind: SlotKind::Comm,
+            rx: Some(rx),
+            router: self.router.clone(),
+        }
     }
 
     /// Send an `input_reply` (or other stdin-channel message). Jupyter
@@ -463,8 +524,20 @@ impl Client {
 /// Both return `None` after the kernel goes idle for this request. Once
 /// drained, the per-request slot is removed from the router; further
 /// calls keep returning `None`.
+/// Which router map a [`RequestStream`] is registered in — by `msg_id`
+/// for shell requests, by `comm_id` for [`Client::comm_listen`] —
+/// so [`RequestStream::Drop`] knows which map to clean from.
+#[derive(Clone, Copy, Debug)]
+enum SlotKind {
+    Parent,
+    Comm,
+}
+
 pub struct RequestStream {
+    /// Key into the router map indicated by `kind`: `msg_id` for shell
+    /// requests, `comm_id` for [`Client::comm_listen`].
     pub msg_id: String,
+    kind: SlotKind,
     rx: Option<UnboundedReceiver<RoutedFrame>>,
     router: Arc<FrameRouter>,
 }
@@ -490,7 +563,7 @@ impl RequestStream {
             Err(TryRecvError::Empty) => TryRecv::Empty,
             Err(TryRecvError::Disconnected) => {
                 self.rx = None;
-                self.router.forget(&self.msg_id);
+                self.forget_slot();
                 TryRecv::Done
             }
         }
@@ -520,6 +593,13 @@ impl RequestStream {
         }
         Ok(())
     }
+
+    fn forget_slot(&self) {
+        match self.kind {
+            SlotKind::Parent => self.router.forget(&self.msg_id),
+            SlotKind::Comm => self.router.forget_comm(&self.msg_id),
+        }
+    }
 }
 
 impl Drop for RequestStream {
@@ -528,7 +608,7 @@ impl Drop for RequestStream {
         // router slot so the reader tasks don't keep accumulating
         // frames for a parent_id nobody's listening to.
         if self.rx.is_some() {
-            self.router.forget(&self.msg_id);
+            self.forget_slot();
         }
     }
 }

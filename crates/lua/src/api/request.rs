@@ -110,6 +110,13 @@ pub fn comm_info(
     make_poll(lua, stream)
 }
 
+pub fn comm_listen(lua: &Lua, (session_id, comm_id): (String, String)) -> LuaResult<LuaFunction> {
+    let handle = get(&session_id).into_lua_err()?;
+    let session = handle.clone();
+    let stream = runtime().block_on(async move { session.lock().await.comm_listen(comm_id) });
+    make_poll(lua, stream)
+}
+
 pub fn comm_send(
     lua: &Lua,
     (session_id, comm_id, data): (String, String, LuaValue),
