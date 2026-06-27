@@ -8,6 +8,14 @@ M.defaults = {
 	stop_on_buf_wipeout = true,
 	stop_on_nvim_quit = true,
 	auto_set_primary = true,
+	---key=filetype, value=kernelspec path
+	---@type table<string, string>
+	default_kernels = {},
+}
+
+---@class jet.data
+M.data = {
+	jet_nvim_data_dir = vim.fn.stdpath("data") .. "/jet",
 }
 
 ---@type jet.config

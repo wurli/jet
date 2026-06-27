@@ -179,22 +179,22 @@ M.get_all_filetypes = function()
 end
 
 M.log_debug = function(msg, ...)
-	vim.notify(msg:format(...), vim.log.levels.DEBUG, {})
+	vim.notify("[jet] " .. msg:format(...), vim.log.levels.DEBUG, {})
 end
 M.log_error = function(msg, ...)
-	vim.notify(msg:format(...), vim.log.levels.ERROR, {})
+	vim.notify("[jet] " .. msg:format(...), vim.log.levels.ERROR, {})
 end
 M.log_info = function(msg, ...)
-	vim.notify(msg:format(...), vim.log.levels.INFO, {})
+	vim.notify("[jet] " .. msg:format(...), vim.log.levels.INFO, {})
 end
 M.log_off = function(msg, ...)
-	vim.notify(msg:format(...), vim.log.levels.OFF, {})
+	vim.notify("[jet] " .. msg:format(...), vim.log.levels.OFF, {})
 end
 M.log_trace = function(msg, ...)
-	vim.notify(msg:format(...), vim.log.levels.TRACE, {})
+	vim.notify("[jet] " .. msg:format(...), vim.log.levels.TRACE, {})
 end
 M.log_warn = function(msg, ...)
-	vim.notify(msg:format(...), vim.log.levels.WARN, {})
+	vim.notify("[jet] " .. msg:format(...), vim.log.levels.WARN, {})
 end
 
 return M

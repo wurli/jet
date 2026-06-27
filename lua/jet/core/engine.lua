@@ -204,24 +204,21 @@ end
 
 ---@class jet.kernel.response
 ---@field status "busy" | "pending"
+---@field channel? "shell" | "iopub" | "stdin" | "control"
 ---@field type string
 ---@field data table
 
 ---@alias jet.kernel.callback fun(): jet.kernel.response?
 
+---@class jet.listen.opts
+---@field channel? string | string[]
+---@field msg_type? string | string[]
+
 ---@class jet.start.response
 ---@field session_id? string
 ---@field client_id string
 ---@field kernel_info jet.kernel.info
-
----@class jet.kernel.spec
----@field argv string[]
----@field display_name string
----@field language string
----@field interrupt_mode "signal" | "message" | nil
----@field env table<string, string>?
----@field metadata table<string, any>
----@field kernel_protocol_version string?
+---@field stream jet.kernel.callback
 
 ---@class jet.session_info
 ---@field session_id string
@@ -243,6 +240,7 @@ end
 ---@field list_connections fun(): { client_id: string, session_id: string? }
 ---@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.session_info[]
 ---@field list_kernels fun(): { path: string, spec: jet.kernel.spec }[]
+---TODO: should accept short paths like ~/...
 ---@field show_spec fun(path: string): jet.kernel.spec
 ---@field show_session fun(session_id: string): { session: jet.session_info, spec: jet.kernel.spec }
 ---@field execute_code fun(client_id: string, code: string, user_expression: table?): jet.kernel.callback
@@ -250,6 +248,9 @@ end
 ---@field get_completions fun(client_id: string, code: string): table?
 ---@field comm_open fun(client_id: string, comm_id: string, data: table): string, jet.kernel.callback
 ---@field comm_send fun(client_id: string, comm_id: string, data: table): jet.kernel.callback
+---@field comm_info fun(client_id: string, target_name: string?): jet.kernel.callback
+---@field comm_listen fun(client_id: string, comm_id: string): jet.kernel.callback
+---@field listen fun(client_id: string, opts?: jet.listen.opts): jet.kernel.callback
 ---@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string)
 ---@field make_session_id fun(lang: string): string
 local out = loader()

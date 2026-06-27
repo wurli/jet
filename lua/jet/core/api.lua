@@ -172,6 +172,7 @@ end
 ---@field spec_path? string
 ---@field connection_file string?
 ---@field session_name string?
+---@field filetype? string
 ---@field hidden boolean
 
 ---Start a fresh kernel
@@ -179,6 +180,12 @@ end
 ---@param opts? jet.api.start.opts
 Api.start = function(opts)
 	opts = opts or {}
+
+	if opts.filetype then
+		local spec_path = require("jet.config").options.default_kernels[opts.filetype]
+		assert(spec_path, string.format("No default kernel configured for filetype %s", opts.filetype))
+		opts.spec_path = spec_path
+	end
 
 	if opts.spec_path then
 		return kernel.init_owned({ spec_path = opts.spec_path }):open_term()
@@ -199,6 +206,7 @@ end
 ---@field connection_file string?
 ---@field session_name string?
 ---@field persist boolean Default `true`
+---@field filetype? string --- Must be present in config default_kernels
 ---@field hidden boolean
 
 ---Open a kernel which is already running in Neovim
@@ -206,6 +214,16 @@ end
 ---@param opts? jet.api.open.opts
 Api.open = function(opts)
 	opts = opts or {}
+
+	if opts.filetype then
+		local spec_path = require("jet.config").options.default_kernels[opts.filetype]
+		assert(spec_path, string.format("No default kernel configured for filetype %s", opts.filetype))
+		for _, session in ipairs(require("jet.core.engine").list_sessions()) do
+			if vim.fn.simplify(session.kernelspec_path) == vim.fn.simplify(spec_path) then
+				opts.session_id = session.session_id
+			end
+		end
+	end
 
 	if opts.session_id then
 		error("Passing session id is TODO")
@@ -218,7 +236,7 @@ Api.open = function(opts)
 	if #running == 0 then
 		vim.notify("No running kernels to attach to", vim.log.levels.WARN)
 	elseif #running == 1 then
-		open_impl(running[1])
+		open_impl(running[1], opts)
 	else
 		select_kernel(running, "Select a running kernel to open", open_impl, opts)
 	end
@@ -229,6 +247,17 @@ end
 ---@param opts? jet.api.open.opts
 Api.attach = function(opts)
 	opts = opts or {}
+
+	-- TODO: remove duplicated code
+	if opts.filetype then
+		local spec_path = require("jet.config").options.default_kernels[opts.filetype]
+		assert(spec_path, string.format("No default kernel configured for filetype %s", opts.filetype))
+		for _, session in ipairs(require("jet.core.engine").list_sessions()) do
+			if vim.fn.simplify(session.kernelspec_path) == vim.fn.simplify(spec_path) then
+				opts.session_id = session.session_id
+			end
+		end
+	end
 
 	if opts.session_id then
 		error("Passing session id is TODO")
@@ -247,11 +276,12 @@ end
 
 ---@class jet.api.repl.opts
 ---@field spec_path? string
----@field session_id string
----@field connection_file string?
----@field session_name string?
----@field persist boolean Default `true`
----@field hidden boolean If `true`, do not open a terminal window right away.
+---@field session_id? string
+---@field connection_file? string
+---@field session_name? string
+---@field persist? boolean Default `true`
+---@field filetype? string --- Must be present in config default_kernels
+---@field hidden? boolean If `true`, do not open a terminal window right away.
 
 ---Open a REPL for a kernel.
 ---
@@ -261,6 +291,12 @@ end
 ---@param opts? jet.api.repl.opts
 Api.repl = function(opts)
 	opts = opts or {}
+
+	if opts.filetype then
+		local spec_path = require("jet.config").options.default_kernels[opts.filetype]
+		assert(spec_path, string.format("No default kernel configured for filetype %s", opts.filetype))
+		opts.spec_path = spec_path
+	end
 
 	if opts.session_id then
 		return kernel.init_external({ session_id = opts.session_id }):open_term()
