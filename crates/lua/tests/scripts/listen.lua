@@ -26,7 +26,7 @@ local utils = require("utils")
 local kernel = utils.start_kernel(jet, "/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
 assert(type(kernel.stream) == "function", "expected start response to include a `stream` poll")
 
--- A separate filtered listen registered explicitly. -------------------------
+-- A separate filtered listen registered explicitly. --------------------------
 local iopub_streams = kernel.listen({ channel = "iopub", msg_type = "stream" })
 
 -- Execute something and drain to idle (drives traffic through the listeners).
@@ -35,11 +35,7 @@ for _ in kernel.execute("print(1 + 1)") do
 	-- Drain to idle
 end
 
--- Firehose: iterate until we see `iopub`/status:idle, which the kernel
--- always emits as the last frame for an execute request. Along the way
--- every frame must carry a valid channel, and we expect to spot the "2"
--- stream frame. execute() above already drained that request to idle, so
--- all of its frames are buffered ahead of us — no time-based exit needed.
+-- Check for messages in 'global' listener ------------------------------------
 local saw_iopub_stream_2 = false
 for msg in kernel.stream() do
 	assert(
@@ -55,8 +51,7 @@ for msg in kernel.stream() do
 end
 assert(saw_iopub_stream_2, "expected to see 'iopub'/stream frame containing '2' in firehose")
 
--- Filtered listen sees stream frames only, all on iopub. The print emitted
--- one stream frame; one busy frame from the iterator is our terminator.
+-- Check for messages in filtered listener ------------------------------------
 local filtered_count = 0
 for msg in iopub_streams() do
 	filtered_count = filtered_count + 1
@@ -66,10 +61,10 @@ for msg in iopub_streams() do
 end
 assert(filtered_count > 0, "expected filtered listen to see at least one stream frame")
 
--- Shutting the kernel down ends the streams: each iterator should exit on
--- its own (the underlying poll returns nil once the sockets close).
+-- Shut down kernel -----------------------------------------------------------
 kernel.stop()
 
+-- Drain iterators ------------------------------------------------------------
 ---@diagnostic disable-next-line: empty-block
 for _ in kernel.stream() do
 end
