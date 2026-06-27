@@ -11,6 +11,7 @@ M.defaults = {
 	---key=filetype, value=kernelspec path
 	---@type table<string, string>
 	default_kernels = {},
+	repl_win_opts = {}, ---@type vim.api.keyset.win_config
 }
 
 ---@class jet.data

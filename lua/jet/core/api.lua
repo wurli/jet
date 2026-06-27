@@ -5,7 +5,7 @@ local manager = require("jet.core.manager")
 local Api = {}
 
 ---@param choice jet.kernels.item
----@param opts table
+---@param opts jet.api.repl.opts
 local start_impl = function(choice, opts)
 	local k = kernel.init_owned({
 		spec_path = choice.spec_path,
@@ -14,46 +14,48 @@ local start_impl = function(choice, opts)
 		session_name = opts.session_name,
 	})
 
-	if not opts.hidden then
-		k:open_term()
+	if opts.hidden then
+		k:start_lua_client(opts.callback)
+	else
+		k:open_term(opts.callback)
 	end
 end
 
 ---@param choice jet.kernels.item
----@param opts table
+---@param opts jet.api.repl.opts
 local open_impl = function(choice, opts)
-	if not choice.connected_instance then
-		-- Should never happen
+	if choice.connected_instance then
+		if not opts.hidden then
+			choice.connected_instance:open_term()
+		end
+	else
 		error("No instance to attach to")
 	end
-
-	local k = choice.connected_instance
-	if not opts.hidden then
-		k:open_term()
-	end
 end
 
 ---@param choice jet.kernels.item
----@param opts table
+---@param opts jet.api.repl.opts
 local attach_impl = function(choice, opts)
-	if not choice.external_instance then
+	if not choice.session_id then
 		-- Should never happen
 		error("No external instance to attach to")
 	end
 
-	local k = kernel.init_external({ session_id = choice.external_instance.session_id })
+	local k = kernel.init_external({ session_id = choice.session_id })
 
-	if not opts.hidden then
+	if opts.hidden then
+		k:start_lua_client()
+	else
 		k:open_term()
 	end
 end
 
 ---@param choice jet.kernels.item
----@param opts table
+---@param opts jet.api.repl.opts
 local repl_impl = function(choice, opts)
 	if choice.connected_instance then
 		open_impl(choice, opts)
-	elseif choice.external_instance then
+	elseif choice.session_id then
 		attach_impl(choice, opts)
 	else
 		start_impl(choice, opts)
@@ -61,10 +63,10 @@ local repl_impl = function(choice, opts)
 end
 
 ---@class jet.kernels.item
----@field spec_path string
----@field spec jet.kernel.paritalspec | jet.kernel.spec
+---@field spec_path? string
+---@field spec? jet.kernel.paritalspec | jet.kernel.spec
 ---@field connected_instance jet.kernel?
----@field external_instance jet.session_info?
+---@field session_id? string?
 
 ---@return jet.kernels.item[]
 local list_kernels = function()
@@ -72,7 +74,7 @@ local list_kernels = function()
 	local active_sessions = require("jet.core.engine").list_sessions()
 	local all_kernels = require("jet.core.engine").list_kernels()
 
-	---@type table<string, { spec: { display_name: string, language: string }, connected_instances: jet.kernel[], external_instances: jet.session_info[] }>
+	---@type table<string, { spec: { display_name: string, language: string }, connected_instances: jet.kernel[], session_ids: jet.session_info[] }>
 	local all = {}
 
 	-- Add all kernels to the table, even if they have no connected instances
@@ -80,7 +82,7 @@ local list_kernels = function()
 		all[k.path] = {
 			spec = k.spec,
 			connected_instances = {},
-			external_instances = {},
+			session_ids = {},
 		}
 	end
 
@@ -90,7 +92,7 @@ local list_kernels = function()
 			all[k.spec_path] = {
 				spec = k.spec,
 				connected_instances = {},
-				external_instances = {},
+				session_ids = {},
 			}
 		end
 		table.insert(all[k.spec_path].connected_instances, k)
@@ -102,7 +104,7 @@ local list_kernels = function()
 			all[session.kernelspec_path] = {
 				spec = { display_name = session.display_name, language = session.language },
 				connected_instances = {},
-				external_instances = {},
+				session_ids = {},
 			}
 		end
 		-- connected_kernels also includes any nvim ones, so we need to filter these out
@@ -114,14 +116,14 @@ local list_kernels = function()
 			end
 		end
 		if not session_is_nvim then
-			table.insert(all[session.kernelspec_path].external_instances, session)
+			table.insert(all[session.kernelspec_path].session_ids, session.session_id)
 		end
 	end
 
 	local out = {}
 
 	for spec_path, item in pairs(all) do
-		if #item.connected_instances == 0 and #item.external_instances == 0 then
+		if #item.connected_instances == 0 and #item.session_ids == 0 then
 			table.insert(out, {
 				spec_path = spec_path,
 				spec = item.spec,
@@ -134,11 +136,11 @@ local list_kernels = function()
 					connected_instance = instance,
 				})
 			end
-			for _, session in ipairs(item.external_instances) do
+			for _, session_id in ipairs(item.session_ids) do
 				table.insert(out, {
 					spec_path = spec_path,
 					spec = item.spec,
-					external_instance = session,
+					session_id = session_id,
 				})
 			end
 		end
@@ -156,7 +158,7 @@ local select_kernel = function(kernels, msg, callback, opts)
 		format_item = function(item)
 			return string.format(
 				"%s  %s  %s",
-				item.connected_instance and "" or item.external_instance and "󰺕" or "",
+				item.connected_instance and "" or item.session_id and "󰺕" or "",
 				item.spec.display_name,
 				utils.path_shorten(item.spec_path)
 			)
@@ -211,7 +213,7 @@ end
 
 ---Open a kernel which is already running in Neovim
 ---
----@param opts? jet.api.open.opts
+---@param opts? jet.api.repl.opts
 Api.open = function(opts)
 	opts = opts or {}
 
@@ -264,7 +266,7 @@ Api.attach = function(opts)
 	end
 
 	local external = vim.tbl_filter(function(k)
-		return k.external_instance
+		return k.session_id
 	end, list_kernels())
 
 	if #external == 0 then
@@ -282,6 +284,7 @@ end
 ---@field persist? boolean Default `true`
 ---@field filetype? string --- Must be present in config default_kernels
 ---@field hidden? boolean If `true`, do not open a terminal window right away.
+---@field callback? fun(k: jet.kernel)
 
 ---Open a REPL for a kernel.
 ---
@@ -299,9 +302,9 @@ Api.repl = function(opts)
 	end
 
 	if opts.session_id then
-		return kernel.init_external({ session_id = opts.session_id }):open_term()
+		return attach_impl({ session_id = opts.session_id }, opts)
 	elseif opts.spec_path then
-		return kernel.init_owned({ spec_path = opts.spec_path }):open_term()
+		return start_impl({ spec_path = opts.spec_path }, opts)
 	end
 
 	local running = list_kernels()

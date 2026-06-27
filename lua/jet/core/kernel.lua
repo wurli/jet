@@ -45,9 +45,7 @@ function Kernel.init_owned(opts)
 		opts.spec = require("jet.core.engine").show_spec(opts.spec_path)
 	end
 
-	local session_id = require("jet.core.engine").make_session_id(opts.spec.language)
 	local obj = vim.tbl_extend("force", opts, {
-		session_id = session_id,
 		session_name = opts.session_name or "nvim",
 		owned = true,
 	})
@@ -84,9 +82,9 @@ local make_attach_cmd = function(session_id)
 	}
 end
 
----@param opts? vim.api.keyset.win_config
-function Kernel:open_term(opts)
-	opts = opts or {}
+---@param callback? fun(k: jet.kernel)
+---@param win_config? vim.api.keyset.win_config
+function Kernel:open_term(callback, win_config)
 	local open = function()
 		self.term.win = vim.api.nvim_open_win(
 			self.term.buf,
@@ -94,11 +92,15 @@ function Kernel:open_term(opts)
 			vim.tbl_extend("force", {
 				split = "right",
 				style = "minimal",
-			}, opts or {})
+			}, win_config or config.repl_win_opts or {})
 		)
 
 		vim.wo[self.term.win].number = false
 		vim.wo[self.term.win].relativenumber = false
+
+		if callback then
+			callback(self)
+		end
 	end
 
 	if self.term then
@@ -108,7 +110,7 @@ function Kernel:open_term(opts)
 	end
 end
 
----@param callback fun()
+---@param callback? fun(k: jet.kernel)
 function Kernel:connect_term(callback)
 	local connect = function()
 		---@diagnostic disable-next-line: missing-fields
@@ -140,7 +142,7 @@ function Kernel:connect_term(callback)
 		end
 
 		if callback then
-			callback()
+			callback(self)
 		end
 	end
 
@@ -156,10 +158,18 @@ function Kernel:set_as_primary()
 	manager.primary[self.filetype] = self.session_id
 end
 
----@param callback fun()
-function Kernel:start_lua_client(callback)
-	local cb
+---@return boolean
+function Kernel:has_lua_client()
+	return self.client_id ~= nil
+end
 
+---@param callback? fun(k: jet.kernel)
+function Kernel:start_lua_client(callback)
+	if self:has_lua_client() then
+		return
+	end
+
+	local cb
 	if self.owned then
 		assert(self.spec_path, "Kernel spec_path is not set")
 		cb = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
@@ -177,7 +187,9 @@ function Kernel:start_lua_client(callback)
 			self.stream = res.stream
 			self:try_resolve_filetype()
 			manager:insert(self)
-			callback()
+			if callback then
+				callback(self)
+			end
 			return "exit"
 		else
 			return "wait"

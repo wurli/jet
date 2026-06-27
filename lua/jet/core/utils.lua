@@ -8,16 +8,16 @@ local M = {}
 ---	    either "exit", "continue", or "wait" to control the polling behavior
 ---
 ---@param callback fun(): any
----@param handler fun(result): "exit" Terminate
+---@param handler fun(result): nil | "wait" Continue polling after `interval` milliseconds
 ---| "continue" Pass the result to `handler()`
----| "wait" Continue polling after `interval` milliseconds
+---| "exit" Terminate
 ---@param opts? { interval?: number }
 M.poll = function(callback, handler, opts)
 	opts = opts or {}
 	local function run()
 		while true do
 			local result = callback()
-			local action = handler(result)
+			local action = handler(result) or "wait"
 
 			if action == "exit" then
 				return
