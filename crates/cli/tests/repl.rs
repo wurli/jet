@@ -41,6 +41,60 @@ use anyhow::Result;
 use rand::Rng;
 use serde_json::json;
 
+/// Writer that the test caller and the PTY reader thread can share, so
+/// the reader can answer reedline's cursor-position query while the
+/// caller writes input.
+struct SharedWriter(std::sync::Arc<std::sync::Mutex<Box<dyn std::io::Write + Send>>>);
+
+impl std::io::Write for SharedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().unwrap().flush()
+    }
+}
+
+/// Spawn a reader thread that mirrors the PTY's output into `output`
+/// and answers reedline's `ESC [ 6 n` cursor-position query with a
+/// fixed `1;1R` reply (the PTY harness has no real terminal to do it).
+/// Returns the caller-facing shared writer plus the reader join handle.
+fn spawn_pty_reader(
+    master: &dyn portable_pty::MasterPty,
+) -> (
+    Box<dyn std::io::Write + Send>,
+    std::sync::Arc<std::sync::Mutex<String>>,
+    std::thread::JoinHandle<()>,
+) {
+    use std::io::Read;
+    let mut reader = master.try_clone_reader().expect("clone reader");
+    let raw_writer = master.take_writer().expect("take writer");
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(raw_writer));
+    let writer: Box<dyn std::io::Write + Send> = Box::new(SharedWriter(shared.clone()));
+    let writer_for_reader = shared;
+    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let output_clone = output.clone();
+    let handle = std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let chunk = &buf[..n];
+                    if chunk.windows(4).any(|w| w == b"\x1b[6n") {
+                        let mut w = writer_for_reader.lock().unwrap();
+                        let _ = w.write_all(b"\x1b[1;1R");
+                        let _ = w.flush();
+                    }
+                    let s = String::from_utf8_lossy(chunk).to_string();
+                    output_clone.lock().unwrap().push_str(&s);
+                }
+            }
+        }
+    });
+    (writer, output, handle)
+}
+
 fn which(name: &str) -> Option<String> {
     let out = Command::new("which").arg(name).output().ok()?;
     if !out.status.success() {
@@ -75,7 +129,7 @@ fn drive_jet_with_interrupt(
     timeout: Duration,
 ) -> Result<String> {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let pty = native_pty_system();
     let pair = pty
@@ -94,23 +148,7 @@ fn drive_jet_with_interrupt(
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().expect("clone reader");
-    let mut writer = pair.master.take_writer().expect("take writer");
-
-    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let output_clone = output.clone();
-    let reader_handle = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                    output_clone.lock().unwrap().push_str(&s);
-                }
-            }
-        }
-    });
+    let (mut writer, output, reader_handle) = spawn_pty_reader(&*pair.master);
 
     let banner_deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < banner_deadline {
@@ -552,7 +590,7 @@ fn detach_and_attach_round_trip() {
     };
 
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let conn = std::env::temp_dir().join(format!(
         "jet-detach-test-{:x}.json",
@@ -583,23 +621,7 @@ fn detach_and_attach_round_trip() {
         cmd.cwd(std::env::current_dir().expect("cwd"));
         let mut child = pair.slave.spawn_command(cmd).expect("spawn");
         drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().expect("reader");
-        let mut writer = pair.master.take_writer().expect("writer");
-
-        let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-        let output_clone = output.clone();
-        let h = std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => output_clone
-                        .lock()
-                        .unwrap()
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
+        let (mut writer, output, h) = spawn_pty_reader(&*pair.master);
 
         // Wait for the prompt.
         let banner = Instant::now() + Duration::from_secs(20);
@@ -699,7 +721,7 @@ fn input_request_prompts_user_and_replies() {
     };
 
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let xdg = scratch_xdg_dir();
     let pty = native_pty_system();
@@ -719,23 +741,7 @@ fn input_request_prompts_user_and_replies() {
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().expect("clone reader");
-    let mut writer = pair.master.take_writer().expect("take writer");
-
-    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let output_clone = output.clone();
-    let reader_handle = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                    output_clone.lock().unwrap().push_str(&s);
-                }
-            }
-        }
-    });
+    let (mut writer, output, reader_handle) = spawn_pty_reader(&*pair.master);
 
     let banner_deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < banner_deadline {
@@ -815,7 +821,6 @@ fn spawn_jet_pty(
     Box<dyn portable_pty::MasterPty + Send>,
 ) {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::Read;
 
     let pty = native_pty_system();
     let pair = pty
@@ -834,23 +839,7 @@ fn spawn_jet_pty(
     let child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().expect("clone reader");
-    let writer = pair.master.take_writer().expect("take writer");
-
-    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let output_clone = output.clone();
-    let reader_handle = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                    output_clone.lock().unwrap().push_str(&s);
-                }
-            }
-        }
-    });
+    let (writer, output, reader_handle) = spawn_pty_reader(&*pair.master);
 
     let banner_deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < banner_deadline {
