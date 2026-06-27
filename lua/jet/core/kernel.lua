@@ -33,46 +33,6 @@ setmetatable(Kernel, {
 	end,
 })
 
----@param session_id string
----@param spec_path string
----@param connection_file? string
-local connect_cmd = function(session_id, spec_path, connection_file)
-	assert(spec_path, "Kernel spec path is not set")
-
-	local out = {
-		config.jet_binary,
-		"start",
-		spec_path,
-		"--session-id",
-		session_id,
-		"--session-name",
-		"nvim",
-	}
-
-	if not config.stop_on_nvim_quit then
-		table.insert(out, "--persist")
-	end
-
-	-- TODO: remove this?
-	if connection_file then
-		table.insert(out, "--connection-file")
-		table.insert(out, connection_file)
-	end
-
-	return out
-end
-
----@param session_id string
-local make_attach_cmd = function(session_id)
-	return {
-		config.jet_binary,
-		"attach",
-		session_id,
-		"--session-name",
-		"nvim",
-	}
-end
-
 ---@class jet.kernel.init_owned.opts
 ---@field session_name? string
 ---@field spec? jet.kernel.spec | jet.kernel.paritalspec
@@ -89,7 +49,6 @@ function Kernel.init_owned(opts)
 	local obj = vim.tbl_extend("force", opts, {
 		session_id = session_id,
 		session_name = opts.session_name or "nvim",
-		cmd = connect_cmd(session_id, opts.spec_path, opts.connection_file),
 		owned = true,
 	})
 
@@ -107,11 +66,22 @@ function Kernel.init_external(opts)
 
 	return setmetatable({
 		session_id = opts.session_id,
-		cmd = make_attach_cmd(opts.session_id),
 		spec = view.spec,
 		spec_path = view.session.kernelspec_path,
 		owned = false,
 	}, Kernel)
+end
+
+---@param session_id string
+local make_attach_cmd = function(session_id)
+	return {
+		config.jet_binary,
+		"attach",
+		session_id,
+		"--banner",
+		"--session-name",
+		"nvim",
+	}
 end
 
 function Kernel:run()
@@ -127,9 +97,11 @@ function Kernel:run()
 		end,
 	})
 
+	self:start_lua_client()
+
 	-- buf_call since the buf is not yet attached to a window.
 	vim.api.nvim_buf_call(self.term.buf, function()
-		self.term.job_id = vim.fn.jobstart(self.cmd, { term = true })
+		self.term.job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), { term = true })
 	end)
 
 	-- On TermEnter, record this kernel as the last used
@@ -143,14 +115,6 @@ function Kernel:run()
 			end,
 		})
 	end
-
-	-- Give the kernel a bit of time to start up
-	-- TODO: find a more robust solution, e.g. watch for a session.json
-	vim.defer_fn(function()
-		self:attach_lua_client()
-		self:try_resolve_filetype()
-		manager:insert(self)
-	end, 500)
 end
 
 function Kernel:set_as_primary()
@@ -158,14 +122,33 @@ function Kernel:set_as_primary()
 	manager.primary[self.filetype] = self.session_id
 end
 
-function Kernel:attach_lua_client()
-	if not self.term then
-		self:run()
+function Kernel:start_lua_client()
+	if self.owned then
+		assert(self.spec_path, "Kernel spec_path is not set")
+		local out = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
+		self.session_id = out.session_id
+		self.client_id = out.client_id
+		self.kernel_info = out.kernel_info
+		self.stream = out.stream
+	else
+		assert(self.session_id, "Kernel session_id is not set")
+		local out = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
+		self.client_id = out.client_id
+		self.kernel_info = out.kernel_info
+		self.stream = out.stream
 	end
-	local out = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
-	self.client_id = out.client_id
-	self.kernel_info = out.kernel_info
+	self:try_resolve_filetype()
+	manager:insert(self)
 end
+
+-- function Kernel:attach_lua_client()
+-- 	if not self.term then
+-- 		self:run()
+-- 	end
+-- 	local out = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
+-- 	self.client_id = out.client_id
+-- 	self.kernel_info = out.kernel_info
+-- end
 
 --- Can only be done after the kernel is connected and we have the kernel info,
 --- since we need the file extension to resolve the filetype (kernelspec has
