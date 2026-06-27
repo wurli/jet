@@ -175,3 +175,8 @@ fn input_request_smoke() {
 fn comm_lsp_smoke() {
     run_lua_test_with("comm_lsp.lua", TestKernel::Ark);
 }
+
+#[test]
+fn listen_smoke() {
+    run_lua_test("listen.lua");
+}

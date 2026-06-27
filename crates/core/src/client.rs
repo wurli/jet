@@ -13,7 +13,9 @@
 //! session. Multi-session bookkeeping (e.g. a session-id → session
 //! registry) is the consumer's problem.
 
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
@@ -113,12 +115,49 @@ type Sink = Arc<dyn Fn(Frame) + Send + Sync + 'static>;
 /// one slot; the reader tasks dispatch into it until they see a matching
 /// `status: idle`, which closes the slot. Frames with no matching slot
 /// fall through to the [`Sink`] passed at session start.
+/// Filter for a [`Listener`]. `None` for a field means "accept any value
+/// in that field"; `Some(set)` restricts to the named values. A `Listener`
+/// with both fields `None` is the firehose used by `start`/`attach`'s
+/// returned `stream`.
+#[derive(Debug, Default, Clone)]
+pub struct ListenFilter {
+    pub channels: Option<HashSet<Channel>>,
+    pub msg_types: Option<HashSet<String>>,
+}
+
+impl ListenFilter {
+    fn matches(&self, channel: Channel, msg_type: &str) -> bool {
+        if let Some(ch) = &self.channels
+            && !ch.contains(&channel)
+        {
+            return false;
+        }
+        if let Some(mt) = &self.msg_types
+            && !mt.contains(msg_type)
+        {
+            return false;
+        }
+        true
+    }
+}
+
+struct Listener {
+    filter: ListenFilter,
+    tx: UnboundedSender<RoutedFrame>,
+}
+
 struct FrameRouter {
     by_parent: Mutex<HashMap<String, UnboundedSender<RoutedFrame>>>,
     /// Per-comm subscribers — fed every `comm_msg` / `comm_close` for that
     /// comm_id regardless of parent_msg_id. Closed (slot removed and
     /// `RoutedFrame::Idle` sent) when we see a `comm_close` for the comm.
     by_comm: Mutex<HashMap<String, UnboundedSender<RoutedFrame>>>,
+    /// Open-ended subscribers from [`Client::listen`]. Each receives every
+    /// matching frame from registration until either the consumer drops
+    /// the stream or the kernel transitions to `Exited` (terminal `Idle`
+    /// is sent then so the stream ends naturally).
+    listeners: Mutex<HashMap<u64, Listener>>,
+    next_listener_id: AtomicU64,
     sink: Sink,
     status_tx: Arc<watch::Sender<KernelStatus>>,
 }
@@ -128,8 +167,34 @@ impl FrameRouter {
         Self {
             by_parent: Mutex::new(HashMap::new()),
             by_comm: Mutex::new(HashMap::new()),
+            listeners: Mutex::new(HashMap::new()),
+            next_listener_id: AtomicU64::new(1),
             sink,
             status_tx,
+        }
+    }
+
+    fn register_listener(&self, filter: ListenFilter) -> (u64, UnboundedReceiver<RoutedFrame>) {
+        let id = self.next_listener_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = unbounded_channel();
+        self.listeners
+            .lock()
+            .unwrap()
+            .insert(id, Listener { filter, tx });
+        (id, rx)
+    }
+
+    fn forget_listener(&self, id: u64) {
+        self.listeners.lock().unwrap().remove(&id);
+    }
+
+    /// Drain every listener and send `Idle` on each. Called when the
+    /// kernel transitions to `Exited` so every open `listen()` stream
+    /// terminates naturally instead of leaking.
+    fn close_listeners(&self) {
+        let drained: Vec<_> = self.listeners.lock().unwrap().drain().collect();
+        for (_, l) in drained {
+            let _ = l.tx.send(RoutedFrame::Idle);
         }
     }
 
@@ -230,6 +295,24 @@ impl FrameRouter {
                 }
             }
             _ => {}
+        }
+
+        // Fan out to filtered listeners. We hold the lock only for the
+        // send loop; senders are cheap clones and the listener slot is
+        // small. A `tx.send` failure just means the receiver was dropped
+        // without unregistering — leave it; the next forget_listener or
+        // close_listeners call will reap it.
+        {
+            let msg_type = msg.message_type();
+            let listeners = self.listeners.lock().unwrap();
+            for l in listeners.values() {
+                if l.filter.matches(channel, msg_type) {
+                    let _ = l.tx.send(RoutedFrame::Frame(Frame {
+                        channel,
+                        message: msg.clone(),
+                    }));
+                }
+            }
         }
 
         (self.sink)(Frame {
@@ -403,6 +486,11 @@ impl Client {
         if let Some(pid) = child_pid {
             watchers.push(spawn_waitpid_watcher(pid, status_tx.clone()));
         }
+        // Tear down open `listen()` streams the moment the kernel is
+        // declared dead, regardless of which watcher detected it. The
+        // listeners receive a terminal Idle so consumers' iterator loops
+        // exit naturally instead of hanging.
+        watchers.push(spawn_listener_closer(status_tx.clone(), router.clone()));
 
         Ok((
             Self {
@@ -458,6 +546,29 @@ impl Client {
     pub fn comm_info(&self, target_name: Option<String>) -> Result<RequestStream> {
         let req: JupyterMessage = CommInfoRequest { target_name }.into();
         self.request(req)
+    }
+
+    /// Subscribe to every frame the kernel sends, optionally filtered by
+    /// channel and/or message type. The stream emits frames in dispatch
+    /// order and ends with a terminal idle when the kernel transitions to
+    /// `Exited`. Drop the stream early to unsubscribe — the kernel keeps
+    /// running.
+    ///
+    /// History semantics: subscribers only see frames that arrive AFTER
+    /// `listen` returns. If you need every frame from boot, call
+    /// `listen` before triggering any work on this client.
+    pub fn listen(&self, filter: ListenFilter) -> RequestStream {
+        let (id, rx) = self.router.register_listener(filter);
+        RequestStream {
+            // RequestStream's msg_id is used for cleanup-by-string; the
+            // listener slot is keyed by u64, carried in SlotKind::Listener.
+            // Keep msg_id empty here so accidental use doesn't alias a
+            // real msg_id.
+            msg_id: String::new(),
+            kind: SlotKind::Listener(id),
+            rx: Some(rx),
+            router: self.router.clone(),
+        }
     }
 
     /// Subscribe to kernel→frontend traffic for one open comm. The stream
@@ -531,6 +642,7 @@ impl Client {
 enum SlotKind {
     Parent,
     Comm,
+    Listener(u64),
 }
 
 pub struct RequestStream {
@@ -598,6 +710,7 @@ impl RequestStream {
         match self.kind {
             SlotKind::Parent => self.router.forget(&self.msg_id),
             SlotKind::Comm => self.router.forget_comm(&self.msg_id),
+            SlotKind::Listener(id) => self.router.forget_listener(id),
         }
     }
 }
@@ -745,6 +858,28 @@ fn spawn_waitpid_watcher(
             if r != 0 {
                 log::info!("kernel pid {pid} exited (waitpid -> {r})");
                 transition(&status_tx, KernelStatus::Exited);
+                return;
+            }
+        }
+    })
+}
+
+/// Wait for the kernel to transition to `Exited`, then drain every open
+/// `listen()` subscriber so their streams end with a terminal `Idle`
+/// instead of hanging on the consumer's iterator.
+fn spawn_listener_closer(
+    status_tx: Arc<watch::Sender<KernelStatus>>,
+    router: Arc<FrameRouter>,
+) -> tokio::task::JoinHandle<()> {
+    let mut rx = status_tx.subscribe();
+    tokio::spawn(async move {
+        loop {
+            if *rx.borrow_and_update() == KernelStatus::Exited {
+                router.close_listeners();
+                return;
+            }
+            if rx.changed().await.is_err() {
+                // Sender dropped — Client is gone, listeners with it.
                 return;
             }
         }

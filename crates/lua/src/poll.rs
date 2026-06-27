@@ -1,7 +1,9 @@
 //! Builds the Lua-callable `poll()` closure each request returns.
 //!
 //! Three-state response, expressed as Lua values:
-//! - `{status="busy", type=<msg_type>, data=<content>}` when a frame is ready
+//! - `{status="busy", channel=<channel>, type=<msg_type>, data=<content>}`
+//!   when a frame is ready (`channel` is one of `"shell"`, `"iopub"`,
+//!   `"stdin"`, `"control"`)
 //! - `{status="pending"}` when nothing has arrived yet
 //! - `nil` once the kernel has gone idle for this request
 
@@ -25,6 +27,7 @@ pub fn make_poll(lua: &Lua, stream: RequestStream) -> LuaResult<LuaFunction> {
                 let (msg_type, content) = raw_msg_type_and_content(&f.message);
                 let t = lua.create_table()?;
                 t.set("status", "busy")?;
+                t.set("channel", f.channel.name())?;
                 t.set("type", msg_type)?;
                 t.set("data", crate::to_lua_value(lua, &content)?)?;
                 Ok(LuaValue::Table(t))

@@ -2,6 +2,8 @@
 //! request, hands it to the session, and returns a poll closure (see
 //! [`crate::poll::make_poll`]) the Lua caller drains.
 
+use jet_core::client::ListenFilter;
+use jet_core::events::Channel;
 use jet_core::jupyter_protocol::{
     CommMsg, CommOpen, CompleteRequest, ExecuteRequest, IsCompleteRequest, JupyterMessage,
 };
@@ -107,6 +109,51 @@ pub fn comm_info(
     let stream = runtime()
         .block_on(async move { session.lock().await.comm_info(target_name) })
         .into_lua_err()?;
+    make_poll(lua, stream)
+}
+
+/// Parse an `opts.channel` / `opts.msg_type` entry: accept either a single
+/// string or a table of strings.
+fn parse_string_set(v: LuaValue) -> LuaResult<Option<Vec<String>>> {
+    match v {
+        LuaValue::Nil => Ok(None),
+        LuaValue::String(s) => Ok(Some(vec![s.to_str()?.to_string()])),
+        LuaValue::Table(t) => {
+            let mut out = Vec::new();
+            for pair in t.sequence_values::<String>() {
+                out.push(pair?);
+            }
+            Ok(Some(out))
+        }
+        other => Err(LuaError::external(format!(
+            "expected string or list of strings, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+pub fn listen(lua: &Lua, (session_id, opts): (String, Option<LuaTable>)) -> LuaResult<LuaFunction> {
+    let handle = get(&session_id).into_lua_err()?;
+    let mut filter = ListenFilter::default();
+    if let Some(t) = opts {
+        if let Some(chs) = parse_string_set(t.get("channel")?)? {
+            let mut set = std::collections::HashSet::new();
+            for c in chs {
+                let ch = Channel::from_name(&c).ok_or_else(|| {
+                    LuaError::external(format!(
+                        "unknown channel {c:?}: expected one of shell, iopub, stdin, control"
+                    ))
+                })?;
+                set.insert(ch);
+            }
+            filter.channels = Some(set);
+        }
+        if let Some(mts) = parse_string_set(t.get("msg_type")?)? {
+            filter.msg_types = Some(mts.into_iter().collect());
+        }
+    }
+    let session = handle.clone();
+    let stream = runtime().block_on(async move { session.lock().await.listen(filter) });
     make_poll(lua, stream)
 }
 

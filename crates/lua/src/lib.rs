@@ -33,6 +33,7 @@ use api::lifecycle::{
 };
 use api::request::{
     comm_info, comm_listen, comm_open, comm_send, execute_code, get_completions, is_complete,
+    listen,
 };
 use api::stdin::provide_stdin;
 
@@ -64,6 +65,7 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("comm_send", lua.create_function(comm_send)?)?;
     exports.set("comm_info", lua.create_function(comm_info)?)?;
     exports.set("comm_listen", lua.create_function(comm_listen)?)?;
+    exports.set("listen", lua.create_function(listen)?)?;
     exports.set("provide_stdin", lua.create_function(provide_stdin)?)?;
     Ok(exports)
 }

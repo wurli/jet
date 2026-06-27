@@ -10,6 +10,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use jet_core::client::ListenFilter;
+
+use crate::poll::make_poll;
 use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 
 /// `jet.start(spec_path, connection_file?, session_name?) -> (client_id, info)`
@@ -126,10 +129,17 @@ pub fn attach(
 }
 
 /// Insert a freshly built [`Client`] into the lua-side registry (keyed by `client_id`),
-/// returning the id and kernel_info reply in lua-friendly form.
+/// returning the id, kernel_info reply, and a `stream` poll closure (a
+/// no-filter `listen`) in lua-friendly form.
 fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<LuaTable> {
     let client_id = client.client_id().to_string();
     let session_id = client.session_id().map(str::to_string);
+    // Register the boot-time listener BEFORE inserting the handle into
+    // KERNELS so we hold the only reference and don't need the runtime
+    // lock dance. Calling client.listen here means the stream sees every
+    // frame from this point on, which is what consumers expect when they
+    // grab `stream` from the start response.
+    let stream = make_poll(lua, client.listen(ListenFilter::default()))?;
     let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(client));
     KERNELS.lock().unwrap().insert(client_id.clone(), handle);
 
@@ -137,6 +147,7 @@ fn register(lua: &Lua, client: Client, info: serde_json::Value) -> LuaResult<Lua
 
     out.set("client_id", client_id.clone())?;
     out.set("kernel_info", crate::to_lua_value(lua, &info)?)?;
+    out.set("stream", stream)?;
 
     if let Some(session_id) = session_id {
         out.set("session_id", session_id)?;

@@ -84,12 +84,36 @@ pub struct IsCompleteReplyMsg {
 /// Which ZMQ channel a message arrived on. We keep our own enum rather
 /// than reuse `jupyter_protocol::Channel` so callers don't need to import
 /// runtimed types just to feed events in.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Channel {
     Shell,
     IoPub,
     Stdin,
     Control,
+}
+
+impl Channel {
+    /// Lowercase wire name, matching how the Jupyter spec refers to each
+    /// channel. Used for filter-by-name in API surfaces (e.g. Lua's
+    /// `jet.listen({channel="iopub"})`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Channel::Shell => "shell",
+            Channel::IoPub => "iopub",
+            Channel::Stdin => "stdin",
+            Channel::Control => "control",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<Self> {
+        match s {
+            "shell" => Some(Channel::Shell),
+            "iopub" => Some(Channel::IoPub),
+            "stdin" => Some(Channel::Stdin),
+            "control" => Some(Channel::Control),
+            _ => None,
+        }
+    }
 }
 
 /// Convert a single message into an [`Event`].
