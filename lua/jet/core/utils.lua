@@ -23,11 +23,9 @@ M.poll = function(callback, handler, opts)
 				return
 			elseif action == "wait" then
 				return vim.defer_fn(run, opts.interval or 50)
-			elseif action == "continue" then
+			elseif action ~= "continue" then
 				-- If we've got a valid result, process it and then and then
 				-- immediately (i.e. with no delay) poll again.
-				handler(result)
-			else
 				error(("Unexpected action '%s'"):format(tostring(action)))
 			end
 		end
