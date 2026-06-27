@@ -29,7 +29,7 @@ M.install = function(k, path)
 	local spec_already_exists, existing_json = pcall(vim.fn.readfile, path)
 	if spec_already_exists and existing_json then
 		if table.concat(existing_json, "\n") == json then
-			require("jet.core.utils").log_info("Kernelspec is already installed at %s", path)
+			-- require("jet.core.utils").log_info("Kernelspec is already installed at %s", path)
 			return
 		end
 	end
@@ -50,11 +50,11 @@ M.install = function(k, path)
 
 	assert(file:close(), "Failed to close file after writing " .. path)
 
-	require("jet.core.utils").log_info(
-		"%s new kernelspec %s",
-		spec_already_exists and "Reinstalled" or "Installed",
-		path
-	)
+	-- require("jet.core.utils").log_info(
+	-- 	"%s new kernelspec %s",
+	-- 	spec_already_exists and "Reinstalled" or "Installed",
+	-- 	path
+	-- )
 end
 
 return M
