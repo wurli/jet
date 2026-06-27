@@ -19,7 +19,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use jupyter_protocol::{CommInfoRequest, JupyterMessage, JupyterMessageContent, KernelInfoRequest};
+use jupyter_protocol::{
+    CommInfoRequest, CompleteReply, CompleteRequest, JupyterMessage, JupyterMessageContent,
+    KernelInfoRequest,
+};
+
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -542,6 +546,16 @@ impl Client {
         })
     }
 
+    /// A cheap clonable handle that can issue `complete_request`s without
+    /// holding `&Client`. Used by the rustyline completer, which runs on
+    /// the blocking thread pool and can't borrow the REPL-owned `Client`.
+    pub fn completion_handle(&self) -> CompletionHandle {
+        CompletionHandle {
+            shell_tx: self.shell_tx.clone(),
+            router: self.router.clone(),
+        }
+    }
+
     /// Send a `comm_info_request` and return a stream of routed frames.
     /// Optionally filter by `target_name`; passing `None` asks the kernel
     /// to list all open comms.
@@ -625,6 +639,49 @@ impl Client {
     /// child when the session drops. Used by `--persist`.
     pub fn detach(&mut self) {
         self.kernel.detach();
+    }
+}
+
+/// Cheap clonable handle for issuing one-shot requests (currently just
+/// `complete_request`) off the main REPL task — e.g. from rustyline's
+/// sync `Completer::complete`, which runs on the blocking thread pool.
+///
+/// Holds clones of the shell sender and the frame router, so a dropped
+/// `CompletionHandle` doesn't affect the owning [`Client`].
+#[derive(Clone)]
+pub struct CompletionHandle {
+    shell_tx: UnboundedSender<JupyterMessage>,
+    router: Arc<FrameRouter>,
+}
+
+impl CompletionHandle {
+    /// Send a `complete_request` and await the matching `complete_reply`.
+    /// Returns `None` if the request stream ends without a reply — treat
+    /// that as "no completions" rather than an error so a flaky completion
+    /// path doesn't disrupt the prompt.
+    pub async fn complete(
+        &self,
+        code: String,
+        cursor_pos: usize,
+    ) -> Result<Option<CompleteReply>> {
+        let req: JupyterMessage = CompleteRequest { code, cursor_pos }.into();
+        let msg_id = req.header.msg_id.clone();
+        let rx = self.router.register(msg_id.clone());
+        self.shell_tx
+            .send(req)
+            .map_err(|e| anyhow!("shell_tx send: {e}"))?;
+        let mut stream = RequestStream {
+            msg_id,
+            kind: SlotKind::Parent,
+            rx: Some(rx),
+            router: self.router.clone(),
+        };
+        while let Some(frame) = stream.recv().await {
+            if let JupyterMessageContent::CompleteReply(reply) = frame.message.content {
+                return Ok(Some(reply));
+            }
+        }
+        Ok(None)
     }
 }
 

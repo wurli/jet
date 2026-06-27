@@ -24,7 +24,12 @@ use jet_core::manager::{Session, SessionStore};
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use crate::completer::JetHelper;
 use crate::render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
+
+/// Editor type used for the REPL prompt. `Editor<H, History>` requires a
+/// `Helper` to wire up tab completion via the kernel's `complete_request`.
+type ReplEditor = rustyline::Editor<JetHelper, rustyline::history::DefaultHistory>;
 
 /// Reopen the session and flip it to Closed. Best-effort: called from
 /// liveness watchers when the kernel becomes unreachable, so a missing
@@ -311,7 +316,19 @@ pub async fn drive_repl(
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
-    let mut rl = Some(rustyline::DefaultEditor::new()?);
+    let mut rl = {
+        // `List` shows all candidates in a multi-column list below the
+        // prompt (bash-style) rather than cycling them inline.
+        let config = rustyline::Config::builder()
+            .completion_type(rustyline::CompletionType::List)
+            .build();
+        let mut ed: ReplEditor = rustyline::Editor::with_config(config)?;
+        ed.set_helper(Some(JetHelper::new(
+            session.completion_handle(),
+            tokio::runtime::Handle::current(),
+        )));
+        Some(ed)
+    };
     loop {
         // Accumulate lines until the kernel says the buffer is a
         // complete unit of code. The first prompt is `> `; continuation
