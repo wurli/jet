@@ -235,22 +235,13 @@ pub async fn drive_repl(
         .with_own_session_name(session_name.clone());
     let busy_state = renderer.busy_state.clone();
 
-    // Client::*_with_sink performs the kernel_info handshake before spawning the
-    // socket loop, feeding the reply through the sink as its last step. On the spawn
-    // path that renders the welcome banner; on attach we suppress the
-    // kernel_info_reply specifically so we don't reprint it on every reconnect (the
-    // rest of the renderer's behaviour stays).
-    let sink_renderer = renderer.clone();
+    // Client::spawn/attach perform the kernel_info handshake before returning,
+    // dispatching the reply as the LAST step so it lands in `boot_stream`'s mpsc
+    // (a no-filter `listen` registered before the dispatch). We then synchronously
+    // pull that first frame to render the banner before drawing any prompt, so
+    // banner-then-prompt ordering is preserved without a sink callback.
     let is_attached = matches!(target, ReplTarget::Attach { .. });
-    let sink = move |f: jet_core::client::Frame| {
-        if is_attached && f.message.message_type() == "kernel_info_reply" {
-            return;
-        }
-        if let Err(e) = sink_renderer.handle_event(from_message(f.channel, &f.message)) {
-            log::warn!("renderer ({:?}): {e}", f.channel);
-        }
-    };
-    let (mut session, _info) = match target {
+    let (mut session, _info, mut boot_stream) = match target {
         ReplTarget::Spawn {
             spec,
             connection_path,
@@ -261,15 +252,36 @@ pub async fn drive_repl(
                 connection_path,
                 session_name.as_deref(),
                 session_id,
-                sink,
             )
             .await?
         }
         ReplTarget::Attach {
             connection_path,
             session_id,
-        } => Client::attach(connection_path, session_name.as_deref(), session_id, sink).await?,
+        } => Client::attach(connection_path, session_name.as_deref(), session_id).await?,
     };
+    // Synchronously consume the first frame — the kernel_info_reply. On spawn we
+    // render it (welcome banner); on attach we drop it so reconnects don't reprint
+    // the banner the original spawn already drew.
+    if let Some(f) = boot_stream.recv().await
+        && !is_attached
+        && let Err(e) = renderer.handle_event(from_message(f.channel, &f.message))
+    {
+        log::warn!("renderer (banner): {e}");
+    }
+    // Pump the rest of the boot stream into the renderer on a dedicated task. The
+    // stream ends with a terminal idle when the kernel exits, so the task exits
+    // on its own — no extra shutdown plumbing.
+    {
+        let renderer = renderer.clone();
+        tokio::spawn(async move {
+            while let Some(f) = boot_stream.recv().await {
+                if let Err(e) = renderer.handle_event(from_message(f.channel, &f.message)) {
+                    log::warn!("renderer ({:?}): {e}", f.channel);
+                }
+            }
+        });
+    }
     // Persist the kernel pid into session.json now — before the REPL loop starts —
     // so external readers (e.g. `jet list-sessions`, the nvim plugin) see it for the
     // whole lifetime of the kernel, not just after the user quits the REPL.

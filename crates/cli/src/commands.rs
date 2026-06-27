@@ -320,8 +320,8 @@ async fn open_target_client(
                 .ok()
                 .and_then(|s| s.find_by_connection_file(&conn_path).ok().flatten())
                 .map(|s| s.meta().session_id.clone());
-            let (client, info) =
-                Client::attach(&conn_path, session_name, session_id, |_| {}).await?;
+            let (client, info, _stream) =
+                Client::attach(&conn_path, session_name, session_id).await?;
             Ok((client, info, false))
         }
         KernelTarget::Spawn {
@@ -343,8 +343,8 @@ async fn open_target_client(
                 spec.argv,
             );
             // execute/send don't create SessionStore entries — they're one-shot.
-            let (client, info) =
-                Client::spawn(&spec, conn_path, session_name, None, |_| {}).await?;
+            let (client, info, _stream) =
+                Client::spawn(&spec, conn_path, session_name, None).await?;
             Ok((client, info, true))
         }
     }

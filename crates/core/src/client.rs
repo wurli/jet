@@ -106,17 +106,8 @@ enum RoutedFrame {
     Idle,
 }
 
-/// Out-of-band frame sink — anything not consumed by a registered
-/// request slot is handed here. Boxed so callers (e.g. the REPL) can
-/// thread their renderer in without exposing its type to core.
-type Sink = Arc<dyn Fn(Frame) + Send + Sync + 'static>;
-
-/// Demuxes kernel frames by `parent_msg_id`. Each in-flight request gets
-/// one slot; the reader tasks dispatch into it until they see a matching
-/// `status: idle`, which closes the slot. Frames with no matching slot
-/// fall through to the [`Sink`] passed at session start.
 /// Filter for a [`Listener`]. `None` for a field means "accept any value
-/// in that field"; `Some(set)` restricts to the named values. A `Listener`
+/// in that field"; `Some(set)` restricts to the named values. A `ListenFilter`
 /// with both fields `None` is the firehose used by `start`/`attach`'s
 /// returned `stream`.
 #[derive(Debug, Default, Clone)]
@@ -146,6 +137,22 @@ struct Listener {
     tx: UnboundedSender<RoutedFrame>,
 }
 
+/// Demuxes kernel frames to three destinations:
+///
+/// - `by_parent` — per-request slots keyed by the request's `msg_id`.
+///   Each in-flight shell request gets one slot; frames whose parent
+///   matches dispatch there until the matching `status: idle`, which
+///   closes the slot.
+/// - `by_comm` — per-comm subscribers keyed by `comm_id`. Fed every
+///   `comm_msg`/`comm_close` for the comm regardless of parent_msg_id;
+///   closed on `comm_close`.
+/// - `listeners` — open-ended subscribers from [`Client::listen`].
+///   Each receives every matching frame; closed when the kernel
+///   transitions to `Exited`.
+///
+/// All three destinations see each frame; routing is fan-out, not pick-one.
+/// Consumers that want a global frame view (REPL renderer, logger, etc.)
+/// register a no-filter listener — there is no separate "sink" hook.
 struct FrameRouter {
     by_parent: Mutex<HashMap<String, UnboundedSender<RoutedFrame>>>,
     /// Per-comm subscribers — fed every `comm_msg` / `comm_close` for that
@@ -158,18 +165,16 @@ struct FrameRouter {
     /// is sent then so the stream ends naturally).
     listeners: Mutex<HashMap<u64, Listener>>,
     next_listener_id: AtomicU64,
-    sink: Sink,
     status_tx: Arc<watch::Sender<KernelStatus>>,
 }
 
 impl FrameRouter {
-    fn new(sink: Sink, status_tx: Arc<watch::Sender<KernelStatus>>) -> Self {
+    fn new(status_tx: Arc<watch::Sender<KernelStatus>>) -> Self {
         Self {
             by_parent: Mutex::new(HashMap::new()),
             by_comm: Mutex::new(HashMap::new()),
             listeners: Mutex::new(HashMap::new()),
             next_listener_id: AtomicU64::new(1),
-            sink,
             status_tx,
         }
     }
@@ -218,24 +223,24 @@ impl FrameRouter {
         self.by_comm.lock().unwrap().remove(comm_id);
     }
 
-    /// Route one parsed message:
-    /// - Idle status with a matching registered parent closes that
-    ///   slot (terminal item for the request stream).
-    /// - Content frames with a matching registered parent go to the
-    ///   per-request slot.
-    /// - Everything (including Idle and per-request content) also
-    ///   goes to the global [`Sink`] — out-of-band consumers (the
-    ///   REPL's renderer) need to see every frame, not just unrouted
-    ///   ones.
+    /// Route one parsed message to every destination that wants it:
+    /// per-request slot (if `parent_msg_id` matches a registered
+    /// request), per-comm subscriber (for `comm_msg`/`comm_close`),
+    /// and every matching `listen()` subscriber.
     ///
-    /// Caveat: idle and the reply for a request arrive on different
-    /// sockets (iopub vs shell). The kernel sends reply-then-idle in
-    /// time order, but the socket driver task can observe them in
-    /// either order, so closing the slot on idle can lose the reply
-    /// to the slot. Consumers that care about that ordering should
-    /// not use the slot as their synchronisation point — use the
-    /// sink (or, for the REPL, the renderer's idle_tx signal which is
-    /// emitted after the renderer has processed every prior frame).
+    /// An `iopub` `status: idle` whose parent matches a registered
+    /// request closes that request's slot (terminal item for the
+    /// stream); a `comm_close` does the same for the comm subscriber.
+    ///
+    /// Caveat: idle and the reply for a shell request arrive on
+    /// different sockets (iopub vs shell). The kernel sends
+    /// reply-then-idle in time order, but the socket driver task can
+    /// observe them in either order, so closing the request slot on
+    /// idle can lose the reply to that slot. Consumers that care about
+    /// the ordering should not use the slot as their synchronisation
+    /// point — use a `listen()` subscriber or (in the REPL) the
+    /// renderer's `idle_tx` signal which is emitted after the renderer
+    /// has processed every prior frame.
     fn dispatch(&self, channel: Channel, msg: JupyterMessage) {
         let parent_id = msg.parent_header.as_ref().map(|h| h.msg_id.clone());
         let event_data = from_message(channel, &msg).data;
@@ -302,23 +307,16 @@ impl FrameRouter {
         // small. A `tx.send` failure just means the receiver was dropped
         // without unregistering — leave it; the next forget_listener or
         // close_listeners call will reap it.
-        {
-            let msg_type = msg.message_type();
-            let listeners = self.listeners.lock().unwrap();
-            for l in listeners.values() {
-                if l.filter.matches(channel, msg_type) {
-                    let _ = l.tx.send(RoutedFrame::Frame(Frame {
-                        channel,
-                        message: msg.clone(),
-                    }));
-                }
+        let msg_type = msg.message_type();
+        let listeners = self.listeners.lock().unwrap();
+        for l in listeners.values() {
+            if l.filter.matches(channel, msg_type) {
+                let _ = l.tx.send(RoutedFrame::Frame(Frame {
+                    channel,
+                    message: msg.clone(),
+                }));
             }
         }
-
-        (self.sink)(Frame {
-            channel,
-            message: msg,
-        });
     }
 }
 
@@ -366,58 +364,52 @@ impl Client {
     /// Spawn a kernel and bring up a fully-handshaked client over it. The session name
     /// is mixed into a fresh client id (see [`make_client_id`]); `'jet'` keeps the id
     /// invisible to the CLI's renderer, anything else surfaces as a foreign-client tag.
-    /// Pass `|_| {}` for `sink` when you don't need a global frame view.
-    pub async fn spawn<F>(
+    ///
+    /// Returns `(client, kernel_info, boot_stream)`. `boot_stream` is a no-filter
+    /// [`listen`] subscriber registered before the handshake reply is dispatched, so a
+    /// consumer that immediately pulls from it sees every frame from kernel boot onward
+    /// (the handshake reply included — that's the welcome banner). Pull synchronously
+    /// before drawing your first prompt if you need banner-before-prompt ordering.
+    pub async fn spawn(
         spec: &crate::kernel::KernelSpec,
         connection_path: Option<std::path::PathBuf>,
         session_name: Option<&str>,
         session_id: Option<String>,
-        sink: F,
-    ) -> Result<(Self, Value)>
-    where
-        F: Fn(Frame) + Send + Sync + 'static,
-    {
+    ) -> Result<(Self, Value, RequestStream)> {
         let client_id = make_client_id(session_name);
         let kernel = Kernel::spawn(spec, connection_path, &client_id).await?;
-        Self::start_with_sink(kernel, client_id, session_id, sink).await
+        Self::bring_up(kernel, client_id, session_id).await
     }
 
     /// Attach to a running kernel and bring up a fully-handshaked client over it.
-    /// Pass `|_| {}` for `sink` when you don't need a global frame view.
-    pub async fn attach<F>(
+    /// See [`Client::spawn`] for the return shape.
+    pub async fn attach(
         connection_path: &std::path::Path,
         session_name: Option<&str>,
         session_id: Option<String>,
-        sink: F,
-    ) -> Result<(Self, Value)>
-    where
-        F: Fn(Frame) + Send + Sync + 'static,
-    {
+    ) -> Result<(Self, Value, RequestStream)> {
         let client_id = make_client_id(session_name);
         let kernel = Kernel::attach(connection_path, &client_id).await?;
-        Self::start_with_sink(kernel, client_id, session_id, sink).await
+        Self::bring_up(kernel, client_id, session_id).await
     }
 
     /// Take the shell/iopub/stdin channels out of the kernel, perform the
-    /// `kernel_info` handshake (fast-fail probe that the kernel is answering), and spawn
-    /// the long-running reader/writer tasks. Every routed frame is also handed to `sink`,
-    /// which a renderer/logger uses for its global view.
+    /// `kernel_info` handshake (fast-fail probe that the kernel is answering), spawn
+    /// the long-running reader/writer tasks, and return a boot-time listener stream.
     ///
-    /// The reply is fed through the sink as the last step of the handshake (so a renderer
-    /// sink draws the banner before [`Client::spawn`] returns) and returned as
-    /// JSON. iopub `status: busy`/`idle` for our own handshake request are dropped — the
-    /// consumer didn't initiate the request, so signalling idle for it would mislead any
-    /// later "wait for idle" logic. Other iopub frames (kernel-side startup prints) flow
-    /// through the sink in arrival order.
-    async fn start_with_sink<F>(
+    /// The router is built before the handshake so handshake-time frames go through the
+    /// same dispatch path as everything else. iopub `status: busy`/`idle` for our own
+    /// handshake request are still dropped (the consumer didn't initiate it); other
+    /// shell/iopub frames flow through the router as normal.
+    ///
+    /// The handshake reply itself is dispatched as the LAST step before returning, so a
+    /// consumer that synchronously pulls one frame from the boot stream gets the banner
+    /// before [`Client::spawn`] returns — preserving banner-before-prompt ordering.
+    async fn bring_up(
         mut kernel: Kernel,
         client_id: String,
         session_id: Option<String>,
-        sink: F,
-    ) -> Result<(Self, Value)>
-    where
-        F: Fn(Frame) + Send + Sync + 'static,
-    {
+    ) -> Result<(Self, Value, RequestStream)> {
         // shell/iopub/stdin always present immediately after start; the Options exist
         // for the post-take state (control stays on kernel; heartbeat moves out below for
         // attached kernels only).
@@ -427,9 +419,22 @@ impl Client {
 
         let (status_tx, _status_rx) = watch::channel(KernelStatus::Starting);
         let status_tx = Arc::new(status_tx);
+        let router = Arc::new(FrameRouter::new(status_tx.clone()));
 
-        let sink: Sink = Arc::new(sink);
-        let (reply, info) = match handshake(&mut shell, &mut iopub, &sink).await {
+        // Register the boot listener BEFORE handshake so callers see every
+        // frame from kernel boot — including the handshake reply we
+        // dispatch below.
+        let boot_stream = {
+            let (id, rx) = router.register_listener(ListenFilter::default());
+            RequestStream {
+                msg_id: String::new(),
+                kind: SlotKind::Listener(id),
+                rx: Some(rx),
+                router: router.clone(),
+            }
+        };
+
+        let (reply, info) = match handshake(&mut shell, &mut iopub, &router).await {
             Ok(v) => v,
             Err(e) => {
                 return Err(crate::kernel::enrich_startup_error(
@@ -441,21 +446,17 @@ impl Client {
             }
         };
 
-        // Feed the reply through the sink as the last step of the
-        // handshake. By the time start_with_sink returns, the sink
-        // has finished writing the banner (synchronous call), so the
-        // caller can draw a prompt next without racing.
-        sink(Frame {
-            channel: Channel::Shell,
-            message: reply,
-        });
+        // Dispatch the reply as the LAST step before returning. The router
+        // delivers it synchronously to the boot listener's mpsc, so a
+        // consumer that pulls one frame before drawing its prompt sees
+        // the banner first.
+        router.dispatch(Channel::Shell, reply);
 
         // Handshake succeeded — we're talking to a live kernel.
         transition(&status_tx, KernelStatus::Idle);
 
         let (shell_tx, shell_rx) = unbounded_channel::<JupyterMessage>();
         let (stdin_tx, stdin_rx) = unbounded_channel::<JupyterMessage>();
-        let router = Arc::new(FrameRouter::new(sink, status_tx.clone()));
 
         spawn_socket_loop(
             shell,
@@ -505,6 +506,7 @@ impl Client {
                 watchers,
             },
             info,
+            boot_stream,
         ))
     }
 
@@ -741,7 +743,7 @@ impl Drop for RequestStream {
 /// Combining the readers serialises dispatch: at any moment we're
 /// processing exactly one message, and the order in which the kernel
 /// sent them (busy → reply → idle, per Jupyter spec) is preserved
-/// through the router/sink. A single task is enough — `tokio::select!`
+/// through the router. A single task is enough — `tokio::select!`
 /// polls all sockets concurrently; we're not actually blocking on any
 /// one read.
 /// Synchronous `kernel_info` handshake: send `kernel_info_request`
@@ -753,16 +755,17 @@ impl Drop for RequestStream {
 ///   the consumer didn't initiate this request, so signalling idle
 ///   for it would mislead any later "wait for idle" logic.
 /// - Other iopub frames (startup prints, comm_open from the kernel,
-///   etc.) flow through the sink in arrival order.
+///   etc.) flow through the router (and any listeners on it) in
+///   arrival order.
 ///
 /// Returns the reply message AND its content serialised to JSON.
-/// Reply is fed through the sink by the caller as the LAST step (so
-/// it's the last write before start_with_sink returns, ensuring
-/// banner-then-prompt ordering for renderer sinks).
+/// Reply is dispatched by the caller as the LAST step (so it's the last
+/// write before [`Client::bring_up`] returns, ensuring
+/// banner-then-prompt ordering for renderer consumers).
 async fn handshake(
     shell: &mut ClientShellConnection,
     iopub: &mut ClientIoPubConnection,
-    sink: &Sink,
+    router: &FrameRouter,
 ) -> Result<(JupyterMessage, Value)> {
     let req: JupyterMessage = KernelInfoRequest {}.into();
     let info_id = req.header.msg_id.clone();
@@ -782,9 +785,9 @@ async fn handshake(
                         let content = serde_json::to_value(&msg.content)?;
                         return Ok::<_, anyhow::Error>((msg, content));
                     }
-                    // Other shell traffic this early is unexpected; let
-                    // the sink see it so logs/renderer can surface it.
-                    sink(Frame { channel: Channel::Shell, message: msg });
+                    // Other shell traffic this early is unexpected; dispatch
+                    // it so logs/renderer can surface it.
+                    router.dispatch(Channel::Shell, msg);
                 }
                 read = iopub.read() => {
                     let msg = read.map_err(|e| anyhow!("iopub.read: {e}"))?;
@@ -794,7 +797,7 @@ async fn handshake(
                     if parent == info_id && msg.message_type() == "status" {
                         continue;
                     }
-                    sink(Frame { channel: Channel::IoPub, message: msg });
+                    router.dispatch(Channel::IoPub, msg);
                 }
             }
         }
@@ -968,7 +971,7 @@ mod tests {
     fn router_drives_status_busy_and_idle() {
         let (tx, _rx) = watch::channel(KernelStatus::Idle);
         let tx = Arc::new(tx);
-        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
+        let router = FrameRouter::new(tx.clone());
 
         let busy: JupyterMessage = with_parent(Status::busy().into(), "exec-1");
         router.dispatch(Channel::IoPub, busy);
@@ -987,7 +990,7 @@ mod tests {
         transition(&tx, KernelStatus::Exited);
         assert_eq!(*tx.borrow(), KernelStatus::Exited);
 
-        let router = FrameRouter::new(Arc::new(|_| {}), tx.clone());
+        let router = FrameRouter::new(tx.clone());
         // Trailing iopub idle from a kernel that just quit cleanly
         // must not resurrect the session.
         let idle: JupyterMessage = with_parent(Status::idle().into(), "exec-1");
