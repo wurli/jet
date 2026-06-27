@@ -38,6 +38,12 @@ end
 
 -- Wrap a poll closure as a stateful iterator: skips "pending" frames,
 -- returns each "busy" frame, ends when the kernel goes idle (poll → nil).
+--
+-- Per-request streams (execute/comm) terminate naturally on idle, so
+-- iterating to exhaustion in a `for` loop is fine. Long-lived streams
+-- (`kernel.stream`, `kernel.listen(...)`) only terminate on kernel
+-- shutdown — consumers of those must `break` out themselves once they've
+-- seen enough.
 local function iter(cb)
 	return function()
 		while true do
@@ -66,6 +72,7 @@ end
 
 ---@param jet jet.engine
 M.start_kernel = function(jet, spec)
+	---@type jet.start.response
 	local con = await(jet.start(spec))
 
 	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from start")
@@ -75,6 +82,12 @@ M.start_kernel = function(jet, spec)
 		client_id = con.client_id,
 		session_id = con.session_id,
 		kernel_info = con.kernel_info,
+		-- Firehose iterator (no-filter listen registered at boot). Long-lived:
+		-- only ends on kernel shutdown, so consumers must `break` when they
+		-- have what they need.
+		stream = function()
+			return iter(con.stream)
+		end,
 		execute = function(code)
 			return iter(jet.execute_code(con.client_id, code, {}))
 		end,
@@ -87,6 +100,16 @@ M.start_kernel = function(jet, spec)
 		end,
 		provide_stdin = function(parent_id, value)
 			jet.provide_stdin(con.client_id, parent_id, value)
+		end,
+		-- Register a filtered listener once and return a factory yielding
+		-- a fresh iterator over the same underlying poll closure. Same
+		-- long-lived contract as `stream`.
+		---@param opts jet.listen.opts
+		listen = function(opts)
+			local cb = jet.listen(con.client_id, opts)
+			return function()
+				return iter(cb)
+			end
 		end,
 		stop = function()
 			jet.stop(con.session_id)

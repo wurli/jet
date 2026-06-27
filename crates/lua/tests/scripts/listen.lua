@@ -9,117 +9,70 @@
 --    stream frames on iopub.
 -------------------------------------------------------------------------------
 
+-- Find libs ------------------------------------------------------------------
+
+-- Try jet.core.engine for convenience when testing in Neovim
 local lib_ok, jet = pcall(require, "jet.core.engine")
 if not lib_ok then
 	jet = require("jet") --[[@as jet.engine]]
 end
 
-local spec = os.getenv("JET_TEST_KERNEL")
-assert(spec and #spec > 0, "JET_TEST_KERNEL must be set")
+-- Make sibling `utils.lua` requirable regardless of cwd.
+local script_dir = debug.getinfo(1, "S").source:sub(2):match("(.*/)") or "./"
+package.path = script_dir .. "?.lua;" .. package.path
+local utils = require("utils")
 
--- Start kernel, grab the boot-time stream from the response. ----------------
-local start_poll = jet.start(spec)
-local con
-while true do
-	local r = start_poll()
-	assert(r ~= nil, "start poll returned nil before ready")
-	if r.status == "ready" then
-		con = r
-		break
-	end
-end
-assert(type(con.stream) == "function", "expected start response to include a `stream` poll")
-
-local kernel = {
-	client_id = con.client_id,
-	session_id = con.session_id,
-	execute = function(code)
-		local cb = jet.execute_code(con.client_id, code, {})
-		return function()
-			while true do
-				local res = cb()
-				if not res then
-					return nil
-				end
-				if res.status ~= "pending" then
-					return res
-				end
-			end
-		end
-	end,
-	stop = function()
-		jet.stop(con.session_id)
-	end,
-}
+-- Start kernel ---------------------------------------------------------------
+local kernel = utils.start_kernel(jet, "/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
+assert(type(kernel.stream) == "function", "expected start response to include a `stream` poll")
 
 -- A separate filtered listen registered explicitly. -------------------------
-local iopub_streams_cb = jet.listen(con.client_id, { channel = "iopub", msg_type = "stream" })
+local iopub_streams = kernel.listen({ channel = "iopub", msg_type = "stream" })
 
 -- Execute something and drain to idle (drives traffic through the listeners).
+---@diagnostic disable-next-line: empty-block
 for _ in kernel.execute("print(1 + 1)") do
+	-- Drain to idle
 end
 
--- Now drain the firehose stream non-blocking: pull until we hit "pending"
--- twice in a row (the kernel is idle, nothing more is coming for now).
-local function drain_pending(cb)
-	local out = {}
-	local empties = 0
-	while empties < 5 do
-		local res = cb()
-		if res == nil then
-			break
-		elseif res.status == "pending" then
-			empties = empties + 1
-		else
-			empties = 0
-			table.insert(out, res)
-		end
-	end
-	return out
-end
-
-local stream_frames = drain_pending(con.stream)
-local filtered_frames = drain_pending(iopub_streams_cb)
-
--- All firehose frames carry a valid channel field. --------------------------
+-- Firehose: iterate until we see `iopub`/status:idle, which the kernel
+-- always emits as the last frame for an execute request. Along the way
+-- every frame must carry a valid channel, and we expect to spot the "2"
+-- stream frame. execute() above already drained that request to idle, so
+-- all of its frames are buffered ahead of us — no time-based exit needed.
 local saw_iopub_stream_2 = false
-for _, f in ipairs(stream_frames) do
+for msg in kernel.stream() do
 	assert(
-		f.channel == "shell"
-			or f.channel == "iopub"
-			or f.channel == "stdin"
-			or f.channel == "control",
-		"expected channel field, got: " .. tostring(f.channel)
+		msg.channel == "shell" or msg.channel == "iopub" or msg.channel == "stdin" or msg.channel == "control",
+		"expected channel field, got: " .. tostring(msg.channel)
 	)
-	if f.channel == "iopub" and f.type == "stream" and f.data and f.data.text and f.data.text:find("2") then
+	if msg.channel == "iopub" and msg.type == "stream" and msg.data and msg.data.text and msg.data.text:find("2") then
 		saw_iopub_stream_2 = true
+	end
+	if msg.channel == "iopub" and msg.type == "status" and msg.data and msg.data.execution_state == "idle" then
+		break
 	end
 end
 assert(saw_iopub_stream_2, "expected to see 'iopub'/stream frame containing '2' in firehose")
 
--- Filtered listen sees stream frames only, all on iopub. --------------------
-assert(#filtered_frames > 0, "expected filtered listen to see at least one stream frame")
-for _, f in ipairs(filtered_frames) do
-	assert(f.channel == "iopub", "filter violated channel constraint: " .. tostring(f.channel))
-	assert(f.type == "stream", "filter violated type constraint: " .. tostring(f.type))
+-- Filtered listen sees stream frames only, all on iopub. The print emitted
+-- one stream frame; one busy frame from the iterator is our terminator.
+local filtered_count = 0
+for msg in iopub_streams() do
+	filtered_count = filtered_count + 1
+	assert(msg.channel == "iopub", "filter violated channel constraint: " .. tostring(msg.channel))
+	assert(msg.type == "stream", "filter violated type constraint: " .. tostring(msg.type))
+	break
 end
+assert(filtered_count > 0, "expected filtered listen to see at least one stream frame")
 
--- Shutting the kernel down ends the streams (poll returns nil). -------------
+-- Shutting the kernel down ends the streams: each iterator should exit on
+-- its own (the underlying poll returns nil once the sockets close).
 kernel.stop()
 
--- Give the kernel_exit watcher a moment to flip status.
-os.execute("sleep 0.5")
-
-local function poll_to_nil(cb, label)
-	for _ = 1, 200 do
-		local res = cb()
-		if res == nil then
-			return true
-		end
-		-- Skip pending; we just want to confirm the stream eventually ends.
-	end
-	error(label .. ": stream never returned nil after kernel stopped")
+---@diagnostic disable-next-line: empty-block
+for _ in kernel.stream() do
 end
-
-poll_to_nil(con.stream, "firehose")
-poll_to_nil(iopub_streams_cb, "filtered")
+---@diagnostic disable-next-line: empty-block
+for _ in iopub_streams() do
+end
