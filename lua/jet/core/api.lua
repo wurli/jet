@@ -175,7 +175,7 @@ end
 ---@field connection_file string?
 ---@field session_name string?
 ---@field filetype? string
----@field hidden boolean
+---@field hidden? boolean
 
 ---Start a fresh kernel
 ---

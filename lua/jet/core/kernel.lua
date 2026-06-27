@@ -23,6 +23,7 @@ local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 ---@field cmd string[]
 ---@field owned boolean
 ---@field filetype? string
+---@field comms table<string, string> comm_name -> id
 local Kernel = {}
 Kernel.__index = Kernel
 
@@ -48,6 +49,7 @@ function Kernel.init_owned(opts)
 	local obj = vim.tbl_extend("force", opts, {
 		session_name = opts.session_name or "nvim",
 		owned = true,
+		comms = {},
 	})
 
 	return setmetatable(obj, Kernel)
@@ -67,6 +69,7 @@ function Kernel.init_external(opts)
 		spec = view.spec,
 		spec_path = view.session.kernelspec_path,
 		owned = false,
+		comms = {},
 	}, Kernel)
 end
 
@@ -106,15 +109,18 @@ function Kernel:open_term(callback, win_config)
 	if self.term then
 		open()
 	else
-		self:connect_term(open)
+		self:create_term(open)
 	end
 end
 
 ---@param callback? fun(k: jet.kernel)
-function Kernel:connect_term(callback)
+function Kernel:create_term(callback)
 	local connect = function()
 		---@diagnostic disable-next-line: missing-fields
 		self.term = { buf = vim.api.nvim_create_buf(false, true) }
+
+		--TODO: document this
+		vim.b[self.term.buf].jet = { session_id = self.session_id }
 
 		vim.api.nvim_create_autocmd("BufWipeout", {
 			buffer = self.term.buf,
@@ -187,6 +193,15 @@ function Kernel:start_lua_client(callback)
 			self.stream = res.stream
 			self:try_resolve_filetype()
 			manager:insert(self)
+
+			require("jet.core.autocmd").kernel_started({
+				session_id = self.session_id,
+				client_id = self.client_id,
+				spec = self.spec,
+				kernelspec_path = self.spec_path,
+				kernel_info = self.kernel_info,
+			})
+
 			if callback then
 				callback(self)
 			end
@@ -267,6 +282,8 @@ function Kernel:comm_open(name, data, opts)
 	assert(self.client_id, "Kernel has no client id")
 	local comm_id, _ = require("jet.core.engine").comm_open(self.client_id, name, data or {})
 
+	self.comms[name] = comm_id
+
 	opts = opts or {}
 
 	if opts.listener then
@@ -301,6 +318,12 @@ end
 function Kernel:listen(opts)
 	local listener = require("jet.core.engine").listen(self.client_id, opts or {})
 	utils.poll(listener, opts.listener, { interval = opts.interval })
+end
+
+---@param comm_id string
+---@param data table
+function Kernel:comm_send(comm_id, data)
+	require("jet.core.engine").comm_send(self.client_id, comm_id, data)
 end
 
 -- ---@param code string | string[]
