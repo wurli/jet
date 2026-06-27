@@ -4,9 +4,11 @@ use anyhow::Context;
 use jet_core::client::{Client, make_client_id};
 use jet_core::connection_file;
 use jet_core::kernel::{Kernel, KernelSpec, probe_kernel_alive};
-use jet_core::manager::{SessionStore, generate_session_name};
+use jet_core::manager::{Session, SessionStore, generate_session_name};
 use mlua::prelude::*;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use tokio::sync::oneshot;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -15,9 +17,16 @@ use jet_core::client::RequestStream;
 use crate::poll::make_poll;
 use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 
-/// `jet.start(spec_path, connection_file?, session_name?) -> (client_id, info)`
+/// `jet.start(spec_path, connection_file?, session_name?) -> poll`
 ///
-/// Spawn a kernel from `spec_path`. Mirrors `jet start`:
+/// Spawn a kernel from `spec_path`. Non-blocking: returns a poll closure that
+/// the caller drives (e.g. via `vim.schedule`) until it yields the
+/// `jet.start.response`. While the kernel is booting the closure returns
+/// `{status="pending"}`; on the first call after boot it returns
+/// `{status="ready", client_id=..., session_id=..., kernel_info=..., stream=...}`
+/// and registers the client. Subsequent calls return `nil`.
+///
+/// Mirrors `jet start`:
 /// - no `connection_file` → create a tracked SessionStore entry and use its connection path;
 ///   the resulting Client carries the SessionStore id.
 /// - `connection_file` given → caller owns the path; no SessionStore entry is written and
@@ -25,12 +34,12 @@ use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 pub fn start(
     lua: &Lua,
     (spec_path, connection_file, session_name): (String, Option<String>, Option<String>),
-) -> LuaResult<LuaTable> {
+) -> LuaResult<LuaFunction> {
     let spec = KernelSpec::load(&PathBuf::from(&spec_path))
         .with_context(|| format!("loading kernelspec {spec_path}"))
         .into_lua_err()?;
 
-    let (conn_path, session_id, mut store_entry) = match connection_file {
+    let (conn_path, session_id, store_entry) = match connection_file {
         Some(p) => {
             let path = PathBuf::from(p);
             if path.exists() {
@@ -58,25 +67,20 @@ pub fn start(
         }
     };
 
-    let (client, info, boot_stream) = runtime()
-        .block_on(Client::spawn(
-            &spec,
-            conn_path,
-            session_name.as_deref(),
-            session_id,
-        ))
-        .into_lua_err()?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    runtime().spawn(async move {
+        let _ = tx.send(Client::spawn(&spec, conn_path, session_name.as_deref(), session_id).await);
+    });
 
-    if let (Some(pid), Some(s)) = (client.child_pid(), store_entry.as_mut()) {
-        s.set_kernel_pid(pid);
-    }
-
-    register(lua, client, info, boot_stream)
+    make_lifecycle_poll(lua, rx, store_entry)
 }
 
-/// `jet.attach(session_id, connection_file?, session_name?) -> (client_id, info)`
+/// `jet.attach(session_id, connection_file?, session_name?) -> poll`
 ///
-/// Attach to a kernel already running. Mirrors `jet attach`:
+/// Attach to a kernel already running. Non-blocking with the same poll-closure
+/// contract as [`start`]: returns `{status="pending"}` until the handshake
+/// completes, then `{status="ready", ..jet.start.response}` once. Mirrors
+/// `jet attach`:
 /// - `session_id` given (and no `connection_file`) → resolve the connection file via the
 ///   SessionStore; the Client carries the session id.
 /// - `connection_file` given (and no `session_id`) → attach to the path. If it lives inside
@@ -86,7 +90,7 @@ pub fn start(
 pub fn attach(
     lua: &Lua,
     (session_id, connection_file, session_name): (Option<String>, Option<String>, Option<String>),
-) -> LuaResult<LuaTable> {
+) -> LuaResult<LuaFunction> {
     let (path, session_id) = match (session_id, connection_file) {
         (Some(id), None) => {
             let path = SessionStore::default()
@@ -116,14 +120,63 @@ pub fn attach(
         }
     };
 
-    let (client, info, boot_stream) = runtime()
-        .block_on(Client::attach(
-            &path,
-            session_name.as_deref(),
-            session_id,
-        ))
-        .into_lua_err()?;
-    register(lua, client, info, boot_stream)
+    let (tx, rx) = oneshot::channel();
+    runtime().spawn(async move {
+        let _ = tx.send(Client::attach(&path, session_name.as_deref(), session_id).await);
+    });
+
+    make_lifecycle_poll(lua, rx, None)
+}
+
+/// Result delivered from the spawned boot future to the Lua-side poll closure.
+type BootResult = anyhow::Result<(Client, serde_json::Value, RequestStream)>;
+
+/// Build a Lua-callable poll closure that drives a backgrounded boot
+/// (`Client::spawn` / `Client::attach`) to completion.
+///
+/// While the future is in flight, the closure returns `{status="pending"}`.
+/// Once the future completes, the next call registers the client and returns
+/// `{status="ready", client_id, session_id?, kernel_info, stream}` (the
+/// `jet.start.response` table). After that, the closure returns `nil`.
+///
+/// If the boot future itself fails, the call that observes the failure
+/// raises a Lua error.
+fn make_lifecycle_poll(
+    lua: &Lua,
+    rx: oneshot::Receiver<BootResult>,
+    store_entry: Option<Session>,
+) -> LuaResult<LuaFunction> {
+    let state = RefCell::new(Some((rx, store_entry)));
+    lua.create_function(move |lua, ()| {
+        let mut borrow = state.borrow_mut();
+        let Some((rx, store_entry)) = borrow.as_mut() else {
+            return Ok(LuaValue::Nil);
+        };
+        match rx.try_recv() {
+            Err(oneshot::error::TryRecvError::Empty) => {
+                let t = lua.create_table()?;
+                t.set("status", "pending")?;
+                Ok(LuaValue::Table(t))
+            }
+            Err(oneshot::error::TryRecvError::Closed) => {
+                *borrow = None;
+                Err(LuaError::external(anyhow::anyhow!(
+                    "kernel boot task aborted before completing"
+                )))
+            }
+            Ok(result) => {
+                let mut store_entry = store_entry.take();
+                *borrow = None;
+                let (client, info, boot_stream) = result.into_lua_err()?;
+                if let (Some(pid), Some(s)) = (client.child_pid(), store_entry.as_mut()) {
+                    s.set_kernel_pid(pid);
+                }
+                let t = register(lua, client, info, boot_stream)?;
+                t.set("status", "ready")?;
+                Ok(LuaValue::Table(t))
+            }
+        }
+    })
 }
 
 /// Insert a freshly built [`Client`] into the lua-side registry (keyed by `client_id`),

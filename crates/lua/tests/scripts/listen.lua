@@ -18,7 +18,16 @@ local spec = os.getenv("JET_TEST_KERNEL")
 assert(spec and #spec > 0, "JET_TEST_KERNEL must be set")
 
 -- Start kernel, grab the boot-time stream from the response. ----------------
-local con = jet.start(spec)
+local start_poll = jet.start(spec)
+local con
+while true do
+	local r = start_poll()
+	assert(r ~= nil, "start poll returned nil before ready")
+	if r.status == "ready" then
+		con = r
+		break
+	end
+end
 assert(type(con.stream) == "function", "expected start response to include a `stream` poll")
 
 local kernel = {

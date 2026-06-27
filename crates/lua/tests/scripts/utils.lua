@@ -52,9 +52,21 @@ local function iter(cb)
 	end
 end
 
+-- Block until a jet.start / jet.attach poll closure yields its ready response.
+-- Errors if the closure ends without ever producing one.
+local await = function(poll)
+	while true do
+		local res = poll()
+		assert(res ~= nil, "kernel boot poll ended before ready")
+		if res.status == "ready" then
+			return res
+		end
+	end
+end
+
 ---@param jet jet.engine
 M.start_kernel = function(jet, spec)
-	local con = jet.start(spec)
+	local con = await(jet.start(spec))
 
 	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from start")
 	assert(type(con.kernel_info) == "table", "expected kernel info table")
