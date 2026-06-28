@@ -751,7 +751,10 @@ fn input_request_prompts_user_and_replies() {
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    let code = "v = input('ASK> '); print('GOT:' + v)\n";
+    // Reedline puts the slave into raw mode; in raw mode crossterm only
+    // recognises `\r` (0x0d) as KeyCode::Enter — `\n` becomes a literal
+    // Char('\n') and the buffer never gets committed.
+    let code = "v = input('ASK> '); print('GOT:' + v)\r";
     writer.write_all(code.as_bytes()).expect("write code");
     writer.flush().expect("flush");
 
@@ -778,7 +781,7 @@ fn input_request_prompts_user_and_replies() {
         );
     }
 
-    writer.write_all(b"hello-jet\n").expect("write reply");
+    writer.write_all(b"hello-jet\r").expect("write reply");
     writer.flush().expect("flush reply");
 
     let done_deadline = Instant::now() + Duration::from_secs(15);
