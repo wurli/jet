@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use reedline::{
-    ColumnarMenu, ExternalPrinter, KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode,
+    ExternalPrinter, IdeMenu, KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode,
     PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal,
 };
 
@@ -139,7 +139,13 @@ impl LineSource {
 }
 
 fn build_editor(completer: JetCompleter, printer: ExternalPrinter<String>) -> Reedline {
-    let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
+    // Drop reedline's default `| ` left-marker; the menu sits below the
+    // prompt and the bar adds visual noise to every keystroke.
+    let completion_menu = Box::new(
+        IdeMenu::default()
+            .with_name("completion_menu")
+            .with_marker(""),
+    );
     let mut keybindings = reedline::default_emacs_keybindings();
     keybindings.add_binding(
         KeyModifiers::NONE,
