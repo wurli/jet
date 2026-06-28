@@ -26,8 +26,8 @@ use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use reedline::{
-    ColumnarMenu, KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch,
-    PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal,
+    ColumnarMenu, ExternalPrinter, KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode,
+    PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal,
 };
 
 /// Put the terminal back into cooked mode. reedline holds the tty in
@@ -138,7 +138,7 @@ impl LineSource {
     }
 }
 
-fn build_editor(completer: JetCompleter) -> Reedline {
+fn build_editor(completer: JetCompleter, printer: ExternalPrinter<String>) -> Reedline {
     let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
     let mut keybindings = reedline::default_emacs_keybindings();
     keybindings.add_binding(
@@ -154,6 +154,7 @@ fn build_editor(completer: JetCompleter) -> Reedline {
         .with_completer(Box::new(completer))
         .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
         .with_edit_mode(edit_mode)
+        .with_external_printer(printer)
 }
 
 /// Reopen the session and flip it to Closed. Best-effort: called from
@@ -362,10 +363,16 @@ pub async fn drive_repl(
     let (is_complete_tx, mut is_complete_rx) =
         tokio::sync::mpsc::unbounded_channel::<IsCompleteReplyMsg>();
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
+    // The external printer is the channel reedline uses to interleave
+    // foreign-session output with the active prompt. Wire it into both
+    // the renderer (so foreign writes go through it) and the editor
+    // builder below (so reedline polls and flushes it).
+    let external_printer: ExternalPrinter<String> = ExternalPrinter::default();
     let renderer = Renderer::new(render_graphics, idle_tx, writer)
         .with_input_tx(input_tx)
         .with_is_complete_tx(is_complete_tx)
-        .with_own_session_name(session_name.clone());
+        .with_own_session_name(session_name.clone())
+        .with_external_printer(external_printer.clone());
     let busy_state = renderer.busy_state.clone();
 
     // Client::spawn/attach perform the kernel_info handshake before returning,
@@ -397,6 +404,11 @@ pub async fn drive_repl(
             banner: _,
         } => Client::attach(connection_path, session_name.as_deref(), session_id).await?,
     };
+    // Now that the Client exists we know our full client_id (the
+    // `<name>---repl---<rand>` string the kernel will echo back as
+    // parent_session on every reply); pass it into the renderer so own-
+    // vs-foreign is decided on identity, not just `--session-name`.
+    let renderer = renderer.with_own_client_id(session.client_id().to_string());
     // Synchronously consume the first frame — the kernel_info_reply. On spawn we
     // render it (welcome banner); on attach we drop it by default so reconnects
     // don't reprint the banner the original spawn already drew, unless --banner
@@ -443,10 +455,13 @@ pub async fn drive_repl(
 
     use std::io::IsTerminal;
     let mut rl = Some(if std::io::stdin().is_terminal() {
-        LineSource::Tty(build_editor(JetCompleter::new(
-            session.completion_handle(),
-            tokio::runtime::Handle::current(),
-        )))
+        LineSource::Tty(build_editor(
+            JetCompleter::new(
+                session.completion_handle(),
+                tokio::runtime::Handle::current(),
+            ),
+            external_printer.clone(),
+        ))
     } else {
         LineSource::Pipe(std::io::BufReader::new(std::io::stdin()))
     });
