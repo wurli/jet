@@ -41,6 +41,60 @@ use anyhow::Result;
 use rand::Rng;
 use serde_json::json;
 
+/// Writer that the test caller and the PTY reader thread can share, so
+/// the reader can answer reedline's cursor-position query while the
+/// caller writes input.
+struct SharedWriter(std::sync::Arc<std::sync::Mutex<Box<dyn std::io::Write + Send>>>);
+
+impl std::io::Write for SharedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().unwrap().flush()
+    }
+}
+
+/// Spawn a reader thread that mirrors the PTY's output into `output`
+/// and answers reedline's `ESC [ 6 n` cursor-position query with a
+/// fixed `1;1R` reply (the PTY harness has no real terminal to do it).
+/// Returns the caller-facing shared writer plus the reader join handle.
+fn spawn_pty_reader(
+    master: &dyn portable_pty::MasterPty,
+) -> (
+    Box<dyn std::io::Write + Send>,
+    std::sync::Arc<std::sync::Mutex<String>>,
+    std::thread::JoinHandle<()>,
+) {
+    use std::io::Read;
+    let mut reader = master.try_clone_reader().expect("clone reader");
+    let raw_writer = master.take_writer().expect("take writer");
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(raw_writer));
+    let writer: Box<dyn std::io::Write + Send> = Box::new(SharedWriter(shared.clone()));
+    let writer_for_reader = shared;
+    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let output_clone = output.clone();
+    let handle = std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let chunk = &buf[..n];
+                    if chunk.windows(4).any(|w| w == b"\x1b[6n") {
+                        let mut w = writer_for_reader.lock().unwrap();
+                        let _ = w.write_all(b"\x1b[1;1R");
+                        let _ = w.flush();
+                    }
+                    let s = String::from_utf8_lossy(chunk).to_string();
+                    output_clone.lock().unwrap().push_str(&s);
+                }
+            }
+        }
+    });
+    (writer, output, handle)
+}
+
 fn which(name: &str) -> Option<String> {
     let out = Command::new("which").arg(name).output().ok()?;
     if !out.status.success() {
@@ -75,7 +129,7 @@ fn drive_jet_with_interrupt(
     timeout: Duration,
 ) -> Result<String> {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let pty = native_pty_system();
     let pair = pty
@@ -94,23 +148,7 @@ fn drive_jet_with_interrupt(
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().expect("clone reader");
-    let mut writer = pair.master.take_writer().expect("take writer");
-
-    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let output_clone = output.clone();
-    let reader_handle = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                    output_clone.lock().unwrap().push_str(&s);
-                }
-            }
-        }
-    });
+    let (mut writer, output, reader_handle) = spawn_pty_reader(&*pair.master);
 
     let banner_deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < banner_deadline {
@@ -552,7 +590,7 @@ fn detach_and_attach_round_trip() {
     };
 
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let conn = std::env::temp_dir().join(format!(
         "jet-detach-test-{:x}.json",
@@ -583,23 +621,7 @@ fn detach_and_attach_round_trip() {
         cmd.cwd(std::env::current_dir().expect("cwd"));
         let mut child = pair.slave.spawn_command(cmd).expect("spawn");
         drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().expect("reader");
-        let mut writer = pair.master.take_writer().expect("writer");
-
-        let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-        let output_clone = output.clone();
-        let h = std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => output_clone
-                        .lock()
-                        .unwrap()
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
+        let (mut writer, output, h) = spawn_pty_reader(&*pair.master);
 
         // Wait for the prompt.
         let banner = Instant::now() + Duration::from_secs(20);
@@ -699,7 +721,7 @@ fn input_request_prompts_user_and_replies() {
     };
 
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     let xdg = scratch_xdg_dir();
     let pty = native_pty_system();
@@ -719,23 +741,7 @@ fn input_request_prompts_user_and_replies() {
     let mut child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().expect("clone reader");
-    let mut writer = pair.master.take_writer().expect("take writer");
-
-    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let output_clone = output.clone();
-    let reader_handle = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                    output_clone.lock().unwrap().push_str(&s);
-                }
-            }
-        }
-    });
+    let (mut writer, output, reader_handle) = spawn_pty_reader(&*pair.master);
 
     let banner_deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < banner_deadline {
@@ -745,7 +751,10 @@ fn input_request_prompts_user_and_replies() {
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    let code = "v = input('ASK> '); print('GOT:' + v)\n";
+    // Reedline puts the slave into raw mode; in raw mode crossterm only
+    // recognises `\r` (0x0d) as KeyCode::Enter — `\n` becomes a literal
+    // Char('\n') and the buffer never gets committed.
+    let code = "v = input('ASK> '); print('GOT:' + v)\r";
     writer.write_all(code.as_bytes()).expect("write code");
     writer.flush().expect("flush");
 
@@ -772,7 +781,7 @@ fn input_request_prompts_user_and_replies() {
         );
     }
 
-    writer.write_all(b"hello-jet\n").expect("write reply");
+    writer.write_all(b"hello-jet\r").expect("write reply");
     writer.flush().expect("flush reply");
 
     let done_deadline = Instant::now() + Duration::from_secs(15);
@@ -815,7 +824,6 @@ fn spawn_jet_pty(
     Box<dyn portable_pty::MasterPty + Send>,
 ) {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
-    use std::io::Read;
 
     let pty = native_pty_system();
     let pair = pty
@@ -834,23 +842,7 @@ fn spawn_jet_pty(
     let child = pair.slave.spawn_command(cmd).expect("spawn jet under pty");
     drop(pair.slave);
 
-    let mut reader = pair.master.try_clone_reader().expect("clone reader");
-    let writer = pair.master.take_writer().expect("take writer");
-
-    let output = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    let output_clone = output.clone();
-    let reader_handle = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                    output_clone.lock().unwrap().push_str(&s);
-                }
-            }
-        }
-    });
+    let (writer, output, reader_handle) = spawn_pty_reader(&*pair.master);
 
     let banner_deadline = Instant::now() + Duration::from_secs(15);
     while Instant::now() < banner_deadline {
@@ -1913,4 +1905,231 @@ fn connect_inherits_parent_env_with_spec_winning_on_conflict() {
         out.contains("OVERRIDE=from-spec"),
         "spec env did not override parent on conflict; got:\n{out}",
     );
+}
+
+/// When a second client (`jet execute --session-name t2`) drives the
+/// same kernel as an in-flight REPL, the REPL must surface that
+/// activity to the user:
+///   - the foreign client's input line is echoed as `[t2]> <code>`;
+///   - the foreign output stream is tagged `[t2]` on every line;
+///   - `\n` in foreign output resets to column 0 (no reedline-raw-mode
+///     staircase), which we proxy by asserting the streamed text does
+///     not appear immediately after the prompt's `> ` cursor — there
+///     should be a fresh-line break between the prompt and the foreign
+///     output.
+///
+/// This is the regression test for the reedline switch: rustyline's
+/// prompt drew over cooked-mode stdout, so a plain `\n` reset to col 0;
+/// reedline holds the tty in raw mode and needs the external printer
+/// path in `Renderer::write_foreign` to land output cleanly.
+#[test]
+fn foreign_session_output_is_prefixed_and_column_zero_aligned() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+
+    let xdg = scratch_xdg_dir();
+    let conn = std::env::temp_dir().join(format!(
+        "jet-foreign-prefix-{:x}.json",
+        rand::thread_rng().r#gen::<u64>()
+    ));
+    let conn_str = conn.to_string_lossy().to_string();
+
+    // Terminal 1: REPL under a real PTY (raw mode active during reedline
+    // read_line). --persist so the kernel survives if jet exits, and so
+    // we can pkill it by connection-file argv at the end.
+    let pty = native_pty_system();
+    let pair = pty
+        .openpty(PtySize {
+            rows: 40,
+            cols: 120,
+            ..Default::default()
+        })
+        .expect("openpty");
+    let bin = env!("CARGO_BIN_EXE_jet");
+    let mut cmd = CommandBuilder::new(bin);
+    cmd.args([
+        "start",
+        "--connection-file",
+        &conn_str,
+        "--persist",
+        kernel_json.to_str().unwrap(),
+    ]);
+    cmd.env("XDG_DATA_HOME", &xdg);
+    cmd.cwd(std::env::current_dir().expect("cwd"));
+    let mut child = pair.slave.spawn_command(cmd).expect("spawn jet (start)");
+    drop(pair.slave);
+    let (writer, output, reader_handle) = spawn_pty_reader(&*pair.master);
+
+    // Wait for the first prompt — that's how we know the kernel is up
+    // and reedline owns the tty.
+    let banner_deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < banner_deadline {
+        if output.lock().unwrap().contains("> ") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let before_t2 = output.lock().unwrap().len();
+
+    // Terminal 2: separate `jet execute --session-name t2`. We pick a
+    // print that emits two lines so we can assert the second line is
+    // also prefixed (proves the line-by-line route through the external
+    // printer, not just the first-byte case).
+    let exec_out = Command::new(bin)
+        .args([
+            "execute",
+            "--connection-file",
+            &conn_str,
+            "--session-name",
+            "t2",
+            "--no-graphics",
+            "print('HI'); print('AGAIN')",
+        ])
+        .env("XDG_DATA_HOME", &xdg)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run jet execute t2");
+    assert!(
+        exec_out.status.success(),
+        "jet execute (t2) failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&exec_out.stdout),
+        String::from_utf8_lossy(&exec_out.stderr),
+    );
+
+    // Give the REPL a moment to receive t2's iopub frames and route
+    // them through the external printer.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let needle = "AGAIN";
+    while Instant::now() < deadline {
+        if output.lock().unwrap()[before_t2..].contains(needle) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let tail = {
+        let s = output.lock().unwrap().clone();
+        s[before_t2..].to_string()
+    };
+
+    // Teardown.
+    let _ = child.kill();
+    let _ = child.wait();
+    drop(writer);
+    drop(pair.master);
+    let _ = reader_handle.join();
+    let _ = std::process::Command::new("pkill")
+        .args(["-9", "-f", &conn_str])
+        .status();
+    let _ = std::fs::remove_file(&conn);
+    let _ = std::fs::remove_dir_all(&xdg);
+
+    // 1. The foreign execute_input echo should appear as `[t2]> ...`.
+    //    The dim ANSI escape brackets the tag, but the literal `[t2]`
+    //    substring is still present.
+    assert!(
+        tail.contains("[t2]"),
+        "no '[t2]' tag in REPL output after foreign execute — \
+         renderer didn't classify the t2 client_id as foreign. tail:\n{tail}",
+    );
+    assert!(
+        tail.contains("> print('HI'); print('AGAIN')"),
+        "foreign execute_input echo missing from REPL output. tail:\n{tail}",
+    );
+
+    // 2. Both streamed lines should appear AND both should be tagged.
+    //    The renderer's per-line prefix path means we should see two
+    //    occurrences of `[t2]` between the echo and `AGAIN`.
+    assert!(tail.contains("HI"), "missing 'HI' in tail:\n{tail}");
+    assert!(tail.contains("AGAIN"), "missing 'AGAIN' in tail:\n{tail}");
+    let t2_tags = tail.matches("[t2]").count();
+    assert!(
+        t2_tags >= 3,
+        "expected `[t2]` to appear at least 3 times (echo + 2 stream \
+         lines); saw {t2_tags}. tail:\n{tail}",
+    );
+
+    // 3. No raw-mode staircase. The bug we're guarding against: in
+    //    reedline's raw mode, `\n` in a foreign-output write moves down
+    //    one row but does NOT return to column 0, so each subsequent
+    //    line starts further right than the last (`HI\n  AGAIN\n    …`).
+    //    The external printer fixes this by clearing the prompt line
+    //    and emitting each foreign message starting at column 0.
+    //
+    //    To detect the staircase: strip ANSI escapes from the tail,
+    //    split into lines, take the lines containing `HI` and `AGAIN`,
+    //    and assert the body of each line starts with the `[t2]` tag —
+    //    not with leading spaces from a left-over cursor position.
+    let stripped = strip_ansi(&tail);
+    let hi_line = stripped
+        .lines()
+        .find(|l| l.contains("HI") && !l.contains("AGAIN"))
+        .unwrap_or_else(|| panic!("no line containing only HI in stripped:\n{stripped}"));
+    let again_line = stripped
+        .lines()
+        .find(|l| l.contains("AGAIN"))
+        .unwrap_or_else(|| panic!("no line containing AGAIN in stripped:\n{stripped}"));
+    // Each line, after stripping leading whitespace from any prompt-clear
+    // padding reedline emits, should start with `[t2]` — not `HI` or
+    // `AGAIN` at some non-zero column.
+    let hi_trimmed = hi_line.trim_start();
+    let again_trimmed = again_line.trim_start();
+    assert!(
+        hi_trimmed.starts_with("[t2]"),
+        "staircase: the `HI` line should start with the [t2] tag, but \
+         after trimming leading whitespace it starts with {hi_trimmed:?}. \
+         full stripped output:\n{stripped}",
+    );
+    assert!(
+        again_trimmed.starts_with("[t2]"),
+        "staircase: the `AGAIN` line should start with the [t2] tag, \
+         but after trimming leading whitespace it starts with \
+         {again_trimmed:?}. full stripped output:\n{stripped}",
+    );
+    // Further: HI and AGAIN should land on DIFFERENT lines. Pre-fix the
+    // staircase smashed them onto adjacent columns of one PTY line.
+    assert_ne!(
+        hi_line, again_line,
+        "HI and AGAIN landed on the same line — staircase compaction. \
+         stripped:\n{stripped}",
+    );
+}
+
+/// Strip ANSI CSI escapes from `s`. Good enough for test assertions:
+/// matches `ESC [ … <letter>` and drops the whole sequence.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for next in chars.by_ref() {
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                // Other escape (e.g. OSC) — drop until ST or BEL.
+                for next in chars.by_ref() {
+                    if next == '\x07' || next == '\x1b' {
+                        break;
+                    }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }

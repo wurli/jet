@@ -50,11 +50,29 @@ pub struct Renderer {
     // un-prefixed; output from any *other* session sharing the kernel
     // is tagged so the user can tell who's typing.
     own_session_name: Option<String>,
+    // Our own client_id (the full `<name>---repl---<rand>` string).
+    // Foreign-vs-own is determined by comparing the event's full
+    // parent_session against this, not just the name portion — two
+    // clients sharing the kernel without `--session-name` both produce
+    // `jet---repl---<rand>` so a name-only compare wrongly merges them.
+    own_client_id: Option<String>,
     // True when the next byte we write will start a fresh line, so a
     // session prefix should be emitted before it. Tracked across writes
     // because kernel streams arrive in arbitrary chunks — a partial line
     // followed by more text must NOT get a second prefix.
     at_line_start: Arc<Mutex<bool>>,
+    // Reedline holds the tty in raw mode during `read_line`, so writing
+    // foreign-session output via `writer` (a plain stdout) leaves the
+    // cursor in the prompt's column on each `\n` (no ONLCR) — producing
+    // a staircase. Routing those writes through reedline's external
+    // printer instead lets reedline clear the prompt line, print at
+    // column 0, and redraw the prompt below.
+    //
+    // The printer is line-oriented: a chunk that arrives without a
+    // trailing newline gets buffered in `foreign_line_buf` and emitted
+    // when a complete line finally arrives.
+    external_printer: Option<reedline::ExternalPrinter<String>>,
+    foreign_line_buf: Arc<Mutex<String>>,
 }
 
 impl Renderer {
@@ -71,12 +89,25 @@ impl Renderer {
             busy_state: BusyState::default(),
             writer,
             own_session_name: None,
+            own_client_id: None,
             at_line_start: Arc::new(Mutex::new(true)),
+            external_printer: None,
+            foreign_line_buf: Arc::new(Mutex::new(String::new())),
         }
     }
 
     pub fn with_own_session_name(mut self, name: Option<String>) -> Self {
         self.own_session_name = name;
+        self
+    }
+
+    pub fn with_own_client_id(mut self, id: String) -> Self {
+        self.own_client_id = Some(id);
+        self
+    }
+
+    pub fn with_external_printer(mut self, printer: reedline::ExternalPrinter<String>) -> Self {
+        self.external_printer = Some(printer);
         self
     }
 
@@ -91,26 +122,32 @@ impl Renderer {
     }
 
     pub fn handle_event(&self, event: Event) -> Result<()> {
-        let session_name = event
-            .parent_session
-            .as_deref()
-            .and_then(|id| id.split("---").next());
+        let parent = event.parent_session.as_deref();
+        let session_name = parent.and_then(|id| id.split("---").next());
 
-        // Output parented from this same session is shown un-prefixed
-        // (the rustyline prompt makes it obvious whose REPL you're in).
-        // Output from any *other* session sharing the kernel is tagged
-        // `[name]` on each line so the user can tell who's typing.
+        // Identity is the full client_id (`<name>---repl---<rand>`), not
+        // just the name — two clients sharing the kernel without
+        // `--session-name` both report `jet` as the name. When we know
+        // our own client_id, compare against that. Without one (tests,
+        // or callers that didn't set it), fall back to name-only.
         // Messages with no parent_session at all (banners, replies to
-        // our own kernel_info_request) are also treated as own.
-        let own = self.own_session_name.as_deref().unwrap_or("jet");
-        let is_own_session = match session_name {
-            Some(name) => name == own,
-            None => true,
+        // our own kernel_info_request) are always treated as own.
+        let is_own_session = match (parent, self.own_client_id.as_deref()) {
+            (None, _) => true,
+            (Some(p), Some(own_id)) => p == own_id,
+            (Some(_), None) => {
+                let own_name = self.own_session_name.as_deref().unwrap_or("jet");
+                session_name == Some(own_name)
+            }
         };
+        // Display tag: show `[name]` on every foreign line so the user
+        // can tell another client is typing — even when the foreign
+        // client used the default name (`jet`). Own-session output is
+        // un-prefixed (reedline's own prompt makes ownership obvious).
         let prefix = if is_own_session {
             None
         } else {
-            session_name.map(|s| s.to_string())
+            Some(session_name.unwrap_or("jet").to_string())
         };
 
         log::info!(
@@ -118,40 +155,43 @@ impl Renderer {
             event.data
         );
 
+        let is_foreign = !is_own_session;
         match event.data {
             EventData::ExecuteInput { code } => {
                 // Skip the kernel's iopub echo of *our own* input —
-                // rustyline already drew the prompt locally. For any
+                // reedline already drew the prompt locally. For any
                 // other session's input we render `[name]> code` so the
-                // user can follow what other clients are doing. The
-                // leading `\n` drops us to a fresh line so we don't
-                // collide with rustyline's prompt.
-                if !is_own_session {
-                    self.write("\r", None)?;
-                    self.write_line(&format!("> {code}"), prefix.as_deref())?
+                // user can follow what other clients are doing.
+                if is_foreign {
+                    self.write_line(&format!("> {code}"), prefix.as_deref(), is_foreign)?;
                 }
             }
-            EventData::DisplayData { data } => self.render_data(&data, prefix.as_deref())?,
+            EventData::DisplayData { data } => {
+                self.render_data(&data, prefix.as_deref(), is_foreign)?
+            }
             EventData::Stream { name: _, text } => {
-                self.write(&text, prefix.as_deref())?;
+                self.write(&text, prefix.as_deref(), is_foreign)?;
             }
             EventData::Error { traceback } => {
-                self.write(&traceback, prefix.as_deref())?;
+                self.write(&traceback, prefix.as_deref(), is_foreign)?;
                 self.ensure_newline()?;
             }
-            EventData::Banner { text } => self.write_line(&text, None)?,
+            EventData::Banner { text } => self.write_line(&text, None, false)?,
             EventData::Idle { parent_id } => {
-                // When *another* session's execution finishes, rustyline's
-                // prompt is no longer where it last drew it (we've written
-                // text on top of and below it). Re-emit a bare `> ` so the
-                // cursor lands at a fresh prompt. Any input the user had
-                // already typed is still in rustyline's buffer — it'll
-                // refresh visually as soon as they press the next key.
                 if !is_own_session {
-                    self.ensure_newline()?;
-                    let mut w = self.writer.lock().unwrap();
-                    write!(w, "> ")?;
-                    w.flush()?;
+                    // Flush any trailing partial line that never got a
+                    // newline so it shows up before the prompt is redrawn.
+                    self.flush_foreign_partial()?;
+                    // Without an external printer wired (e.g. tests), we
+                    // still emit a fresh `> ` directly so the next prompt
+                    // doesn't collide with the foreign output. With a
+                    // printer, reedline redraws the prompt itself.
+                    if self.external_printer.is_none() {
+                        self.ensure_newline()?;
+                        let mut w = self.writer.lock().unwrap();
+                        write!(w, "> ")?;
+                        w.flush()?;
+                    }
                     // Release the REPL prompt-gate that was set when this
                     // session went Busy.
                     self.busy_state.busy.store(false, Ordering::SeqCst);
@@ -205,9 +245,16 @@ impl Renderer {
     /// previous write ended without a newline, the next call continues
     /// the same line (no extra prefix); a chunk that ends with `\n`
     /// leaves the next call expecting to start a new line.
-    fn write(&self, text: &str, prefix: Option<&str>) -> Result<()> {
+    fn write(&self, text: &str, prefix: Option<&str>, is_foreign: bool) -> Result<()> {
         if text.is_empty() {
             return Ok(());
+        }
+        // Foreign-session output goes through reedline's external printer
+        // (when wired) so it doesn't fight the active prompt's raw mode.
+        // The display `prefix` is independent — an unnamed foreign client
+        // still routes through the printer, just without a `[...]` tag.
+        if is_foreign && self.external_printer.is_some() {
+            return self.write_foreign(text, prefix);
         }
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
@@ -246,18 +293,22 @@ impl Renderer {
     /// Write a complete line (appends a newline if missing), optionally
     /// prefixed. Resets the streaming state to "at line start" so
     /// subsequent stream output is re-prefixed.
-    fn write_line(&self, text: &str, prefix: Option<&str>) -> Result<()> {
+    fn write_line(&self, text: &str, prefix: Option<&str>, is_foreign: bool) -> Result<()> {
         if text.is_empty() {
             return Ok(());
         }
         let needs_newline = !text.ends_with('\n');
-        self.write(text, prefix)?;
+        self.write(text, prefix, is_foreign)?;
         if needs_newline {
-            let mut w = self.writer.lock().unwrap();
-            let mut at_start = self.at_line_start.lock().unwrap();
-            writeln!(w)?;
-            *at_start = true;
-            w.flush()?;
+            if is_foreign && self.external_printer.is_some() {
+                self.flush_foreign_partial()?;
+            } else {
+                let mut w = self.writer.lock().unwrap();
+                let mut at_start = self.at_line_start.lock().unwrap();
+                writeln!(w)?;
+                *at_start = true;
+                w.flush()?;
+            }
         }
         Ok(())
     }
@@ -273,7 +324,53 @@ impl Renderer {
         Ok(())
     }
 
-    fn render_data(&self, data: &Value, prefix: Option<&str>) -> Result<()> {
+    /// Buffer foreign-session text by line and ship complete lines to
+    /// reedline's external printer. A partial trailing line stays in the
+    /// buffer until the next chunk (or the session's idle event) flushes
+    /// it. `\r` is treated as a line terminator too so spinners redraw
+    /// cleanly as separate lines under the printer.
+    fn write_foreign(&self, text: &str, prefix_name: Option<&str>) -> Result<()> {
+        let printer = self
+            .external_printer
+            .as_ref()
+            .expect("write_foreign called without printer");
+        let tag = prefix_name.map(|p| format!("{} ", ansi::dim(&format!("[{p}]"))));
+        let mut buf = self.foreign_line_buf.lock().unwrap();
+        for segment in text.split_inclusive(['\n', '\r']) {
+            if buf.is_empty()
+                && let Some(t) = &tag
+            {
+                buf.push_str(t);
+            }
+            let terminates = segment.ends_with(['\n', '\r']);
+            if terminates {
+                // Strip the trailing newline — the printer adds its own.
+                buf.push_str(segment.trim_end_matches(['\n', '\r']));
+                let line = std::mem::take(&mut *buf);
+                let _ = printer.sender().send(line);
+            } else {
+                buf.push_str(segment);
+            }
+        }
+        Ok(())
+    }
+
+    /// Flush any partially-buffered foreign line. Called when an Idle
+    /// event arrives so the trailing text shows up before the prompt is
+    /// redrawn.
+    fn flush_foreign_partial(&self) -> Result<()> {
+        let Some(printer) = self.external_printer.as_ref() else {
+            return Ok(());
+        };
+        let mut buf = self.foreign_line_buf.lock().unwrap();
+        if !buf.is_empty() {
+            let line = std::mem::take(&mut *buf);
+            let _ = printer.sender().send(line);
+        }
+        Ok(())
+    }
+
+    fn render_data(&self, data: &Value, prefix: Option<&str>, is_foreign: bool) -> Result<()> {
         if !data.is_object() {
             return Ok(());
         }
@@ -298,7 +395,7 @@ impl Renderer {
                     .decode(image_data)
                     .map(|b| b.len())
                     .unwrap_or(0);
-                self.write_line(&format!("[image/png {len} bytes]"), None)?;
+                self.write_line(&format!("[image/png {len} bytes]"), None, is_foreign)?;
                 return Ok(());
             }
         };
@@ -310,7 +407,7 @@ impl Renderer {
             // bare expressions. Use write_line so the next prompt lands
             // on a fresh line instead of clobbering the value via the
             // bracketed-paste sequence rustyline emits.
-            self.write_line(t, prefix)?;
+            self.write_line(t, prefix, is_foreign)?;
             return Ok(());
         }
 

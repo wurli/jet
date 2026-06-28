@@ -1,6 +1,6 @@
 //! The interactive REPL loop driven by `jet start` / `jet attach`.
 //!
-//! Owns: rustyline prompt, is-complete polling, execute-request dispatch,
+//! Owns: reedline prompt, is-complete polling, execute-request dispatch,
 //! the kernel-liveness watchers (waitpid for spawned kernels, heartbeat
 //! for attached ones), and the raw-mode SIGINT pipe that turns a tty ^C
 //! into a kernel interrupt. The wire mechanics (per-channel reader and
@@ -21,10 +21,141 @@ use jet_core::jupyter_protocol::{
 };
 use jet_core::kernel::KernelSpec;
 use jet_core::manager::{Session, SessionStore};
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use reedline::{
+    ColumnarMenu, ExternalPrinter, KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode,
+    PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal,
+};
+
+/// Put the terminal back into cooked mode. reedline holds the tty in
+/// raw mode between `read_line` calls; if we `process::exit` while a
+/// `read_line` is still in flight on a blocking thread, its `Drop`
+/// never runs and the shell inherits a wedged terminal. Call this
+/// before any `eprintln!` that should appear on its own line — under
+/// raw mode `\n` doesn't include `\r`, so the cursor stays in the same
+/// column.
+fn restore_terminal() {
+    let _ = crossterm::terminal::disable_raw_mode();
+}
+
+fn exit_cleanly(code: i32) -> ! {
+    restore_terminal();
+    std::process::exit(code);
+}
+
+use crate::completer::JetCompleter;
 use crate::render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
+
+/// Reedline prompt with a swappable left-indicator string — we set it
+/// to `> ` for the first line of a cell, then to the kernel-suggested
+/// continuation indent (e.g. `+ `) for subsequent lines until
+/// `is_complete_reply` says we're done.
+#[derive(Default, Clone)]
+struct JetPrompt {
+    indicator: String,
+}
+
+impl Prompt for JetPrompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.indicator)
+    }
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+    fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Borrowed("::: ")
+    }
+    fn render_prompt_history_search_indicator(
+        &self,
+        history_search: PromptHistorySearch,
+    ) -> Cow<'_, str> {
+        let prefix = match history_search.status {
+            PromptHistorySearchStatus::Passing => "",
+            PromptHistorySearchStatus::Failing => "failing ",
+        };
+        Cow::Owned(format!("({prefix}reverse-search: {}) ", history_search.term))
+    }
+}
+
+/// Outcome of a single readline. Mirrors reedline's `Signal` but lets
+/// the non-TTY pipe branch return its own EOF/line cases without
+/// fabricating a reedline value.
+enum LineRead {
+    Line(String),
+    /// User pressed ^C (reedline) — the in-progress block is abandoned.
+    Interrupted,
+    /// Stream ended (reedline ^D, or EOF on a piped stdin).
+    Eof,
+    Err(String),
+}
+
+/// Where to read REPL input from. TTY uses reedline (with completer);
+/// pipe mode (e.g. `jet start < script.py`, or tests piping stdin)
+/// reads bare lines via `BufRead`, since reedline requires a real
+/// terminal to query cursor position.
+enum LineSource {
+    Tty(Reedline),
+    Pipe(std::io::BufReader<std::io::Stdin>),
+}
+
+impl LineSource {
+    fn read_line(&mut self, prompt: &JetPrompt) -> LineRead {
+        use std::io::{BufRead, Write};
+        match self {
+            LineSource::Tty(rl) => match rl.read_line(prompt) {
+                Ok(Signal::Success(l)) => LineRead::Line(l),
+                Ok(Signal::CtrlC) => LineRead::Interrupted,
+                Ok(Signal::CtrlD) => LineRead::Eof,
+                Ok(_) => LineRead::Interrupted,
+                Err(e) => LineRead::Err(e.to_string()),
+            },
+            LineSource::Pipe(stdin) => {
+                let mut out = std::io::stdout().lock();
+                let _ = out.write_all(prompt.indicator.as_bytes());
+                let _ = out.flush();
+                let mut buf = String::new();
+                match stdin.read_line(&mut buf) {
+                    Ok(0) => LineRead::Eof,
+                    Ok(_) => {
+                        if buf.ends_with('\n') {
+                            buf.pop();
+                            if buf.ends_with('\r') {
+                                buf.pop();
+                            }
+                        }
+                        LineRead::Line(buf)
+                    }
+                    Err(e) => LineRead::Err(e.to_string()),
+                }
+            }
+        }
+    }
+}
+
+fn build_editor(completer: JetCompleter, printer: ExternalPrinter<String>) -> Reedline {
+    let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
+    let mut keybindings = reedline::default_emacs_keybindings();
+    keybindings.add_binding(
+        KeyModifiers::NONE,
+        KeyCode::Tab,
+        ReedlineEvent::UntilFound(vec![
+            ReedlineEvent::Menu("completion_menu".to_string()),
+            ReedlineEvent::MenuNext,
+        ]),
+    );
+    let edit_mode = Box::new(reedline::Emacs::new(keybindings));
+    Reedline::create()
+        .with_completer(Box::new(completer))
+        .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
+        .with_edit_mode(edit_mode)
+        .with_external_printer(printer)
+}
 
 /// Reopen the session and flip it to Closed. Best-effort: called from
 /// liveness watchers when the kernel becomes unreachable, so a missing
@@ -232,10 +363,16 @@ pub async fn drive_repl(
     let (is_complete_tx, mut is_complete_rx) =
         tokio::sync::mpsc::unbounded_channel::<IsCompleteReplyMsg>();
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
+    // The external printer is the channel reedline uses to interleave
+    // foreign-session output with the active prompt. Wire it into both
+    // the renderer (so foreign writes go through it) and the editor
+    // builder below (so reedline polls and flushes it).
+    let external_printer: ExternalPrinter<String> = ExternalPrinter::default();
     let renderer = Renderer::new(render_graphics, idle_tx, writer)
         .with_input_tx(input_tx)
         .with_is_complete_tx(is_complete_tx)
-        .with_own_session_name(session_name.clone());
+        .with_own_session_name(session_name.clone())
+        .with_external_printer(external_printer.clone());
     let busy_state = renderer.busy_state.clone();
 
     // Client::spawn/attach perform the kernel_info handshake before returning,
@@ -267,6 +404,11 @@ pub async fn drive_repl(
             banner: _,
         } => Client::attach(connection_path, session_name.as_deref(), session_id).await?,
     };
+    // Now that the Client exists we know our full client_id (the
+    // `<name>---repl---<rand>` string the kernel will echo back as
+    // parent_session on every reply); pass it into the renderer so own-
+    // vs-foreign is decided on identity, not just `--session-name`.
+    let renderer = renderer.with_own_client_id(session.client_id().to_string());
     // Synchronously consume the first frame — the kernel_info_reply. On spawn we
     // render it (welcome banner); on attach we drop it by default so reconnects
     // don't reprint the banner the original spawn already drew, unless --banner
@@ -311,7 +453,18 @@ pub async fn drive_repl(
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
 
-    let mut rl = Some(rustyline::DefaultEditor::new()?);
+    use std::io::IsTerminal;
+    let mut rl = Some(if std::io::stdin().is_terminal() {
+        LineSource::Tty(build_editor(
+            JetCompleter::new(
+                session.completion_handle(),
+                tokio::runtime::Handle::current(),
+            ),
+            external_printer.clone(),
+        ))
+    } else {
+        LineSource::Pipe(std::io::BufReader::new(std::io::stdin()))
+    });
     loop {
         // Accumulate lines until the kernel says the buffer is a
         // complete unit of code. The first prompt is `> `; continuation
@@ -335,36 +488,40 @@ pub async fn drive_repl(
                 tokio::select! {
                     _ = notified => {}
                     _ = await_kernel_exited(session.watch_status()) => {
+                        restore_terminal();
                         eprintln!("{}", ansi::red("Kernel exited"));
                         mark_session_closed(&session_id);
                         shutdown.notify_waiters();
-                        std::process::exit(0);
+                        exit_cleanly(0);
                     }
                 }
             }
 
             let mut prompt_rl = rl.take().expect("editor present at top of loop");
-            let prompt = match &next_indent {
-                None => "> ".to_string(),
-                Some(s) => s.clone(),
+            let prompt = JetPrompt {
+                indicator: match &next_indent {
+                    None => "> ".to_string(),
+                    Some(s) => s.clone(),
+                },
             };
             let read = tokio::task::spawn_blocking(move || {
-                let result = prompt_rl.readline(&prompt);
+                let result = prompt_rl.read_line(&prompt);
                 (prompt_rl, result)
             });
             let line = tokio::select! {
                 _ = await_kernel_exited(session.watch_status()) => {
+                    restore_terminal();
                     eprintln!("{}", ansi::red("Kernel exited"));
                     mark_session_closed(&session_id);
                     shutdown.notify_waiters();
-                    std::process::exit(0);
+                    exit_cleanly(0);
                 }
                 joined = read => {
                     let (returned_rl, result) = joined?;
                     rl = Some(returned_rl);
                     match result {
-                        Ok(l) => l,
-                        Err(rustyline::error::ReadlineError::Eof) => {
+                        LineRead::Line(l) => l,
+                        LineRead::Eof => {
                             if buffer.is_empty() {
                                 shutdown.notify_waiters();
                                 return Ok(session);
@@ -372,11 +529,11 @@ pub async fn drive_repl(
                             // ^D inside an in-progress block: discard.
                             break 'accumulate None;
                         }
-                        Err(rustyline::error::ReadlineError::Interrupted) => {
+                        LineRead::Interrupted => {
                             // ^C abandons the in-progress block.
                             break 'accumulate None;
                         }
-                        Err(e) => {
+                        LineRead::Err(e) => {
                             eprintln!("Readline: {e}");
                             return Ok(session);
                         }
@@ -428,10 +585,10 @@ pub async fn drive_repl(
         let Some(code) = code else {
             continue;
         };
-        let _ = rl
-            .as_mut()
-            .expect("editor returned from blocking task")
-            .add_history_entry(&code);
+        if let Some(LineSource::Tty(ed)) = rl.as_mut() {
+            let item = reedline::HistoryItem::from_command_line(&code);
+            let _ = ed.history_mut().save(item);
+        }
 
         let req: JupyterMessage = ExecuteRequest {
             code,
@@ -474,23 +631,20 @@ pub async fn drive_repl(
 
             match r {
                 WaitResult::Input(req) => {
-                    let prompt = req.prompt.clone();
+                    let prompt = JetPrompt {
+                        indicator: req.prompt.clone(),
+                    };
                     let mut prompt_rl = rl.take().expect("editor present at input prompt");
                     let read = tokio::task::spawn_blocking(move || {
-                        let line = if req.password {
-                            prompt_rl.readline_with_initial(&prompt, ("", ""))
-                        } else {
-                            prompt_rl.readline(&prompt)
-                        };
+                        let line = prompt_rl.read_line(&prompt);
                         (prompt_rl, line)
                     });
                     let (returned_rl, line_result) = read.await?;
                     rl = Some(returned_rl);
                     let value = match line_result {
-                        Ok(s) => s,
-                        Err(rustyline::error::ReadlineError::Eof)
-                        | Err(rustyline::error::ReadlineError::Interrupted) => String::new(),
-                        Err(e) => {
+                        LineRead::Line(s) => s,
+                        LineRead::Eof | LineRead::Interrupted => String::new(),
+                        LineRead::Err(e) => {
                             eprintln!("Readline (input_request): {e}");
                             String::new()
                         }
@@ -518,7 +672,7 @@ pub async fn drive_repl(
             WaitResult::Closed => {
                 mark_session_closed(&session_id);
                 shutdown.notify_waiters();
-                std::process::exit(0);
+                exit_cleanly(0);
             }
         }
     }
