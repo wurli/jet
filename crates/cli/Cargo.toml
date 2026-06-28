@@ -17,6 +17,7 @@ inquire = { git = "https://github.com/wurli/inquire", default-features = false, 
 libc.workspace = true
 log.workspace = true
 rand.workspace = true
+crossterm = "0.29"
 reedline.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

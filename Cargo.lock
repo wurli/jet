@@ -758,6 +758,7 @@ dependencies = [
  "anyhow",
  "base64",
  "clap",
+ "crossterm",
  "inquire",
  "jet_core",
  "libc",

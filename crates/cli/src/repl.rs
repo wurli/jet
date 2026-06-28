@@ -30,6 +30,22 @@ use reedline::{
     PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal,
 };
 
+/// Put the terminal back into cooked mode. reedline holds the tty in
+/// raw mode between `read_line` calls; if we `process::exit` while a
+/// `read_line` is still in flight on a blocking thread, its `Drop`
+/// never runs and the shell inherits a wedged terminal. Call this
+/// before any `eprintln!` that should appear on its own line — under
+/// raw mode `\n` doesn't include `\r`, so the cursor stays in the same
+/// column.
+fn restore_terminal() {
+    let _ = crossterm::terminal::disable_raw_mode();
+}
+
+fn exit_cleanly(code: i32) -> ! {
+    restore_terminal();
+    std::process::exit(code);
+}
+
 use crate::completer::JetCompleter;
 use crate::render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
 
@@ -457,10 +473,11 @@ pub async fn drive_repl(
                 tokio::select! {
                     _ = notified => {}
                     _ = await_kernel_exited(session.watch_status()) => {
+                        restore_terminal();
                         eprintln!("{}", ansi::red("Kernel exited"));
                         mark_session_closed(&session_id);
                         shutdown.notify_waiters();
-                        std::process::exit(0);
+                        exit_cleanly(0);
                     }
                 }
             }
@@ -478,10 +495,11 @@ pub async fn drive_repl(
             });
             let line = tokio::select! {
                 _ = await_kernel_exited(session.watch_status()) => {
+                    restore_terminal();
                     eprintln!("{}", ansi::red("Kernel exited"));
                     mark_session_closed(&session_id);
                     shutdown.notify_waiters();
-                    std::process::exit(0);
+                    exit_cleanly(0);
                 }
                 joined = read => {
                     let (returned_rl, result) = joined?;
@@ -639,7 +657,7 @@ pub async fn drive_repl(
             WaitResult::Closed => {
                 mark_session_closed(&session_id);
                 shutdown.notify_waiters();
-                std::process::exit(0);
+                exit_cleanly(0);
             }
         }
     }
