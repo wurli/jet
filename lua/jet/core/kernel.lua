@@ -142,7 +142,7 @@ function Kernel:create_term(callback)
 				buffer = self.term.buf,
 				group = augroup,
 				callback = function()
-					self:set_as_primary()
+					self:set_as_filetype_primary()
 				end,
 			})
 		end
@@ -159,9 +159,9 @@ function Kernel:create_term(callback)
 	end
 end
 
-function Kernel:set_as_primary()
+function Kernel:set_as_filetype_primary()
 	assert(self.filetype, "Kernel has no filetype")
-	manager.primary[self.filetype] = self.session_id
+	manager.filetype_primary[self.filetype] = self.session_id
 end
 
 ---@return boolean
@@ -191,16 +191,23 @@ function Kernel:start_lua_client(callback)
 			self.client_id = res.client_id
 			self.kernel_info = res.kernel_info
 			self.stream = res.stream
-			self:try_resolve_filetype()
+
 			manager:insert(self)
 
 			require("jet.core.autocmd").kernel_started({
 				session_id = self.session_id,
-				client_id = self.client_id,
-				spec = self.spec,
-				kernelspec_path = self.spec_path,
-				kernel_info = self.kernel_info,
 			})
+
+			-- Try resolving filetype after kernel started autocmd so the user
+			-- has a chance to override it.
+			self:try_resolve_filetype()
+
+			-- Even though the kernel has not yet been shown in a REPL, if
+			-- there isn't another kernel for this filetype already set as
+			-- primary we should set this one for convenience.
+			if self.filetype and not manager.filetype_primary[self.filetype] then
+				self:set_as_filetype_primary()
+			end
 
 			if callback then
 				callback(self)
@@ -240,6 +247,9 @@ function Kernel:try_resolve_filetype()
 		if ft and not is_fallback then
 			self.filetype = ft
 		end
+	else
+		--TODO: advertise autocmd help page as a way to override this!
+		utils.log_warn("Could not resolve filetype for kernel '%s'.", self.spec.display_name, self.session_id)
 	end
 end
 
@@ -248,9 +258,9 @@ function Kernel:remove()
 
 	manager.kernels[self.session_id] = nil
 
-	for ft, session_id in pairs(manager.primary) do
+	for ft, session_id in pairs(manager.filetype_primary) do
 		if session_id == self.session_id then
-			manager.primary[ft] = nil
+			manager.filetype_primary[ft] = nil
 		end
 	end
 

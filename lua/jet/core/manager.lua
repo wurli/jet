@@ -1,9 +1,9 @@
 ---@class jet.manager
 ---@field kernels table<string, jet.kernel>
----@field primary table<string, string> key=filetype, value=session_id
+---@field filetype_primary table<string, string> key=filetype, value=session_id
 local Manager = {
 	kernels = {},
-	primary = {},
+	filetype_primary = {},
 }
 
 ---@param k jet.kernel
@@ -24,7 +24,7 @@ end
 ---@param ft string
 ---@return jet.kernel?
 function Manager:get_ft_last_used(ft)
-	local session_id = self.primary[ft]
+	local session_id = self.filetype_primary[ft]
 	return session_id and self.kernels[session_id]
 end
 
