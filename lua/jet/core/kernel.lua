@@ -340,12 +340,16 @@ end
 function Kernel:send_repl(code)
 	assert(self.term and self.term.job_id, "Kernel has no repl job id")
 
-	if type(code) == "string" then
-		code = vim.split(code, "\n", { plain = true })
+	if type(code) == "table" then
+		code = table.concat(code, "\n")
 	end
-	vim.print(code)
 
-	vim.fn.chansend(self.term.job_id, code)
+	-- Drop a trailing newline if the caller already added one — we add
+	-- our own submit-Enter below and don't want a stray empty line.
+	code = code:gsub("\n$", "")
+	local payload = code:gsub("\n", "\x1b\r") .. "\r"
+
+	vim.fn.chansend(self.term.job_id, payload)
 end
 
 -- ---@param code string | string[]
