@@ -95,7 +95,6 @@ T["send_repl delivers every line through the plugin"] = function()
 	-- Per the chansend contract, a trailing "" forces a real newline.
 	-- Small inter-send gaps let each echo land before the next; the bug
 	-- only required multi-line sends, not specifically back-to-back ones.
-	local marker = "bar"
 	kernel:send_repl({ "print('foo')", "print('bar')", "" })
 
 	local function term_text()
@@ -103,8 +102,11 @@ T["send_repl delivers every line through the plugin"] = function()
 		return table.concat(lines, "\n")
 	end
 
+	-- Single execute: foo and bar must appear together, with no `>`
+	-- (a fresh prompt — i.e. a new execute) between them.
+	local pattern = "foo[^>]*bar"
 	local ok = wait_for(function()
-		return term_text():find(marker, 1, true) ~= nil
+		return term_text():find(pattern) ~= nil
 	end, 15000)
 
 	-- Clean up before assertion so we don't leave a kernel alive on failure.
@@ -115,14 +117,7 @@ T["send_repl delivers every line through the plugin"] = function()
 	vim.fn.delete(xdg, "rf")
 
 	if not ok then
-		error(
-			"marker never appeared in the REPL buffer.\n"
-				.. 'expected "'
-				.. marker
-				.. ':2"\n'
-				.. "got:\n"
-				.. term_text()
-		)
+		error("marker never appeared in the REPL buffer.\n" .. 'expected "' .. pattern .. "\ngot:\n" .. term_text())
 	end
 end
 
