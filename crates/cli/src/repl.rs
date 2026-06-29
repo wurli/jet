@@ -86,12 +86,20 @@ impl Prompt for JetPrompt {
 /// Outcome of a single readline. Mirrors reedline's `Signal` but lets
 /// the non-TTY pipe branch return its own EOF/line cases without
 /// fabricating a reedline value.
+/// Host-command sentinel: "the user pressed Backspace; check whether to
+/// delete a char or merge back into the prior accumulator line."
+const HOSTCMD_BACKSPACE: &str = "jet:backspace";
+
 enum LineRead {
     Line(String),
     /// User pressed ^C (reedline) — the in-progress block is abandoned.
     Interrupted,
     /// Stream ended (reedline ^D, or EOF on a piped stdin).
     Eof,
+    /// Reedline emitted an `ExecuteHostCommand` signal. The editor is
+    /// suspended (buffer state preserved); we handle the command and
+    /// re-enter `read_line` to resume.
+    HostCommand(String),
     Err(String),
 }
 
@@ -112,6 +120,7 @@ impl LineSource {
                 Ok(Signal::Success(l)) => LineRead::Line(l),
                 Ok(Signal::CtrlC) => LineRead::Interrupted,
                 Ok(Signal::CtrlD) => LineRead::Eof,
+                Ok(Signal::HostCommand(c)) => LineRead::HostCommand(c),
                 Ok(_) => LineRead::Interrupted,
                 Err(e) => LineRead::Err(e.to_string()),
             },
@@ -155,12 +164,27 @@ fn build_editor(completer: JetCompleter, printer: ExternalPrinter<String>) -> Re
             ReedlineEvent::MenuNext,
         ]),
     );
+    // Backspace goes through us so we can detect "empty buffer + Backspace"
+    // mid-block and merge the prior line back into the editor. The REPL
+    // loop checks `current_buffer_contents()`; if non-empty it forwards the
+    // event as a normal `EditCommand::Backspace`.
+    keybindings.add_binding(
+        KeyModifiers::NONE,
+        KeyCode::Backspace,
+        ReedlineEvent::ExecuteHostCommand(HOSTCMD_BACKSPACE.to_string()),
+    );
     let edit_mode = Box::new(reedline::Emacs::new(keybindings));
     Reedline::create()
         .with_completer(Box::new(completer))
         .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
         .with_edit_mode(edit_mode)
         .with_external_printer(printer)
+        // Honor bracketed-paste: a multi-line block wrapped in
+        // \x1b[200~ ... \x1b[201~ goes into the buffer as one unit
+        // and waits for a separate Enter to submit. Matches what real
+        // terminals send on Cmd/Ctrl+V and what editor/REPL integrations
+        // (nvim chansend, etc.) emit to submit a cell.
+        .use_bracketed_paste(true)
 }
 
 /// Reopen the session and flip it to Closed. Best-effort: called from
@@ -405,6 +429,7 @@ pub async fn drive_repl(
         // full continuation prompt (any leading marker plus whitespace),
         // so we render it verbatim instead of prepending our own.
         let mut next_indent: Option<String> = None;
+        let mut next_initial: Option<String> = None;
         let code = 'accumulate: loop {
             // If another session is currently executing, park before
             // drawing the prompt. Without this, every CR the user types
@@ -433,6 +458,12 @@ pub async fn drive_repl(
                     Some(s) => s.clone(),
                 },
             };
+            if let (Some(s), LineSource::Tty(ed)) = (&next_initial, &mut prompt_rl)
+                && !s.is_empty()
+            {
+                ed.run_edit_commands(&[reedline::EditCommand::InsertString(s.clone())]);
+            }
+            next_initial = None;
             let read = tokio::task::spawn_blocking(move || {
                 let result = prompt_rl.read_line(&prompt);
                 (prompt_rl, result)
@@ -462,6 +493,63 @@ pub async fn drive_repl(
                             // ^C abandons the in-progress block.
                             break 'accumulate None;
                         }
+                        LineRead::HostCommand(cmd) if cmd == HOSTCMD_BACKSPACE => {
+                            // Plain Backspace was routed through us so we
+                            // could decide: normal char-delete, or merge
+                            // the prior accumulator line back into the
+                            // editor when the visible line is empty.
+                            if let Some(LineSource::Tty(ed)) = rl.as_mut() {
+                                if ed.current_buffer_contents().is_empty() {
+                                    // Empty visible line: pop the last
+                                    // line off the accumulator and pre-
+                                    // fill the editor with it. If the
+                                    // accumulator is also empty, ignore.
+                                    if !buffer.is_empty() {
+                                        let prev = match buffer.rfind('\n') {
+                                            Some(i) => buffer.split_off(i + 1),
+                                            None => std::mem::take(&mut buffer),
+                                        };
+                                        if buffer.ends_with('\n') {
+                                            buffer.pop();
+                                        }
+                                        ed.run_edit_commands(&[
+                                            reedline::EditCommand::InsertString(prev),
+                                        ]);
+                                        // Erase the prior prompt row (the
+                                        // one we're rejoining) and the
+                                        // current empty continuation row,
+                                        // then put the cursor at the
+                                        // start of the prior row. The
+                                        // next `read_line` sees a cursor
+                                        // outside the suspended prompt
+                                        // range and draws a fresh prompt
+                                        // there.
+                                        use std::io::Write;
+                                        let mut out = std::io::stdout().lock();
+                                        let _ = out.write_all(b"\x1b[A\r\x1b[J");
+                                        let _ = out.flush();
+                                        // We're back to editing what was
+                                        // the prior line; reset the
+                                        // continuation-prompt state so
+                                        // the next prompt matches.
+                                        next_indent = if buffer.is_empty() {
+                                            None
+                                        } else {
+                                            Some("+ ".to_string())
+                                        };
+                                        next_initial = None;
+                                    }
+                                } else {
+                                    // Non-empty: behave like a normal
+                                    // backspace.
+                                    ed.run_edit_commands(&[
+                                        reedline::EditCommand::Backspace,
+                                    ]);
+                                }
+                            }
+                            continue;
+                        }
+                        LineRead::HostCommand(_) => continue,
                         LineRead::Err(e) => {
                             eprintln!("Readline: {e}");
                             return Ok(session);
@@ -496,15 +584,30 @@ pub async fn drive_repl(
                 wait_for_is_complete(&mut is_complete_rx, &req_id, Duration::from_secs(5)).await;
             match reply.map(|r| (r.status, r.indent)) {
                 Some((IsCompleteReplyStatus::Incomplete, indent)) => {
-                    let mut p = if indent.is_empty() {
+                    // Per Jupyter spec, `indent` is the full continuation
+                    // prompt — typically a marker (e.g. `...`) followed by
+                    // whitespace to align with the previous line. We treat
+                    // only the leading non-whitespace as the prompt marker;
+                    // any trailing whitespace becomes editable text in the
+                    // input buffer so the user can backspace through it.
+                    let marker_end = indent
+                        .find(|c: char| c.is_whitespace())
+                        .unwrap_or(indent.len());
+                    let (marker, ws) = indent.split_at(marker_end);
+                    let mut p = if marker.is_empty() {
                         "+".to_string()
                     } else {
-                        indent
+                        marker.to_string()
                     };
                     if !p.ends_with(' ') {
                         p.push(' ');
                     }
                     next_indent = Some(p);
+                    next_initial = if ws.is_empty() {
+                        None
+                    } else {
+                        Some(ws.to_string())
+                    };
                     continue;
                 }
                 _ => break 'accumulate Some(buffer),
@@ -559,19 +662,36 @@ pub async fn drive_repl(
                     let prompt = JetPrompt {
                         indicator: req.prompt.clone(),
                     };
-                    let mut prompt_rl = rl.take().expect("editor present at input prompt");
-                    let read = tokio::task::spawn_blocking(move || {
-                        let line = prompt_rl.read_line(&prompt);
-                        (prompt_rl, line)
-                    });
-                    let (returned_rl, line_result) = read.await?;
-                    rl = Some(returned_rl);
-                    let value = match line_result {
-                        LineRead::Line(s) => s,
-                        LineRead::Eof | LineRead::Interrupted => String::new(),
-                        LineRead::Err(e) => {
-                            eprintln!("Readline (input_request): {e}");
-                            String::new()
+                    // For stdin prompts there's no accumulator to merge
+                    // into, so a HostCommand Backspace just becomes a
+                    // plain Backspace edit; we loop until the user
+                    // actually submits or aborts.
+                    let value = loop {
+                        let mut prompt_rl =
+                            rl.take().expect("editor present at input prompt");
+                        let prompt_for_read = prompt.clone();
+                        let read = tokio::task::spawn_blocking(move || {
+                            let line = prompt_rl.read_line(&prompt_for_read);
+                            (prompt_rl, line)
+                        });
+                        let (returned_rl, line_result) = read.await?;
+                        rl = Some(returned_rl);
+                        match line_result {
+                            LineRead::Line(s) => break s,
+                            LineRead::Eof | LineRead::Interrupted => break String::new(),
+                            LineRead::HostCommand(cmd) if cmd == HOSTCMD_BACKSPACE => {
+                                if let Some(LineSource::Tty(ed)) = rl.as_mut() {
+                                    ed.run_edit_commands(&[
+                                        reedline::EditCommand::Backspace,
+                                    ]);
+                                }
+                                continue;
+                            }
+                            LineRead::HostCommand(_) => continue,
+                            LineRead::Err(e) => {
+                                eprintln!("Readline (input_request): {e}");
+                                break String::new();
+                            }
                         }
                     };
                     let reply: JupyterMessage = InputReply {
