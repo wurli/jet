@@ -202,92 +202,6 @@ async fn await_kernel_exited(mut rx: tokio::sync::watch::Receiver<KernelStatus>)
     }
 }
 
-/// Run a stdin-byte watcher for the lifetime of `f`. rustyline keeps the
-/// tty in raw mode (ISIG off) between readlines, so a real ^C during a
-/// kernel request arrives as the byte 0x03 on stdin instead of a SIGINT.
-///
-/// Only meaningful when stdin is a TTY. On a pipe (e.g. nvim `jobstart`,
-/// or `jet start < script.py`) a raw `libc::read` here would race the
-/// pipe-mode `BufReader::read_line` and swallow input bytes.
-async fn with_stdin_intr_watcher<Fut, T>(on_intr: impl Fn() + Send + Sync + 'static, f: Fut) -> T
-where
-    Fut: std::future::Future<Output = T>,
-{
-    use std::io::IsTerminal;
-    use std::os::fd::{AsRawFd, OwnedFd};
-
-    if !std::io::stdin().is_terminal() {
-        return f.await;
-    }
-
-    let (read_fd, write_fd): (OwnedFd, OwnedFd) = match nix_pipe() {
-        Ok(p) => p,
-        Err(_) => return f.await,
-    };
-    let read_fd_raw = read_fd.as_raw_fd();
-    let on_intr = Arc::new(on_intr);
-    let on_intr_thread = on_intr.clone();
-
-    let handle = std::thread::spawn(move || {
-        let stdin = libc::STDIN_FILENO;
-        loop {
-            let mut pfds = [
-                libc::pollfd {
-                    fd: stdin,
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
-                libc::pollfd {
-                    fd: read_fd_raw,
-                    events: libc::POLLIN,
-                    revents: 0,
-                },
-            ];
-            let rc = unsafe { libc::poll(pfds.as_mut_ptr(), 2, -1) };
-            if rc < 0 {
-                continue;
-            }
-            if pfds[1].revents & libc::POLLIN != 0 {
-                return;
-            }
-            if pfds[0].revents & libc::POLLIN != 0 {
-                let mut b = [0u8; 1];
-                let n = unsafe { libc::read(stdin, b.as_mut_ptr() as _, 1) };
-                if n <= 0 {
-                    continue;
-                }
-                if b[0] == 0x03 {
-                    on_intr_thread();
-                }
-            }
-        }
-    });
-
-    let result = f.await;
-
-    {
-        let buf = [0u8; 1];
-        let _ = unsafe { libc::write(write_fd.as_raw_fd(), buf.as_ptr() as _, 1) };
-    }
-    let _ = handle.join();
-    result
-}
-
-fn nix_pipe() -> std::io::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
-    use std::os::fd::FromRawFd;
-    let mut fds = [0i32; 2];
-    let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
-    if rc != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    unsafe {
-        Ok((
-            std::os::fd::OwnedFd::from_raw_fd(fds[0]),
-            std::os::fd::OwnedFd::from_raw_fd(fds[1]),
-        ))
-    }
-}
-
 /// Wait for the IsCompleteReply matching `target`. Returns `None` on
 /// timeout or channel close — caller treats that as "execute anyway".
 async fn wait_for_is_complete(
@@ -618,30 +532,26 @@ pub async fn drive_repl(
         let _ = session.request(req)?;
 
         let outcome = loop {
-            let (intr_tx, mut intr_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-            let r = with_stdin_intr_watcher(
-                move || {
-                    let _ = intr_tx.send(());
-                },
-                async {
-                    loop {
-                        tokio::select! {
-                            r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id, Duration::from_secs(300)) => return r,
-                            _ = await_kernel_exited(session.watch_status()) => return WaitResult::Closed,
-                            _ = intr_rx.recv() => {
-                                if let Err(e) = session.interrupt().await {
-                                    eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
-                                }
-                            }
-                            _ = sigint.recv() => {
-                                if let Err(e) = session.interrupt().await {
-                                    eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
-                                }
+            // reedline 0.48 enables raw mode at the start of each read_line
+            // and disables it on exit (engine.rs:766/774), so the TTY is in
+            // cooked mode here, between read_lines, and ISIG is on. A real
+            // ^C therefore generates SIGINT directly, which `sigint.recv()`
+            // catches below. No stdin-byte watcher: that races whatever is
+            // piping in input (nvim chansend, `jet start < script.py`) and
+            // silently swallows non-^C bytes destined for the next read.
+            let r: WaitResult = async {
+                loop {
+                    tokio::select! {
+                        r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id, Duration::from_secs(300)) => return r,
+                        _ = await_kernel_exited(session.watch_status()) => return WaitResult::Closed,
+                        _ = sigint.recv() => {
+                            if let Err(e) = session.interrupt().await {
+                                eprintln!("{}", ansi::red(&format!("Interrupt failed: {e}")));
                             }
                         }
                     }
-                },
-            )
+                }
+            }
             .await;
 
             match r {

@@ -6,7 +6,9 @@
 #   scripts/minitest tests/test_chansend.lua  # single file
 #
 # Vendors mini.nvim into deps/mini.nvim on first run (cached after that).
-# Builds the jet binary in --release before running so the test can spawn it.
+# Builds the artifacts the plugin needs before running:
+#   - jet_cli (release): the `jet` binary the plugin shells out to
+#   - jet_lua (debug):   the cdylib loaded by `require('jet.core.engine')`
 
 set -euo pipefail
 
@@ -19,6 +21,7 @@ if [ ! -d deps/mini.nvim ]; then
 fi
 
 cargo build --release -p jet_cli >&2
+cargo build -p jet_lua >&2
 
 FILE="${1:-}"
 if [ -n "$FILE" ]; then
@@ -27,5 +30,4 @@ else
   CMD="lua require('mini.test').run()"
 fi
 
-# `nvim --headless` exits with the status set by mini.test's reporter (via os.exit).
 nvim --headless --noplugin -u tests/init.lua -c "$CMD"
