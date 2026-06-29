@@ -1,4 +1,5 @@
 .claude/
 /target
 /kernels
+/deps
 *.log

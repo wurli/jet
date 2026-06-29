@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Headless mini.test runner.
+#
+# Usage:
+#   scripts/minitest                          # all tests
+#   scripts/minitest tests/test_chansend.lua  # single file
+#
+# Vendors mini.nvim into deps/mini.nvim on first run (cached after that).
+# Builds the jet binary in --release before running so the test can spawn it.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+if [ ! -d deps/mini.nvim ]; then
+  echo "fetching mini.nvim into deps/mini.nvim ..."
+  mkdir -p deps
+  git clone --depth=1 https://github.com/nvim-mini/mini.nvim deps/mini.nvim
+fi
+
+cargo build --release -p jet_cli >&2
+
+FILE="${1:-}"
+if [ -n "$FILE" ]; then
+  CMD="lua require('mini.test').run_file('$FILE')"
+else
+  CMD="lua require('mini.test').run()"
+fi
+
+# `nvim --headless` exits with the status set by mini.test's reporter (via os.exit).
+nvim --headless --noplugin -u tests/init.lua -c "$CMD"
