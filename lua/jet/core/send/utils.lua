@@ -46,13 +46,13 @@ M.local_lang_info = function(buf, pos)
 			return
 		end
 
-		local lang = lang_tree:lang()
-		local filetypes = vim.treesitter.language.get_filetypes(lang)
+		treesitter_ft = lang_tree:lang()
+		local filetypes = vim.treesitter.language.get_filetypes(treesitter_ft)
 		for _, ft in ipairs(filetypes) do
 			local cur_cs = vim.filetype.get_option(ft, "commentstring")
 			if cur_cs ~= "" and level > res_level then
-				treesitter_ft = ft
 				treesitter_cs = cur_cs
+				break
 			end
 		end
 
