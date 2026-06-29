@@ -79,36 +79,6 @@ M.resolve_filetype = function(opts)
 	error(("Could not resolve filetype based on extension `%s`"):format(opts.extension))
 end
 
----Gets the filetype, first at the position, then for the buffer if that fails.
----
----@param bufnr? number
----@param pos? number[]
----@return string|nil
-M.get_cur_filetype = function(bufnr, pos)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	pos = pos or { vim.fn.line("."), vim.fn.col(".") }
-	local buf_ft = vim.bo[bufnr].filetype
-	local ft = buf_ft == "" and nil or buf_ft
-
-	if not pos then
-		return ft
-	end
-
-	local parser = vim.treesitter.get_parser(bufnr, nil, { error = false })
-	if not parser then
-		return ft
-	end
-
-	return parser
-		:language_for_range({
-			pos[1] - 1,
-			pos[2] - 1,
-			pos[1] - 1,
-			pos[2],
-		})
-		:lang()
-end
-
 -- vim.keymap.set("n", "<cr>", function()
 -- 	vim.print(M.get_filetype(0, { vim.fn.line("."), vim.fn.col(".") }))
 -- end, {})

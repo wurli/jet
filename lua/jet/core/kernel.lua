@@ -336,6 +336,18 @@ function Kernel:comm_send(comm_id, data)
 	require("jet.core.engine").comm_send(self.client_id, comm_id, data)
 end
 
+---@param code string | string[]
+function Kernel:send_repl(code)
+	assert(self.term and self.term.job_id, "Kernel has no repl job id")
+
+	if type(code) == "string" then
+		code = vim.split(code, "\n", { plain = true })
+	end
+	vim.print(code)
+
+	vim.fn.chansend(self.term.job_id, code)
+end
+
 -- ---@param code string | string[]
 -- ---@param user_expressions table<string, string>?
 -- function Kernel:execute(code, user_expressions)

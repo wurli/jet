@@ -52,6 +52,7 @@ Api.list_kernels = function(type)
 			table.insert(out, {
 				spec_path = k.spec_path,
 				spec = k.spec,
+				session_id = k.session_id,
 				connected_instance = k,
 			})
 		end
@@ -78,6 +79,7 @@ end
 ---@field spec_path? string
 ---@field filetype? string
 ---@field display_name? string
+---@field primary? boolean
 
 ---@param kernels jet.kernels.item[]
 ---@param opts? jet.api.filter_kernels.opts
@@ -88,21 +90,32 @@ Api.filter_kernels = function(kernels, opts)
 	return vim.tbl_filter(function(item)
 		-- spec_path: present for all kernels
 		if opts.spec_path and item.spec_path ~= opts.spec_path then
+			print("spec_path mismatch")
 			return false
 		end
 
 		-- display_name: resent for all kernels
 		if opts.display_name and not item.spec.display_name:lower():match(opts.display_name:lower()) then
+			print("display_name mismatch")
 			return false
 		end
 
 		-- session_id: present for connected and external kernels
 		if opts.session_id and item.session_id ~= opts.session_id then
+			print("session_id mismatch")
 			return false
 		end
 
 		-- filetype: present for connected kernels (if we could resolve it) and for other kernels if explicitly configured
 		if opts.filetype and opts.filetype ~= (item.connected_instance and item.connected_instance.filetype or nil) then
+			print("filetype mismatch")
+			return false
+		end
+
+		if
+			opts.primary
+			and not (item.session_id and vim.tbl_contains(vim.tbl_values(manager.filetype_primary), item.session_id))
+		then
 			return false
 		end
 

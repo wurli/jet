@@ -205,11 +205,20 @@ async fn await_kernel_exited(mut rx: tokio::sync::watch::Receiver<KernelStatus>)
 /// Run a stdin-byte watcher for the lifetime of `f`. rustyline keeps the
 /// tty in raw mode (ISIG off) between readlines, so a real ^C during a
 /// kernel request arrives as the byte 0x03 on stdin instead of a SIGINT.
+///
+/// Only meaningful when stdin is a TTY. On a pipe (e.g. nvim `jobstart`,
+/// or `jet start < script.py`) a raw `libc::read` here would race the
+/// pipe-mode `BufReader::read_line` and swallow input bytes.
 async fn with_stdin_intr_watcher<Fut, T>(on_intr: impl Fn() + Send + Sync + 'static, f: Fut) -> T
 where
     Fut: std::future::Future<Output = T>,
 {
+    use std::io::IsTerminal;
     use std::os::fd::{AsRawFd, OwnedFd};
+
+    if !std::io::stdin().is_terminal() {
+        return f.await;
+    }
 
     let (read_fd, write_fd): (OwnedFd, OwnedFd) = match nix_pipe() {
         Ok(p) => p,
