@@ -69,7 +69,7 @@ impl Prompt for JetPrompt {
         Cow::Borrowed("")
     }
     fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
-        Cow::Borrowed("::: ")
+        Cow::Borrowed("+ ")
     }
     fn render_prompt_history_search_indicator(
         &self,
