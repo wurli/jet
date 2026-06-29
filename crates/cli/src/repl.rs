@@ -71,6 +71,12 @@ impl Prompt for JetPrompt {
     fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
         Cow::Borrowed("+ ")
     }
+    fn get_prompt_multiline_color(&self) -> nu_ansi_term::Color {
+        // Match the single-line prompt's default (Color::Green); reedline's
+        // default multiline color is LightBlue, which clashes with the
+        // green `>` we use for the primary prompt.
+        nu_ansi_term::Color::Green
+    }
     fn render_prompt_history_search_indicator(
         &self,
         history_search: PromptHistorySearch,

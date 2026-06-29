@@ -804,6 +804,7 @@ dependencies = [
  "jet_core",
  "libc",
  "log",
+ "nu-ansi-term",
  "portable-pty",
  "rand 0.8.6",
  "reedline",
