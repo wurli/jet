@@ -104,6 +104,52 @@ fn normalise_banner(line: &str) -> String {
     }
 }
 
+/// Macro replacement for `if !ipykernel_available() { skip(...); return }` +
+/// kernelspec prep. Returns the kernelspec path or `None` (logging SKIP)
+/// when the test should be silently skipped.
+fn python_kernelspec_or_skip() -> Option<std::path::PathBuf> {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return None;
+    }
+    match ensure_python_kernelspec() {
+        Ok(p) => Some(p),
+        Err(e) => {
+            skip(&format!("could not prepare kernelspec: {e}"));
+            None
+        }
+    }
+}
+
+/// Generate a unique connection-file path under tmpdir.
+fn temp_conn_file(slug: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "jet-snap-{slug}-{:x}.json",
+        rand::thread_rng().r#gen::<u64>()
+    ))
+}
+
+/// Spawn a `jet start` harness against a python kernel, wait for the
+/// banner, and settle. Returns the harness ready for input.
+fn start_jet(
+    kernel_json: &std::path::Path,
+    xdg: &std::path::Path,
+    conn_str: &str,
+    extra_args: &[&str],
+) -> Result<Harness> {
+    let kernel_arg = kernel_json.to_str().unwrap().to_string();
+    let mut args: Vec<&str> = vec!["start", "--connection-file", conn_str];
+    args.extend_from_slice(extra_args);
+    args.push(&kernel_arg);
+    let h = Harness::spawn(&args, xdg, conn_str)?;
+    assert!(
+        h.wait_for("Python", Duration::from_secs(20)),
+        "kernel banner never landed"
+    );
+    h.settle(Duration::from_millis(300), Duration::from_secs(2));
+    Ok(h)
+}
+
 fn scratch_xdg_dir() -> std::path::PathBuf {
     let p = std::env::temp_dir().join(format!(
         "jet-xdg-test-{:x}",
@@ -195,11 +241,36 @@ impl Harness {
     }
 
     /// Wait up to `timeout` for the raw output stream to contain `needle`.
-    /// Returns true on success, false on timeout.
+    /// Returns true on success, false on timeout. Use this when the needle
+    /// is plain ASCII unlikely to be split across escape sequences (banner
+    /// substrings, markers within `print()` output, etc.). For "the
+    /// rendered screen shows X" use [`Harness::wait_for_screen`].
     fn wait_for(&self, needle: &str, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         while Instant::now() < deadline {
             if self.output.lock().unwrap().contains(needle) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    /// Wait until the rendered visible screen (via vt100) contains
+    /// `needle`. More robust than `wait_for` when the needle would be
+    /// interrupted by ANSI escapes in the raw stream (e.g. matching
+    /// across a line break or after a bracketed-paste sequence).
+    fn wait_for_screen(&self, needle: &str, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if self
+                .parser
+                .lock()
+                .unwrap()
+                .screen()
+                .contents()
+                .contains(needle)
+            {
                 return true;
             }
             std::thread::sleep(Duration::from_millis(50));
@@ -338,43 +409,14 @@ fn spawn_reader(
 /// execute one print, snapshot the resulting screen.
 #[test]
 fn single_client_executes_print() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
         return;
-    }
-    let kernel_json = match ensure_python_kernelspec() {
-        Ok(p) => p,
-        Err(e) => {
-            skip(&format!("could not prepare kernelspec: {e}"));
-            return;
-        }
     };
-
     let xdg = scratch_xdg_dir();
-    let conn = std::env::temp_dir().join(format!(
-        "jet-snap-single-{:x}.json",
-        rand::thread_rng().r#gen::<u64>()
-    ));
+    let conn = temp_conn_file("single");
     let conn_str = conn.to_string_lossy().to_string();
 
-    let mut h = Harness::spawn(
-        &[
-            "start",
-            "--connection-file",
-            &conn_str,
-            kernel_json.to_str().unwrap(),
-        ],
-        &xdg,
-        &conn_str,
-    )
-    .expect("spawn");
-
-    assert!(
-        h.wait_for("Python", Duration::from_secs(20)),
-        "kernel banner never landed"
-    );
-    h.settle(Duration::from_millis(300), Duration::from_secs(2));
-
+    let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
     h.send(b"print(\"hello, jet\")\n").unwrap();
     assert!(
         h.wait_for("hello, jet", Duration::from_secs(10)),
@@ -393,42 +435,14 @@ fn single_client_executes_print() {
 /// prompt is preserved.
 #[test]
 fn two_clients_foreign_print_is_tagged_and_visible() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
         return;
-    }
-    let kernel_json = match ensure_python_kernelspec() {
-        Ok(p) => p,
-        Err(e) => {
-            skip(&format!("could not prepare kernelspec: {e}"));
-            return;
-        }
     };
-
     let xdg = scratch_xdg_dir();
-    let conn = std::env::temp_dir().join(format!(
-        "jet-snap-foreign-{:x}.json",
-        rand::thread_rng().r#gen::<u64>()
-    ));
+    let conn = temp_conn_file("foreign");
     let conn_str = conn.to_string_lossy().to_string();
 
-    let t1 = Harness::spawn(
-        &[
-            "start",
-            "--persist",
-            "--connection-file",
-            &conn_str,
-            kernel_json.to_str().unwrap(),
-        ],
-        &xdg,
-        &conn_str,
-    )
-    .expect("spawn t1");
-    assert!(
-        t1.wait_for("Python", Duration::from_secs(20)),
-        "t1 banner never landed"
-    );
-    t1.settle(Duration::from_millis(300), Duration::from_secs(2));
+    let t1 = start_jet(&kernel_json, &xdg, &conn_str, &["--persist"]).expect("spawn t1");
 
     let mut t2 = Harness::spawn(
         &["attach", "--connection-file", &conn_str],
@@ -438,10 +452,6 @@ fn two_clients_foreign_print_is_tagged_and_visible() {
         "",
     )
     .expect("spawn t2");
-    // t2's prompt is ready when it has any local "> " row drawn — but
-    // since reedline's prompt uses ANSI we wait on `"\x1b[38;5;10m> "`
-    // which is the bright-green prompt indicator. Easier: just wait a
-    // beat after spawn.
     t2.settle(Duration::from_millis(500), Duration::from_secs(3));
 
     t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
@@ -458,4 +468,163 @@ fn two_clients_foreign_print_is_tagged_and_visible() {
 
     t2.shutdown();
     t1.shutdown();
+}
+
+/// The kernel banner is rendered before the first `> ` prompt, not
+/// sandwiched between two prompts. Replaces the old assertion-based
+/// `spawn_emits_kernel_banner` test.
+#[test]
+fn banner_renders_before_first_prompt() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("banner");
+    let conn_str = conn.to_string_lossy().to_string();
+
+    let h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
+    // Banner must precede the first prompt in the raw byte stream.
+    let captured = h.output.lock().unwrap().clone();
+    let banner_idx = captured.find("Python ").expect("banner present");
+    let prompt_idx = captured.find("> ").expect("prompt present");
+    assert!(
+        banner_idx < prompt_idx,
+        "banner must precede the first '> ' prompt; got:\n{captured}",
+    );
+
+    insta::assert_snapshot!("banner_renders_before_first_prompt", h.snapshot_screen());
+    h.shutdown();
+}
+
+/// A complete one-liner executes without showing a continuation prompt.
+/// Snapshot captures the value (`2`) appearing directly under `> 1+1`,
+/// with no `+ ` in between.
+#[test]
+fn complete_one_liner_executes() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("oneliner");
+    let conn_str = conn.to_string_lossy().to_string();
+
+    let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
+    // Use print so the result is a stdout stream — not an ipykernel
+    // `Out[1]:` echo. snapshot captures the value directly under the
+    // typed line with no `+ ` continuation in between.
+    h.send(b"print(1+1)\n").unwrap();
+    assert!(
+        h.wait_for_screen("\n2\n", Duration::from_secs(15)),
+        "did not see '2' result"
+    );
+    h.settle(Duration::from_millis(300), Duration::from_secs(2));
+    insta::assert_snapshot!("complete_one_liner_executes", h.snapshot_screen());
+    h.shutdown();
+}
+
+/// Multi-line function definition: `def f():` is incomplete so jet
+/// should show a `+ ` continuation prompt with the kernel-suggested
+/// indent; an empty line closes the block; `f()` then runs and returns
+/// `42`. Snapshot captures the whole sequence on screen.
+#[test]
+fn multi_line_function_definition_executes() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("multiline");
+    let conn_str = conn.to_string_lossy().to_string();
+
+    let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
+    h.send(b"def f():\n").unwrap();
+    h.settle(Duration::from_millis(400), Duration::from_secs(2));
+    h.send(b"    return 42\n").unwrap();
+    h.settle(Duration::from_millis(200), Duration::from_secs(2));
+    // Empty line closes the def-block, then call f().
+    h.send(b"\n").unwrap();
+    h.settle(Duration::from_millis(200), Duration::from_secs(2));
+    h.send(b"print(f())\n").unwrap();
+    assert!(
+        h.wait_for_screen("42", Duration::from_secs(15)),
+        "did not see '42' from f()"
+    );
+    h.settle(Duration::from_millis(400), Duration::from_secs(2));
+    insta::assert_snapshot!(
+        "multi_line_function_definition_executes",
+        h.snapshot_screen()
+    );
+    h.shutdown();
+}
+
+/// Backspace at an empty continuation line merges the prior accumulator
+/// line back into the editor. We submit `x = (`, which ipykernel reports
+/// Incomplete (waiting for `)`). With merge-back working we can erase
+/// the broken line via Backspace and submit a clean `print(...)` that
+/// the kernel actually executes. Without merge-back the unclosed paren
+/// keeps the buffer Incomplete forever and the marker never appears.
+#[test]
+fn backspace_merges_continuation_back_into_editor() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("backspace");
+    let conn_str = conn.to_string_lossy().to_string();
+
+    let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
+    h.send(b"x = (\n").unwrap();
+    h.settle(Duration::from_millis(400), Duration::from_secs(2));
+    // 1 merge-back + 5 chars to clear + 2 spare = 8 DELs. Pacing the
+    // bytes (15ms) gives reedline time to route each one separately.
+    for _ in 0..8 {
+        h.send(b"\x7f").unwrap();
+        std::thread::sleep(Duration::from_millis(15));
+    }
+    h.settle(Duration::from_millis(200), Duration::from_secs(1));
+    // Assemble the marker at runtime so the typed echo doesn't itself
+    // contain it — only kernel-executed `print` output will.
+    let marker = "merged-backspace-9f31";
+    h.send(b"print(chr(109) + \"erged-backspace-9f31\")\n").unwrap();
+    assert!(
+        h.wait_for(marker, Duration::from_secs(10)),
+        "marker {marker:?} never appeared — merge-back regressed"
+    );
+    h.settle(Duration::from_millis(300), Duration::from_secs(2));
+    insta::assert_snapshot!(
+        "backspace_merges_continuation_back_into_editor",
+        h.snapshot_screen()
+    );
+    h.shutdown();
+}
+
+/// `input(prompt)` from the kernel surfaces the prompt and accepts the
+/// user's reply. Replaces the assertion-based input_request test.
+#[test]
+fn input_request_displays_and_accepts_value() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("input");
+    let conn_str = conn.to_string_lossy().to_string();
+
+    let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
+    // Raw mode: \r is the Enter keycode (\n becomes a literal char).
+    h.send(b"v = input('ASK> '); print('GOT:' + v)\r").unwrap();
+    assert!(
+        h.wait_for("ASK> ", Duration::from_secs(15)),
+        "input prompt 'ASK> ' never appeared"
+    );
+    h.settle(Duration::from_millis(300), Duration::from_secs(2));
+    h.send(b"hello-input\r").unwrap();
+    assert!(
+        h.wait_for("GOT:hello-input", Duration::from_secs(10)),
+        "kernel did not echo input value back"
+    );
+    h.settle(Duration::from_millis(300), Duration::from_secs(2));
+    insta::assert_snapshot!(
+        "input_request_displays_and_accepts_value",
+        h.snapshot_screen()
+    );
+    h.shutdown();
 }
