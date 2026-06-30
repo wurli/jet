@@ -159,6 +159,21 @@ function Kernel:create_term(callback)
 	end
 end
 
+---@alias jet.kernel.status "connected" | "attached" | "inactive"
+
+---@return jet.kernel.status
+function Kernel:status()
+	if self.client_id then
+		return "connected"
+	elseif self.session_id then
+		return "attached"
+	elseif self.spec_path then
+		return "inactive"
+	else
+		error("Kernel has neither client_id, session_id or spec_path: " .. vim.inspect(self))
+	end
+end
+
 function Kernel:set_as_filetype_primary()
 	assert(self.filetype, "Kernel has no filetype")
 	manager.filetype_primary[self.filetype] = self.session_id
@@ -340,14 +355,24 @@ end
 function Kernel:send_repl(code)
 	assert(self.term and self.term.job_id, "Kernel has no repl job id")
 
+	-- Wrap in a bracketed-paste sequence so the REPL on the other end
+	-- accumulates the whole block as one cell instead of evaluating each
+	-- line separately, then submit with a single CR (Enter, in raw mode).
+	-- This is exactly what a terminal emits on Cmd/Ctrl+V — works with
+	-- any REPL that honors bracketed paste.
 	if type(code) == "table" then
 		code = table.concat(code, "\n")
 	end
 
-	-- Drop a trailing newline if the caller already added one — we add
-	-- our own submit-Enter below and don't want a stray empty line.
-	code = code:gsub("\n$", "")
-	local payload = code:gsub("\n", "\x1b\r") .. "\r"
+	code = code:gsub("\n-$", "")
+
+	-- We use bracketed paste so the Jet REPL knows not to evaluate the code
+	-- until the end of the paste. This matches behaviour of Positron.
+	-- TODO: make this configurable?
+	local bracketed_paste_start = "\x1b[200~"
+	local bracketed_paste_end = "\x1b[201~"
+
+	local payload = bracketed_paste_start .. code .. bracketed_paste_end .. "\r"
 
 	vim.fn.chansend(self.term.job_id, payload)
 end
