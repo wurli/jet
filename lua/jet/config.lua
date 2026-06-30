@@ -12,6 +12,10 @@ M.defaults = {
 	---@type table<string, string>
 	default_kernels = {},
 	repl_win_opts = {}, ---@type vim.api.keyset.win_config
+	hooks = {
+		on_kernel_init = {}, ---@type fun(k: jet.kernel)[] end,
+		on_lua_client_start = {}, ---@type fun(k: jet.kernel)[] end,
+	},
 }
 
 ---@class jet.data

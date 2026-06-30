@@ -85,35 +85,31 @@ end
 ---@return jet.kernel[]
 Api.filter_kernels = function(kernels, opts)
 	opts = opts or {}
-	---@param item jet.kernel
-	return vim.tbl_filter(function(item)
+	---@param k jet.kernel
+	return vim.tbl_filter(function(k)
 		-- spec_path: present for all kernels
-		if opts.spec_path and item.spec_path ~= opts.spec_path then
-			print("spec_path mismatch")
+		if opts.spec_path and k.spec_path ~= opts.spec_path then
 			return false
 		end
 
 		-- display_name: resent for all kernels
-		if opts.display_name and not item.spec.display_name:lower():match(opts.display_name:lower()) then
-			print("display_name mismatch")
+		if opts.display_name and not k.spec.display_name:lower():match(opts.display_name:lower()) then
 			return false
 		end
 
 		-- session_id: present for connected and external kernels
-		if opts.session_id and item.session_id ~= opts.session_id then
-			print("session_id mismatch")
+		if opts.session_id and k.session_id ~= opts.session_id then
 			return false
 		end
 
 		-- filetype: present for connected kernels (if we could resolve it) and for other kernels if explicitly configured
-		if opts.filetype and opts.filetype ~= item.filetype then
-			print("filetype mismatch")
+		if opts.filetype and opts.filetype ~= k.filetype then
 			return false
 		end
 
 		if
 			opts.primary
-			and not (item.session_id and vim.tbl_contains(vim.tbl_values(manager.filetype_primary), item.session_id))
+			and not (k.session_id and vim.tbl_contains(vim.tbl_values(manager.filetype_primary), k.session_id))
 		then
 			return false
 		end

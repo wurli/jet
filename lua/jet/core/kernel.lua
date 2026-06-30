@@ -35,9 +35,9 @@ setmetatable(Kernel, {
 })
 
 ---@class jet.kernel.init_owned.opts
+---@field spec_path string
 ---@field session_name? string
 ---@field spec? jet.kernel.spec | jet.kernel.paritalspec
----@field spec_path string
 ---@field connection_file? string
 
 ---@param opts jet.kernel.init_owned.opts
@@ -52,7 +52,13 @@ function Kernel.init_owned(opts)
 		comms = {},
 	})
 
-	return setmetatable(obj, Kernel)
+	local out = setmetatable(obj, Kernel)
+
+	for _, hook in ipairs(config.hooks.on_kernel_init) do
+		hook(out)
+	end
+
+	return out
 end
 
 ---@class jet.kernel.init_external.opts
@@ -64,13 +70,19 @@ function Kernel.init_external(opts)
 	assert(opts.session_id, "Kernel session ID is not set")
 	local view = require("jet.core.engine").show_session(opts.session_id)
 
-	return setmetatable({
+	local out = setmetatable({
 		session_id = opts.session_id,
 		spec = view.spec,
 		spec_path = view.session.kernelspec_path,
 		owned = false,
 		comms = {},
 	}, Kernel)
+
+	for _, hook in ipairs(config.hooks.on_kernel_init) do
+		hook(out)
+	end
+
+	return out
 end
 
 ---@param session_id string
@@ -209,10 +221,6 @@ function Kernel:start_lua_client(callback)
 
 			manager:insert(self)
 
-			require("jet.core.autocmd").kernel_started({
-				session_id = self.session_id,
-			})
-
 			-- Try resolving filetype after kernel started autocmd so the user
 			-- has a chance to override it.
 			self:try_resolve_filetype()
@@ -222,6 +230,10 @@ function Kernel:start_lua_client(callback)
 			-- primary we should set this one for convenience.
 			if self.filetype and not manager.filetype_primary[self.filetype] then
 				self:set_as_filetype_primary()
+			end
+
+			for _, hook in ipairs(config.hooks.on_lua_client_start) do
+				hook(self)
 			end
 
 			if callback then
@@ -249,12 +261,10 @@ end
 ---
 --- TODO: let the user override the filetype per-kernel
 function Kernel:try_resolve_filetype()
-	if
-		not self.filetype
-		and self.kernel_info
-		and self.kernel_info.language_info
-		and self.kernel_info.language_info.file_extension
-	then
+	if self.filetype then
+		return
+	end
+	if self.kernel_info and self.kernel_info.language_info and self.kernel_info.language_info.file_extension then
 		local ft, _, is_fallback = vim.filetype.match({
 			-- Idk if 'dummy-file' is ever gonna make a difference, felt right tho
 			filename = "dummy-file" .. self.kernel_info.language_info.file_extension,
