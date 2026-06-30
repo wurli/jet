@@ -26,65 +26,16 @@
 #![allow(clippy::zombie_processes)]
 
 use std::io::{Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rand::Rng;
-use serde_json::json;
 
-// ─────────────────────────────────────────────────────────────────────
-// Test gates and isolation helpers (duplicated from repl.rs because
-// integration test files don't share state via cfg(test) modules).
-// ─────────────────────────────────────────────────────────────────────
-
-fn which(name: &str) -> Option<String> {
-    let out = Command::new("which").arg(name).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
-}
-
-fn skip(reason: &str) {
-    eprintln!("SKIP: {reason}");
-}
-
-fn ipykernel_available() -> bool {
-    Command::new("python3")
-        .args(["-c", "import ipykernel"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
-    let user = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("Library/Jupyter/kernels/python3/kernel.json");
-    if user.exists() {
-        return Ok(user);
-    }
-    let python = which("python3").ok_or_else(|| anyhow::anyhow!("python3 not on PATH"))?;
-    let dir = std::env::temp_dir().join(format!(
-        "jet-test-kernelspec-{:x}",
-        rand::thread_rng().r#gen::<u64>()
-    ));
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join("kernel.json");
-    let spec = json!({
-        "argv": [python, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
-        "display_name": "Python (jet test)",
-        "language": "python",
-        "interrupt_mode": "signal",
-    });
-    std::fs::write(&path, serde_json::to_vec_pretty(&spec)?)?;
-    Ok(path)
-}
+mod common;
+use common::*;
 
 /// Collapse the volatile parts of the IPython/Python banner so snapshots
 /// survive python/ipykernel/clang version bumps. Matches anything that
@@ -176,15 +127,6 @@ fn start_pair(
     let t2 = Harness::spawn(&attach_args, xdg, "")?;
     t2.settle(Duration::from_millis(500), Duration::from_secs(3));
     Ok((t1, t2))
-}
-
-fn scratch_xdg_dir() -> std::path::PathBuf {
-    let p = std::env::temp_dir().join(format!(
-        "jet-xdg-test-{:x}",
-        rand::thread_rng().r#gen::<u64>()
-    ));
-    std::fs::create_dir_all(&p).unwrap();
-    p
 }
 
 // ─────────────────────────────────────────────────────────────────────
