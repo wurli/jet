@@ -49,6 +49,7 @@ for msg in kernel.stream() do
 		break
 	end
 end
+-- TODO: this seems to (very rarely) fail.
 assert(saw_iopub_stream_2, "expected to see 'iopub'/stream frame containing '2' in firehose")
 
 -- Check for messages in filtered listener ------------------------------------
