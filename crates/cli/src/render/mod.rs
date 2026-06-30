@@ -273,7 +273,14 @@ impl Renderer {
         let tag = Self::foreign_tag(prefix);
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
-        write!(w, "\r\n{tag}> {code}\r\n")?;
+        // Multi-line cells: the first line takes a `> ` indicator; each
+        // continuation line takes `+ `, matching the prompt style. Each
+        // wrapped line gets its own session tag.
+        write!(w, "\r\n")?;
+        for (i, line) in code.split('\n').enumerate() {
+            let indicator = if i == 0 { "> " } else { "+ " };
+            write!(w, "{tag}{indicator}{line}\r\n")?;
+        }
         *at_start = true;
         w.flush()?;
         Ok(())
