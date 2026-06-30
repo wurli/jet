@@ -8,19 +8,19 @@ M.setup = function()
 		local open = require("jet.core.kernel").open_term
 
 		if args[1] == "repl" then
-			return api.get_all({}, open)
+			return api.get_all({}, {}, open)
 		end
 
 		if args[1] == "open" then
-			return api.get_external({}, open)
+			return api.get_external({}, {}, open)
 		end
 
 		if args[1] == "start" then
-			return api.get_inactive({ spec_path = args[2] }, open)
+			return api.get_inactive({ spec_path = args[2] }, {}, open)
 		end
 
 		if args[1] == "attach" then
-			return api.get_external({}, open)
+			return api.get_external({}, {}, open)
 		end
 	end, {
 		desc = "Jet: work with Jupyter kernels",

@@ -24,85 +24,43 @@ local Api = {}
 -- |                                                              |
 -- +--------------------------------------------------------------+
 
----@class jet.api.list_kernels.opts
----@field connected? boolean
----@field external? boolean | jet.kernel.init_external.opts
----@field inactive? boolean | jet.kernel.init_owned.opts
-
----List all kernels, connected (running in nvim), external (running in a Jet session outside of nvim), and inactive (not running).
----
----TODO: document me!
----
----@param status jet.api.list_kernels.opts
----@return jet.kernel[]
-Api.list_kernels = function(status)
-	status = status or { connected = true, external = true, inactive = true }
-
-	for k, v in pairs(status) do
-		if v == true then
-			status[k] = {}
-		end
-	end
-
-	---@type jet.kernel[]
-	local out = {}
-
-	if status.connected then
-		for _, k in pairs(manager.kernels) do
-			table.insert(out, k)
-		end
-	end
-
-	if status.external then
-		for _, k in ipairs(require("jet.core.engine").list_sessions()) do
-			-- Don't include sessions that are already connected to Neovim
-			if not manager.kernels[k.session_id] then
-				local opts = vim.tbl_extend("keep", { session_id = k.session_id }, status.external)
-				table.insert(out, kernel.init_external(opts))
-			end
-		end
-	end
-
-	if status.inactive then
-		for _, k in ipairs(require("jet.core.engine").list_kernels()) do
-			local opts = vim.tbl_extend("keep", { spec_path = k.path, spec = k.spec }, status.inactive)
-			table.insert(out, kernel.init_owned(opts))
-		end
-	end
-
-	return out
-end
-
----@class jet.api.filter_kernels.opts
----@field session_id? string
+---@class jet.api.list_kernels.filters
+---@field session_id? string Implies `status` = "connected" or "external"
 ---@field spec_path? string
 ---@field filetype? string
 ---@field display_name? string
----@field primary? boolean
+---@field primary? boolean Implies `status` = "connected"
+---@field status? (jet.kernel.status)[]
 
 ---@param kernels jet.kernel[]
----@param opts? jet.api.filter_kernels.opts
+---@param opts? jet.api.list_kernels.filters
 ---@return jet.kernel[]
-Api.filter_kernels = function(kernels, opts)
+local filter_kernels = function(kernels, opts)
 	opts = opts or {}
+	opts.status = opts.status or { "connected", "external", "inactive" }
+	opts.status = type(opts.status) == "string" and { opts.status } or opts.status
+
 	---@param k jet.kernel
 	return vim.tbl_filter(function(k)
-		-- spec_path: present for all kernels
+		if not vim.tbl_contains(opts.status, k:status()) then
+			return false
+		end
+
 		if opts.spec_path and k.spec_path ~= opts.spec_path then
 			return false
 		end
 
-		-- display_name: resent for all kernels
 		if opts.display_name and not k.spec.display_name:lower():match(opts.display_name:lower()) then
 			return false
 		end
 
-		-- session_id: present for connected and external kernels
+		-- implies `status` = "connected" or "external"
 		if opts.session_id and k.session_id ~= opts.session_id then
 			return false
 		end
 
-		-- filetype: present for connected kernels (if we could resolve it) and for other kernels if explicitly configured
+		-- filetype is present for connected kernels if added through hooks,
+		-- and for other kernels if explicitly configured
 		if opts.filetype and opts.filetype ~= k.filetype then
 			return false
 		end
@@ -118,9 +76,45 @@ Api.filter_kernels = function(kernels, opts)
 	end, kernels)
 end
 
+---@param filters jet.api.list_kernels.filters
+---@param init_opts? {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
+---@return jet.kernel[]
+Api.list_kernels = function(filters, init_opts)
+	filters = filters or {}
+	filters.status = filters.status or { "connected", "external", "inactive" }
+	filters.status = type(filters.status) == "string" and { filters.status } or filters.status
+
+	---@type jet.kernel[]
+	local kernels = {}
+
+	if vim.tbl_contains(filters.status, "connected") then
+		for _, k in pairs(manager.kernels) do
+			table.insert(kernels, k)
+		end
+	end
+
+	if vim.tbl_contains(filters.status, "external") then
+		for _, k in ipairs(require("jet.core.engine").list_sessions()) do
+			-- Don't include sessions that are already connected to Neovim
+			if not manager.kernels[k.session_id] then
+				local init = vim.tbl_extend("keep", { session_id = k.session_id }, init_opts or {})
+				table.insert(kernels, kernel.init_external(init))
+			end
+		end
+	end
+
+	if vim.tbl_contains(filters.status, "inactive") then
+		for _, k in ipairs(require("jet.core.engine").list_kernels()) do
+			local init = vim.tbl_extend("keep", { spec_path = k.path, spec = k.spec }, init_opts or {})
+			table.insert(kernels, kernel.init_owned(init))
+		end
+	end
+
+	return filter_kernels(kernels, filters)
+end
+
 ---@param kernels jet.kernel[]
----@param opts? table
-local select_kernel = function(kernels, msg, callback, opts)
+local select_kernel = function(kernels, msg, callback)
 	vim.ui.select(kernels, {
 		prompt = msg,
 		---@param k jet.kernel
@@ -134,60 +128,65 @@ local select_kernel = function(kernels, msg, callback, opts)
 		end,
 	}, function(choice)
 		if choice then
-			callback(choice, opts)
+			callback(choice)
 		end
 	end)
 end
 
----Start a fresh kernel
+---Run `callback()` on a kernel which is not yet running
 ---
----@param opts? jet.api.get_all.opts
+---@param filters jet.api.list_kernels.filters
+---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-Api.get_inactive = function(opts, callback)
-	opts = opts or {}
+Api.get_inactive = function(filters, init_opts, callback)
+	filters = filters or {}
+	filters.status = { "inactive" }
 
-	---@diagnostic disable-next-line: assign-type-mismatch
-	local kernels = Api.filter_kernels(Api.list_kernels({ inactive = opts.init_opts or true }), opts.filter)
+	local kernels = Api.list_kernels(filters, init_opts)
 
 	if #kernels == 0 then
 		vim.notify("Could not find any kernels on the system", vim.log.levels.WARN)
+		return
 	end
 
 	-- Show user the choices even if only 1 kernel available
 	---@param k jet.kernel
 	select_kernel(kernels, "Select a kernel to start", function(k)
-		k:start_lua_client(callback)
+		callback(k)
 	end)
 end
 
----Attach to a kernel which is running externally (not in Neovim)
+---Run `callback()` on a kernel which is running but not connected to Neovim
 ---
----@param opts? jet.api.get_all.opts
+---@param filters jet.api.list_kernels.filters
+---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-Api.get_external = function(opts, callback)
-	opts = opts or {}
+Api.get_external = function(filters, init_opts, callback)
+	filters = filters or {}
+	filters.status = { "external" }
 
-	---@diagnostic disable-next-line: assign-type-mismatch
-	local external = Api.filter_kernels(Api.list_kernels({ external = opts.init_opts or true }), opts.filter)
+	local external = Api.list_kernels(filters, init_opts)
 
 	if #external == 0 then
 		vim.notify("No external running kernels to attach to", vim.log.levels.WARN)
-	else
-		---@param k jet.kernel
-		select_kernel(external, "Select an external kernel to open", function(k)
-			k:start_lua_client(callback)
-		end)
+		return
 	end
+
+	---@param k jet.kernel
+	select_kernel(external, "Select an external kernel to open", function(k)
+		callback(k)
+	end)
 end
 
----Get a kernel which is already running in Neovim
+---Run `callback()` on a kernel which is running and connected to Neovim
 ---
----@param opts? jet.api.get_all.opts
+---@param filters? jet.api.list_kernels.filters
 ---@param callback fun(k: jet.kernel)
-Api.get_connected = function(opts, callback)
-	opts = opts or {}
+Api.get_connected = function(filters, callback)
+	filters = filters or {}
+	filters.status = { "connected" }
 
-	local matches = Api.filter_kernels(Api.list_kernels({ connected = true }), opts.filter)
+	local matches = Api.list_kernels(filters)
 
 	if #matches == 0 then
 		vim.notify("No running kernels to attach to", vim.log.levels.WARN)
@@ -201,50 +200,27 @@ Api.get_connected = function(opts, callback)
 	end
 end
 
---- (1) try `get` (2) try `attach` (3) try `start` (4) fail
----
----@param k jet.kernel
----@param callback fun(k: jet.kernel)
-local get_all_impl = function(k, callback)
-	if k:status() == "connected" then
-		callback(k)
-	else
-		k:start_lua_client(callback)
-	end
-end
-
----@class jet.api.get_all.opts
----@field init_opts? jet.kernel.init_owned.opts | jet.kernel.init_external.opts
----@field filter? jet.api.filter_kernels.opts
-
--- Rule 1: has session_id -> (1) connect (2) attach (3) fail
--- Rule 2: has spec_path -> (1) connect (2) attach (3) start (4) fail
--- Rule 3: has filetype -> (1) connect (2) attach (3) start (4) fail
-
 ---Open a REPL for a kernel.
 ---
 ---The kernel may be running in Neovim already, running in a Jet session
 ---outside of Neovim, or not yet running.
 ---
----@param opts? jet.api.get_all.opts
+---@param filters jet.api.list_kernels.filters
+---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-Api.get_all = function(opts, callback)
-	opts = opts or {}
+Api.get_all = function(filters, init_opts, callback)
+	filters = filters or {}
 
-	local running = Api.filter_kernels(
-		---@diagnostic disable-next-line: assign-type-mismatch
-		Api.list_kernels({ connected = true, external = opts.init_opts or true, inactive = opts.init_opts or true }),
-		opts.filter
-	)
+	local running = Api.list_kernels(filters, init_opts)
 
 	if #running == 0 then
 		vim.notify("Could not find any kernels on the system", vim.log.levels.WARN)
-	elseif #running == 1 then
-		get_all_impl(running[1], callback)
+	elseif #running == 1 and running[1]:status() == "connected" then
+		callback(running[1])
 	else
 		---@param k jet.kernel
 		select_kernel(running, "Open a Jupyter REPL", function(k)
-			get_all_impl(k, callback)
+			callback(k)
 		end)
 	end
 end

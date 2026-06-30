@@ -171,14 +171,16 @@ function Kernel:create_term(callback)
 	end
 end
 
----@alias jet.kernel.status "connected" | "attached" | "inactive"
+---@alias jet.kernel.status "connected"
+---| "external"
+---| "inactive"
 
 ---@return jet.kernel.status
 function Kernel:status()
 	if self.client_id then
 		return "connected"
 	elseif self.session_id then
-		return "attached"
+		return "external"
 	elseif self.spec_path then
 		return "inactive"
 	else
