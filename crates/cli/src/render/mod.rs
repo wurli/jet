@@ -168,12 +168,79 @@ impl Renderer {
         );
 
         let is_foreign = !is_own_session;
+        // Foreign-session content (input echo, stream, errors): write
+        // straight to stdout with \r\n. Reedline is suspended via
+        // break_signal at this point, so we don't go through its external
+        // printer (whose `print_external_message` has buggy row accounting
+        // that triggers a screen-fill repaint).
+        if is_foreign {
+            use std::io::Write as _;
+            let tag = prefix
+                .as_deref()
+                .map(|p| format!("{} ", ansi::dim(&format!("[{p}]"))))
+                .unwrap_or_default();
+            let mut w = self.writer.lock().unwrap();
+            // Prefix every line with [name]. Translate \n to \r\n so we
+            // don't staircase if reedline's raw mode is still in effect.
+            // Each `\n` in the body gets the prefix re-emitted on the
+            // following line.
+            let render_prefixed = |w: &mut dyn std::io::Write, body: &str| -> std::io::Result<()> {
+                let mut first = true;
+                for line in body.split_inclusive('\n') {
+                    if !first {
+                        write!(w, "{tag}")?;
+                    }
+                    first = false;
+                    // Replace trailing \n with \r\n.
+                    if let Some(stripped) = line.strip_suffix('\n') {
+                        write!(w, "{stripped}\r\n")?;
+                    } else {
+                        write!(w, "{line}")?;
+                    }
+                }
+                Ok(())
+            };
+            match &event.data {
+                EventData::ExecuteInput { code } => {
+                    let _ = write!(w, "\r{tag}> {code}\r\n");
+                }
+                EventData::Stream { text, .. } => {
+                    // Stream text doesn't start with a prefix unless we are
+                    // at a fresh line; for now assume we are (the previous
+                    // foreign write ended in \r\n).
+                    let _ = write!(w, "{tag}");
+                    let _ = render_prefixed(&mut *w, text);
+                }
+                EventData::Error { traceback } => {
+                    let _ = write!(w, "{tag}");
+                    let _ = render_prefixed(&mut *w, traceback);
+                    let _ = write!(w, "\r\n");
+                }
+                _ => {}
+            }
+            let _ = w.flush();
+            drop(w);
+            // Still handle Busy/Idle for the prompt-park gate and idle
+            // notification.
+            match event.data {
+                EventData::Busy { .. } => {
+                    self.busy_state.busy.store(true, Ordering::SeqCst);
+                    *self.busy_state.holder.lock().unwrap() =
+                        session_name.map(|s| s.to_string());
+                    self.busy_state.break_signal.store(true, Ordering::SeqCst);
+                }
+                EventData::Idle { parent_id } => {
+                    self.busy_state.busy.store(false, Ordering::SeqCst);
+                    *self.busy_state.holder.lock().unwrap() = None;
+                    self.busy_state.notify.notify_waiters();
+                    let _ = self.idle_tx.send(parent_id.unwrap_or_default());
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
         match event.data {
             EventData::ExecuteInput { code } => {
-                // Skip the kernel's iopub echo of *our own* input —
-                // reedline already drew the prompt locally. For any
-                // other session's input we render `[name]> code` so the
-                // user can follow what other clients are doing.
                 if is_foreign {
                     self.write_line(&format!("> {code}"), prefix.as_deref(), is_foreign)?;
                 }
