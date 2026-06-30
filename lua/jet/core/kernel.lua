@@ -201,6 +201,9 @@ end
 ---@param callback? fun(k: jet.kernel)
 function Kernel:start_lua_client(callback)
 	if self:has_lua_client() then
+		if callback then
+			callback(self)
+		end
 		return
 	end
 
@@ -304,6 +307,10 @@ function Kernel:close()
 		else
 			utils.log_error("Failed to stop kernel '%s': %s", self.spec.display_name, vim.inspect(err))
 		end
+	end
+
+	for _, hook in ipairs(config.hooks.on_kernel_close) do
+		hook(self)
 	end
 end
 
