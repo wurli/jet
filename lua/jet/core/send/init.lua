@@ -10,7 +10,7 @@ local send_impl = function(code)
 
 	local ft, _ = require("jet.core.send.utils").local_lang_info()
 
-	require("jet.core.api").get_connected({ filter = { filetype = ft, primary = true } }, function(k)
+	require("jet.core.api").get_connected({ filetype = ft, primary = true }, function(k)
 		table.insert(code, "")
 		k:send_repl(code)
 	end)

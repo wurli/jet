@@ -373,23 +373,21 @@ function Kernel:send_repl(code)
 	-- This is exactly what a terminal emits on Cmd/Ctrl+V — works with
 	-- any REPL that honors bracketed paste.
 	if type(code) == "table" then
-		code = table.concat(code, "\n")
+		code = table.concat(code, "\r")
 	end
 
-	code = code:gsub("\n-$", "")
+	code = code:gsub("\r-$", "")
 
 	-- We use bracketed paste so the Jet REPL knows not to evaluate the code
 	-- until the end of the paste. This matches behaviour of Positron.
 	if not config.send.send_by_expr then
+		-- https://en.wikipedia.org/wiki/Bracketed-paste#Description_of_bracketed-paste
 		local bracketed_paste_start = "\x1b[200~"
 		local bracketed_paste_end = "\x1b[201~"
-		code = bracketed_paste_start .. code .. bracketed_paste_end .. "\r"
-	else
-		code = vim.split(code, "\n")
-		table.insert(code, "")
+		code = bracketed_paste_start .. code .. bracketed_paste_end
 	end
 
-	vim.fn.chansend(self.term.job_id, code)
+	vim.fn.chansend(self.term.job_id, code .. "\r")
 end
 
 -- ---@param code string | string[]
