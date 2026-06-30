@@ -11,67 +11,68 @@
 -- so this scenario is reached when callers use `jobstart` directly —
 -- exactly what the bug report described. We reproduce it here.
 
-local MiniTest = require("mini.test")
-
-local T = MiniTest.new_set()
-
-local function repo_root()
-	return vim.fn.fnamemodify(vim.fn.resolve(debug.getinfo(1).source:sub(2)), ":p:h:h")
-end
+local new_set = MiniTest.new_set
+local expect = MiniTest.expect
 
 local KERNEL_JSON = os.getenv("JET_KERNEL_JSON")
 assert(KERNEL_JSON, "JET_KERNEL_JSON env var must be set to a kernel.json path")
 
-T["chansend over plain pipe stdin delivers every line"] = function()
-	local kernel_json = KERNEL_JSON
-	local jet_bin = repo_root() .. "/target/release/jet"
-	if vim.fn.executable(jet_bin) ~= 1 then
-		MiniTest.skip("jet binary missing: " .. jet_bin)
-	end
+local child = MiniTest.new_child_neovim()
 
-	local marker = "JETPIPEOK-" .. tostring(os.time()) .. "-" .. tostring(math.random(1e9))
-	local output = {}
-	local job_id = vim.fn.jobstart({ jet_bin, "start", kernel_json }, {
-		on_stdout = function(_, data, _)
-			for _, l in ipairs(data) do
-				table.insert(output, l)
-			end
+local T = new_set({
+	hooks = {
+		pre_case = function()
+			child.restart({ "-u", "scripts/minimal_init.lua" })
 		end,
-		on_stderr = function(_, data, _)
-			for _, l in ipairs(data) do
-				table.insert(output, l)
+		post_once = child.stop,
+	},
+})
+
+T["chansend over plain pipe stdin delivers every line"] = function()
+	-- jobstart's on_stdout/on_stderr callbacks are functions, which can't
+	-- cross the RPC boundary — they have to be created inside the child.
+	-- Everything else (chansend, polling _G.output) goes through redirectors.
+	child.lua(
+		[[
+			_G.output = {}
+			local function collect(_, data, _)
+				for _, l in ipairs(data) do table.insert(_G.output, l) end
 			end
-		end,
-	})
-	MiniTest.expect.no_equality(job_id, 0)
-	MiniTest.expect.no_equality(job_id, -1)
+			_G.job_id = vim.fn.jobstart({ "jet", "start", ... }, {
+				on_stdout = collect,
+				on_stderr = collect,
+			})
+		]],
+		{ KERNEL_JSON }
+	)
+
+	local job_id = child.lua_get("_G.job_id")
+	expect.no_equality(job_id, 0)
+	expect.no_equality(job_id, -1)
 
 	vim.wait(3000)
 
-	-- Three separate chansends, mirroring the bug report's invocation.
-	vim.fn.chansend(job_id, { "x = 1", "" })
-	vim.fn.chansend(job_id, { "x = x + 1", "" })
-	vim.fn.chansend(job_id, { 'print("' .. marker .. ':" + str(x))', "" })
+	local marker = "JETPIPEOK-" .. os.time() .. "-" .. math.random(1e9)
+	child.fn.chansend(job_id, { "x = 1", "" })
+	child.fn.chansend(job_id, { "x = x + 1", "" })
+	child.fn.chansend(job_id, { 'print("' .. marker .. ':" + str(x))', "" })
 
+	local needle = marker .. ":2"
 	local ok = vim.wait(15000, function()
-		for _, line in ipairs(output) do
-			if line:find(marker .. ":2", 1, true) then
+		for _, line in ipairs(child.lua_get("_G.output")) do
+			if line:find(needle, 1, true) then
 				return true
 			end
 		end
 		return false
 	end, 100)
 
-	vim.fn.jobstop(job_id)
-
 	if not ok then
 		error(
-			"jet swallowed chansend lines over pipe stdin.\n"
-				.. 'expected to see "'
-				.. marker
-				.. ':2" in stdout.\n'
-				.. "got:\n  "
-				.. table.concat(output, "\n  ")
+			'jet swallowed chansend lines over pipe stdin.\nexpected "'
+				.. needle
+				.. '" in stdout.\ngot:\n  '
+				.. table.concat(child.lua_get("_G.output"), "\n  ")
 		)
 	end
 end
