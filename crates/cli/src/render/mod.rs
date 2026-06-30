@@ -162,11 +162,6 @@ impl Renderer {
             Some(session_name.unwrap_or("jet").to_string())
         };
 
-        log::info!(
-            "Handling event: {:?} (own_session={is_own_session})",
-            event.data
-        );
-
         let is_foreign = !is_own_session;
         // Foreign-session content (input echo, stream, errors): write
         // straight to stdout with \r\n. Reedline is suspended via
@@ -180,56 +175,81 @@ impl Renderer {
                 .map(|p| format!("{} ", ansi::dim(&format!("[{p}]"))))
                 .unwrap_or_default();
             let mut w = self.writer.lock().unwrap();
-            // Prefix every line with [name]. Translate \n to \r\n so we
-            // don't staircase if reedline's raw mode is still in effect.
-            // Each `\n` in the body gets the prefix re-emitted on the
-            // following line.
-            let render_prefixed = |w: &mut dyn std::io::Write, body: &str| -> std::io::Result<()> {
-                let mut first = true;
-                for line in body.split_inclusive('\n') {
-                    if !first {
+            let mut at_start = self.at_line_start.lock().unwrap();
+            // Prefix every fresh line with [name]. Translate \n to \r\n so
+            // we don't staircase if reedline's raw mode is still in effect.
+            // Tracks `at_start` so spinners / partial-line streams don't
+            // get a prefix mid-line.
+            let mut render_chunk = |w: &mut dyn std::io::Write,
+                                    body: &str,
+                                    at_start: &mut bool|
+             -> std::io::Result<()> {
+                // Both '\n' and '\r' end a "visual line" — '\r' is used by
+                // spinners to redraw a line in place, and we want each
+                // redraw to start with a fresh prefix.
+                for segment in body.split_inclusive(['\n', '\r']) {
+                    if *at_start {
                         write!(w, "{tag}")?;
                     }
-                    first = false;
-                    // Replace trailing \n with \r\n.
-                    if let Some(stripped) = line.strip_suffix('\n') {
+                    // Translate \n to \r\n; leave bare \r alone.
+                    if let Some(stripped) = segment.strip_suffix('\n') {
                         write!(w, "{stripped}\r\n")?;
                     } else {
-                        write!(w, "{line}")?;
+                        write!(w, "{segment}")?;
                     }
+                    *at_start = segment.ends_with(['\n', '\r']);
                 }
                 Ok(())
             };
             match &event.data {
                 EventData::ExecuteInput { code } => {
-                    let _ = write!(w, "\r{tag}> {code}\r\n");
+                    // Reedline's previous prompt occupies its own row(s).
+                    // On resume from ExternalBreak, reedline's
+                    // `select_prompt_row` reuses the previous prompt
+                    // position if the cursor is still inside
+                    // `previous_prompt_rows_range` — which would wipe our
+                    // foreign output. Write a leading \r\n to push the
+                    // ExecuteInput onto a row *below* reedline's previous
+                    // prompt, then trailing \r\n leaves the cursor one row
+                    // further down — outside the range, so reedline draws
+                    // a fresh new prompt below us instead of overwriting.
+                    let _ = write!(w, "\r\n{tag}> {code}\r\n");
+                    *at_start = true;
                 }
                 EventData::Stream { text, .. } => {
-                    // Stream text doesn't start with a prefix unless we are
-                    // at a fresh line; for now assume we are (the previous
-                    // foreign write ended in \r\n).
-                    let _ = write!(w, "{tag}");
-                    let _ = render_prefixed(&mut *w, text);
+                    let _ = render_chunk(&mut *w, text, &mut at_start);
                 }
                 EventData::Error { traceback } => {
-                    let _ = write!(w, "{tag}");
-                    let _ = render_prefixed(&mut *w, traceback);
-                    let _ = write!(w, "\r\n");
+                    let _ = render_chunk(&mut *w, traceback, &mut at_start);
+                    if !*at_start {
+                        let _ = write!(w, "\r\n");
+                        *at_start = true;
+                    }
                 }
                 _ => {}
             }
             let _ = w.flush();
             drop(w);
-            // Still handle Busy/Idle for the prompt-park gate and idle
+            // Busy/Idle handling for the prompt-park gate and idle
             // notification.
             match event.data {
                 EventData::Busy { .. } => {
                     self.busy_state.busy.store(true, Ordering::SeqCst);
-                    *self.busy_state.holder.lock().unwrap() =
-                        session_name.map(|s| s.to_string());
+                    *self.busy_state.holder.lock().unwrap() = session_name.map(|s| s.to_string());
                     self.busy_state.break_signal.store(true, Ordering::SeqCst);
                 }
                 EventData::Idle { parent_id } => {
+                    // If the last foreign write left the cursor mid-line
+                    // (e.g. a trailing partial Stream chunk with no \n),
+                    // emit one now so reedline's resume `read_line` anchors
+                    // its prompt on a fresh row below the foreign content
+                    // rather than overwriting it.
+                    if !*at_start {
+                        let mut w = self.writer.lock().unwrap();
+                        let _ = write!(w, "\r\n");
+                        let _ = w.flush();
+                        *at_start = true;
+                    }
                     self.busy_state.busy.store(false, Ordering::SeqCst);
                     *self.busy_state.holder.lock().unwrap() = None;
                     self.busy_state.notify.notify_waiters();
