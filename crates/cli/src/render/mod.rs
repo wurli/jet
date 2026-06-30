@@ -35,6 +35,18 @@ pub struct BusyState {
     pub notify: Arc<Notify>,
     /// session name currently holding the kernel busy, for display.
     pub holder: Arc<Mutex<Option<String>>>,
+    /// reedline's `with_break_signal` flag. Flipped to `true` when a
+    /// foreign session goes Busy so reedline's in-flight `read_line`
+    /// returns `Signal::ExternalBreak(buffer)` instead of fighting the
+    /// foreign output's writes with its own prompt repaint.
+    pub break_signal: Arc<AtomicBool>,
+    /// True while a reedline `read_line` is in flight on the blocking
+    /// thread. The renderer uses this to decide whether to route foreign
+    /// output through reedline's external printer (when reedline is the
+    /// one drawing the screen) or directly to stdout (when reedline is
+    /// suspended via `break_signal`, so plain stdout writes don't fight
+    /// raw mode).
+    pub read_line_active: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -203,10 +215,13 @@ impl Renderer {
             EventData::Busy { .. } => {
                 // Another session has started executing. Set the
                 // prompt-gate so this REPL parks instead of drawing a new
-                // prompt over the in-flight output.
+                // prompt over the in-flight output, and trip reedline's
+                // break_signal so any in-flight `read_line` returns
+                // `ExternalBreak(buffer)` and yields the terminal.
                 if !is_own_session {
                     self.busy_state.busy.store(true, Ordering::SeqCst);
                     *self.busy_state.holder.lock().unwrap() = session_name.map(|s| s.to_string());
+                    self.busy_state.break_signal.store(true, Ordering::SeqCst);
                 }
             }
             EventData::InputRequest {
@@ -250,10 +265,15 @@ impl Renderer {
             return Ok(());
         }
         // Foreign-session output goes through reedline's external printer
-        // (when wired) so it doesn't fight the active prompt's raw mode.
-        // The display `prefix` is independent — an unnamed foreign client
-        // still routes through the printer, just without a `[...]` tag.
-        if is_foreign && self.external_printer.is_some() {
+        // ONLY while reedline is actively running `read_line` (and thus
+        // owns the screen + raw mode). When reedline has been suspended via
+        // the break signal, we write directly to stdout below — no raw
+        // mode is held, so `\n` works normally and we avoid reedline's
+        // buggy `print_external_message` accounting.
+        if is_foreign
+            && self.external_printer.is_some()
+            && self.busy_state.read_line_active.load(Ordering::SeqCst)
+        {
             return self.write_foreign(text, prefix);
         }
         let mut w = self.writer.lock().unwrap();
@@ -300,7 +320,10 @@ impl Renderer {
         let needs_newline = !text.ends_with('\n');
         self.write(text, prefix, is_foreign)?;
         if needs_newline {
-            if is_foreign && self.external_printer.is_some() {
+            if is_foreign
+                && self.external_printer.is_some()
+                && self.busy_state.read_line_active.load(Ordering::SeqCst)
+            {
                 self.flush_foreign_partial()?;
             } else {
                 let mut w = self.writer.lock().unwrap();
