@@ -8,7 +8,7 @@ M.setup = function()
 		local open = require("jet.core.kernel").open_term
 
 		if args[1] == "repl" then
-			return api.get_all({}, {}, open)
+			return api.get_any({}, {}, open)
 		end
 
 		if args[1] == "open" then

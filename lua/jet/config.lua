@@ -15,6 +15,7 @@ M.defaults = {
 	hooks = {
 		on_kernel_init = {}, ---@type fun(k: jet.kernel)[] end,
 		on_lua_client_start = {}, ---@type fun(k: jet.kernel)[] end,
+		on_kernel_close = {}, ---@type fun(k: jet.kernel)[] end,
 	},
 	send = {
 		---If `false` (the default), then when sending several complete

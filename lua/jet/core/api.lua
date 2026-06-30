@@ -208,7 +208,7 @@ end
 ---@param filters jet.api.list_kernels.filters
 ---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-Api.get_all = function(filters, init_opts, callback)
+Api.get_any = function(filters, init_opts, callback)
 	filters = filters or {}
 
 	local running = Api.list_kernels(filters, init_opts)

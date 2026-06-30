@@ -138,7 +138,7 @@ function Kernel:create_term(callback)
 			buffer = self.term.buf,
 			group = augroup,
 			callback = function()
-				self:remove()
+				self:close()
 			end,
 		})
 
@@ -280,7 +280,7 @@ function Kernel:try_resolve_filetype()
 	end
 end
 
-function Kernel:remove()
+function Kernel:close()
 	assert(self.session_id, "Kernel has no session id")
 
 	manager.kernels[self.session_id] = nil
