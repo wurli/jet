@@ -1036,6 +1036,91 @@ fn incomplete_code_prompts_for_continuation_then_executes() {
     );
 }
 
+/// Backspace at column 0 of a continuation prompt should merge the prior
+/// accumulator line back into the editor. We submit a first line with an
+/// unclosed paren (`x = (`), which ipykernel's is_complete reports as
+/// Incomplete (still expecting `)`). If merge-back works, Backspace can
+/// pop that line back into the editor, where we delete it and submit a
+/// clean `print(marker)`. If merge-back is broken (Backspace at an empty
+/// continuation line is a no-op), the broken line stays in the
+/// accumulator forever and any subsequent input is appended underneath
+/// it — the unclosed paren prevents the kernel from ever marking the
+/// buffer complete, so `print(marker)` never runs and the marker never
+/// appears in the output.
+#[test]
+fn backspace_at_empty_continuation_merges_prior_line() {
+    if !ipykernel_available() {
+        skip("ipykernel not installed");
+        return;
+    }
+    let kernel_json = match ensure_python_kernelspec() {
+        Ok(p) => p,
+        Err(e) => {
+            skip(&format!("could not prepare python kernelspec: {e}"));
+            return;
+        }
+    };
+
+    use std::io::Write;
+    let xdg = scratch_xdg_dir();
+    let (child, mut writer, output, reader_handle, master) = spawn_jet_pty(&kernel_json, &xdg);
+
+    // Submit a line with an unclosed paren. ipykernel's is_complete
+    // returns Incomplete with no indent — it's still waiting for `)` —
+    // so jet stays on a continuation prompt with an empty editor, and
+    // the line is now stuck in the accumulator. There's no kernel-side
+    // way to abandon it short of ^C; this is exactly the situation that
+    // motivated backspace-merge.
+    writer.write_all(b"x = (\n").expect("write malformed line");
+    writer.flush().expect("flush");
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Walk back through the accumulator with Backspaces:
+    //   - editor is currently empty (no indent for the unclosed-paren
+    //     continuation), so the first BS triggers merge-back: editor
+    //     becomes "x = (" (5 chars).
+    //   - 5 BS clears the line; editor and accumulator are now empty.
+    //   - 2 spare BS to confirm extra Backspaces at empty/empty are
+    //     harmless.
+    // DEL (0x7f) is what the terminal sends for the Backspace key in raw
+    // mode; reedline binds it to KeyCode::Backspace by default and jet
+    // re-routes that through the HOSTCMD_BACKSPACE sentinel.
+    for _ in 0..(1 + 5 + 2) {
+        writer.write_all(b"\x7f").expect("write backspace");
+        writer.flush().expect("flush");
+        // Each BS round-trips Rust↔reedline. Pace the bytes so the loop
+        // processes them in order — a burst of identical keypresses can
+        // otherwise coalesce in ways that hide whether each one took the
+        // merge path or the plain-edit path.
+        std::thread::sleep(Duration::from_millis(15));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+
+    // The marker is assembled at runtime (chr(109) → 'm') so the input
+    // echo of the typed line doesn't itself contain the marker — only
+    // actual kernel-executed `print` output will.
+    let marker = "merged-backspace-9f31";
+    let line = "print(chr(109) + \"erged-backspace-9f31\")\n";
+    writer
+        .write_all(line.as_bytes())
+        .expect("write print line");
+    writer.flush().expect("flush");
+
+    let saw_marker = wait_for_substr(&output, marker, Duration::from_secs(10));
+    let final_tail = output.lock().unwrap().clone();
+
+    shutdown_jet_pty(child, writer, reader_handle, master);
+    let _ = std::fs::remove_dir_all(&xdg);
+
+    assert!(
+        saw_marker,
+        "expected to see {marker:?} after Backspace-merging the broken \
+         `def f(:` line out of the accumulator and submitting a clean \
+         print; without merge-back the unclosed paren keeps the buffer \
+         incomplete forever. Output was:\n{final_tail}"
+    );
+}
+
 fn scratch_xdg_dir() -> std::path::PathBuf {
     let p = std::env::temp_dir().join(format!(
         "jet-xdg-test-{:x}",
