@@ -13,57 +13,14 @@ local function repo_root()
 	return vim.fn.fnamemodify(vim.fn.resolve(debug.getinfo(1).source:sub(2)), ":p:h:h")
 end
 
-local function ipykernel_available()
-	vim.fn.system({ "python3", "-c", "import ipykernel" })
-	return vim.v.shell_error == 0
-end
-
-local function which(name)
-	local out = vim.fn.system({ "which", name })
-	if vim.v.shell_error ~= 0 then
-		return nil
-	end
-	out = (out:gsub("%s+$", ""))
-	return out ~= "" and out or nil
-end
-
-local function ensure_python_kernelspec()
-	local home = os.getenv("HOME") or ""
-	local user = home .. "/Library/Jupyter/kernels/python3/kernel.json"
-	if vim.fn.filereadable(user) == 1 then
-		return user
-	end
-
-	local py = which("python3")
-	if not py then
-		return nil
-	end
-	local dir = vim.fn.tempname()
-	vim.fn.mkdir(dir, "p")
-	local path = dir .. "/kernel.json"
-	vim.fn.writefile({
-		vim.json.encode({
-			argv = { py, "-m", "ipykernel_launcher", "-f", "{connection_file}" },
-			display_name = "Python (jet mini.test)",
-			language = "python",
-			interrupt_mode = "signal",
-		}),
-	}, path)
-	return path
-end
+local KERNEL_JSON = os.getenv("JET_KERNEL_JSON")
+assert(KERNEL_JSON, "JET_KERNEL_JSON env var must be set to a kernel.json path")
 
 local function wait_for(pred, timeout_ms)
 	return vim.wait(timeout_ms, pred, 50)
 end
 
 T["send_repl delivers every line through the plugin"] = function()
-	if not ipykernel_available() then
-		MiniTest.skip("ipykernel not installed")
-	end
-	local kernel_json = ensure_python_kernelspec()
-	if not kernel_json then
-		MiniTest.skip("could not prepare python kernelspec")
-	end
 	local jet_bin = repo_root() .. "/target/release/jet"
 	if vim.fn.executable(jet_bin) ~= 1 then
 		MiniTest.skip("jet binary missing: " .. jet_bin)
@@ -76,7 +33,7 @@ T["send_repl delivers every line through the plugin"] = function()
 	require("jet").setup({ jet_binary = jet_bin })
 
 	local Kernel = require("jet.core.kernel")
-	local kernel = Kernel.init_owned({ spec_path = kernel_json, session_name = "minitest" })
+	local kernel = Kernel.init_owned({ spec_path = KERNEL_JSON, session_name = "minitest" })
 
 	local opened = false
 	kernel:open_term(function()

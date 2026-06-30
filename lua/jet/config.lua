@@ -16,6 +16,13 @@ M.defaults = {
 		on_kernel_init = {}, ---@type fun(k: jet.kernel)[] end,
 		on_lua_client_start = {}, ---@type fun(k: jet.kernel)[] end,
 	},
+	send = {
+		---If `false` (the default), then when sending several complete
+		---expressions at once, all will be sent at once and results will be
+		---shown afterwards. If `true` then each expression will be sent and
+		---results shown one at a time.
+		send_by_expr = false, ---@type boolean
+	},
 }
 
 ---@class jet.data

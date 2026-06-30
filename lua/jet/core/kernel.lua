@@ -380,13 +380,16 @@ function Kernel:send_repl(code)
 
 	-- We use bracketed paste so the Jet REPL knows not to evaluate the code
 	-- until the end of the paste. This matches behaviour of Positron.
-	-- TODO: make this configurable?
-	local bracketed_paste_start = "\x1b[200~"
-	local bracketed_paste_end = "\x1b[201~"
+	if not config.send.send_by_expr then
+		local bracketed_paste_start = "\x1b[200~"
+		local bracketed_paste_end = "\x1b[201~"
+		code = bracketed_paste_start .. code .. bracketed_paste_end .. "\r"
+	else
+		code = vim.split(code, "\n")
+		table.insert(code, "")
+	end
 
-	local payload = bracketed_paste_start .. code .. bracketed_paste_end .. "\r"
-
-	vim.fn.chansend(self.term.job_id, payload)
+	vim.fn.chansend(self.term.job_id, code)
 end
 
 -- ---@param code string | string[]

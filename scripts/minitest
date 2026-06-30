@@ -14,6 +14,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+export JET_KERNEL_JSON="${JET_KERNEL_JSON:-$HOME/Library/Jupyter/kernels/python3/kernel.json}"
+
 if [ ! -d deps/mini.nvim ]; then
   echo "fetching mini.nvim into deps/mini.nvim ..."
   mkdir -p deps
