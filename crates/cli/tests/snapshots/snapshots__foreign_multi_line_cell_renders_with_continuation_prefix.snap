@@ -1,0 +1,15 @@
+---
+source: crates/cli/tests/snapshots.rs
+expression: t1.snapshot_screen()
+---
+Python <version>
+Type 'copyright', 'credits' or 'license' for more information
+IPython <version>
+>
+[jet] > def f():
+[jet] +         return 99
+[jet] +
+>
+[jet] > print(f())
+[jet] 99
+>

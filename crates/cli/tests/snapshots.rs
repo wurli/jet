@@ -150,6 +150,34 @@ fn start_jet(
     Ok(h)
 }
 
+/// Spawn a `--persist` `jet start` plus a `jet attach` against the same
+/// kernel. Each side gets its own `--session-name` if provided so foreign
+/// output is tagged distinctly. Returns `(start, attach)`. Tear down by
+/// calling `attach.shutdown()` then `start.shutdown()`.
+fn start_pair(
+    kernel_json: &std::path::Path,
+    xdg: &std::path::Path,
+    conn_str: &str,
+    start_name: Option<&str>,
+    attach_name: Option<&str>,
+) -> Result<(Harness, Harness)> {
+    let mut start_args: Vec<&str> = vec!["--persist"];
+    if let Some(n) = start_name {
+        start_args.extend_from_slice(&["--session-name", n]);
+    }
+    let t1 = start_jet(kernel_json, xdg, conn_str, &start_args)?;
+
+    let mut attach_args: Vec<&str> = vec!["attach", "--connection-file", conn_str];
+    if let Some(n) = attach_name {
+        attach_args.extend_from_slice(&["--session-name", n]);
+    }
+    // t2 doesn't own the persisted kernel; pass empty conn_str so its
+    // teardown doesn't pkill (t1's teardown handles it).
+    let t2 = Harness::spawn(&attach_args, xdg, "")?;
+    t2.settle(Duration::from_millis(500), Duration::from_secs(3));
+    Ok((t1, t2))
+}
+
 fn scratch_xdg_dir() -> std::path::PathBuf {
     let p = std::env::temp_dir().join(format!(
         "jet-xdg-test-{:x}",
@@ -441,18 +469,8 @@ fn two_clients_foreign_print_is_tagged_and_visible() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("foreign");
     let conn_str = conn.to_string_lossy().to_string();
-
-    let t1 = start_jet(&kernel_json, &xdg, &conn_str, &["--persist"]).expect("spawn t1");
-
-    let mut t2 = Harness::spawn(
-        &["attach", "--connection-file", &conn_str],
-        &xdg,
-        // t2 doesn't own the persisted kernel; leave conn_str empty so
-        // its teardown doesn't pkill (t1's teardown handles it).
-        "",
-    )
-    .expect("spawn t2");
-    t2.settle(Duration::from_millis(500), Duration::from_secs(3));
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
 
     t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
     assert!(
@@ -627,4 +645,137 @@ fn input_request_displays_and_accepts_value() {
         h.snapshot_screen()
     );
     h.shutdown();
+}
+
+/// When `jet attach --session-name alpha` runs code, the observer's
+/// foreign-output prefix should be `[alpha]` rather than the default
+/// `[jet]`. Captures the prefix end-to-end from CLI flag to terminal
+/// rendering.
+#[test]
+fn foreign_attach_session_name_appears_as_prefix() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("name-attach");
+    let conn_str = conn.to_string_lossy().to_string();
+    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("alpha"))
+        .expect("spawn pair");
+
+    t2.send(b"print(\"x\")\n").unwrap();
+    assert!(
+        t1.wait_for_screen("[alpha]", Duration::from_secs(15)),
+        "t1 never saw `[alpha]` prefix"
+    );
+    t1.settle(Duration::from_millis(700), Duration::from_secs(5));
+
+    insta::assert_snapshot!(
+        "foreign_attach_session_name_appears_as_prefix",
+        t1.snapshot_screen()
+    );
+    t2.shutdown();
+    t1.shutdown();
+}
+
+/// And the reverse direction: when `jet start --session-name beta` runs
+/// code, the attached observer's prefix should be `[beta]`.
+#[test]
+fn foreign_start_session_name_appears_as_prefix() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("name-start");
+    let conn_str = conn.to_string_lossy().to_string();
+    let (mut t1, t2) = start_pair(&kernel_json, &xdg, &conn_str, Some("beta"), None)
+        .expect("spawn pair");
+    // t2 is the observer here; give it longer to land its own prompt and
+    // settle before t1 starts firing iopub at it. (The default
+    // start_pair settle is 500ms; double it for the slower path.)
+    t2.settle(Duration::from_millis(500), Duration::from_secs(3));
+
+    t1.send(b"print(\"y\")\n").unwrap();
+    assert!(
+        t2.wait_for_screen("[beta]", Duration::from_secs(15)),
+        "t2 never saw `[beta]` prefix"
+    );
+    t2.settle(Duration::from_millis(700), Duration::from_secs(5));
+
+    insta::assert_snapshot!(
+        "foreign_start_session_name_appears_as_prefix",
+        t2.snapshot_screen()
+    );
+    t2.shutdown();
+    t1.shutdown();
+}
+
+/// Foreign multi-line cell: t2 submits a `def f():` block (continuation
+/// prompt territory). The kernel echoes `ExecuteInput` once with the
+/// embedded `\n`, so the observer should see the first line tagged with
+/// `> ` and each continuation line tagged with `+ `.
+#[test]
+fn foreign_multi_line_cell_renders_with_continuation_prefix() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("foreign-multi");
+    let conn_str = conn.to_string_lossy().to_string();
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+
+    // Drive t2 through a continuation prompt. Each \n submits a line;
+    // ipykernel's is_complete returns Incomplete until the def-block is
+    // closed by a blank line.
+    t2.send(b"def f():\n").unwrap();
+    t2.settle(Duration::from_millis(400), Duration::from_secs(2));
+    t2.send(b"    return 99\n").unwrap();
+    t2.settle(Duration::from_millis(200), Duration::from_secs(2));
+    t2.send(b"\n").unwrap();
+    t2.settle(Duration::from_millis(400), Duration::from_secs(2));
+    t2.send(b"print(f())\n").unwrap();
+    assert!(
+        t1.wait_for_screen("99", Duration::from_secs(15)),
+        "t1 never saw foreign `print(f())` output"
+    );
+    t1.settle(Duration::from_millis(700), Duration::from_secs(3));
+
+    insta::assert_snapshot!(
+        "foreign_multi_line_cell_renders_with_continuation_prefix",
+        t1.snapshot_screen()
+    );
+    t2.shutdown();
+    t1.shutdown();
+}
+
+/// Foreign error: t2 raises `ValueError`. The observer should see the
+/// `ExecuteInput` tagged with `[jet] > ` and each line of the traceback
+/// tagged with `[jet] ` too — no untagged kernel output should leak past
+/// the prefix logic.
+#[test]
+fn foreign_traceback_lines_are_tagged() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("foreign-error");
+    let conn_str = conn.to_string_lossy().to_string();
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+
+    t2.send(b"raise ValueError(\"oh no\")\n").unwrap();
+    // Wait for the error to land in the rendered screen — the
+    // traceback's final line will contain `ValueError`.
+    assert!(
+        t1.wait_for_screen("ValueError", Duration::from_secs(10)),
+        "t1 never saw foreign ValueError traceback"
+    );
+    t1.settle(Duration::from_millis(700), Duration::from_secs(3));
+
+    insta::assert_snapshot!(
+        "foreign_traceback_lines_are_tagged",
+        t1.snapshot_screen()
+    );
+    t2.shutdown();
+    t1.shutdown();
 }
