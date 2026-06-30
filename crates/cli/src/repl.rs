@@ -10,6 +10,7 @@
 //! the renderer's mpsc channels to surface control signals (idle,
 //! input_request, is_complete_reply) back into the REPL loop.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -106,6 +107,11 @@ enum LineRead {
     /// suspended (buffer state preserved); we handle the command and
     /// re-enter `read_line` to resume.
     HostCommand(String),
+    /// Reedline returned from `read_line` because the `break_signal` was
+    /// flipped by another thread (a foreign session's `Busy` event). The
+    /// inner string is the user's in-progress buffer; we wait for the
+    /// foreign Idle, then re-enter `read_line` with the buffer pre-filled.
+    ExternalBreak(String),
     Err(String),
 }
 
@@ -127,6 +133,7 @@ impl LineSource {
                 Ok(Signal::CtrlC) => LineRead::Interrupted,
                 Ok(Signal::CtrlD) => LineRead::Eof,
                 Ok(Signal::HostCommand(c)) => LineRead::HostCommand(c),
+                Ok(Signal::ExternalBreak(buf)) => LineRead::ExternalBreak(buf),
                 Ok(_) => LineRead::Interrupted,
                 Err(e) => LineRead::Err(e.to_string()),
             },
@@ -153,7 +160,11 @@ impl LineSource {
     }
 }
 
-fn build_editor(completer: JetCompleter, printer: ExternalPrinter<String>) -> Reedline {
+fn build_editor(
+    completer: JetCompleter,
+    printer: ExternalPrinter<String>,
+    break_signal: Arc<AtomicBool>,
+) -> Reedline {
     // Drop reedline's default `| ` left-marker; the menu sits below the
     // prompt and the bar adds visual noise to every keystroke.
     let completion_menu = Box::new(
@@ -185,6 +196,11 @@ fn build_editor(completer: JetCompleter, printer: ExternalPrinter<String>) -> Re
         .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
         .with_edit_mode(edit_mode)
         .with_external_printer(printer)
+        // When a foreign session goes Busy, the renderer flips this flag.
+        // reedline returns Signal::ExternalBreak from read_line with the
+        // user's in-progress buffer, so the REPL loop can write foreign
+        // output in cooked mode without reedline's repaint fighting it.
+        .with_break_signal(break_signal)
         // Honor bracketed-paste: a multi-line block wrapped in
         // \x1b[200~ ... \x1b[201~ goes into the buffer as one unit
         // and waits for a separate Enter to submit. Matches what real
@@ -420,6 +436,7 @@ pub async fn drive_repl(
                 tokio::runtime::Handle::current(),
             ),
             external_printer.clone(),
+            busy_state.break_signal.clone(),
         ))
     } else {
         LineSource::Pipe(std::io::BufReader::new(std::io::stdin()))
@@ -470,8 +487,11 @@ pub async fn drive_repl(
                 ed.run_edit_commands(&[reedline::EditCommand::InsertString(s.clone())]);
             }
             next_initial = None;
+            let read_line_active = busy_state.read_line_active.clone();
+            read_line_active.store(true, Ordering::SeqCst);
             let read = tokio::task::spawn_blocking(move || {
                 let result = prompt_rl.read_line(&prompt);
+                read_line_active.store(false, Ordering::SeqCst);
                 (prompt_rl, result)
             });
             let line = tokio::select! {
@@ -556,6 +576,16 @@ pub async fn drive_repl(
                             continue;
                         }
                         LineRead::HostCommand(_) => continue,
+                        LineRead::ExternalBreak(buf) => {
+                            // A foreign session went Busy while we were in
+                            // `read_line`. reedline returned the in-progress
+                            // buffer; stash it so the next `read_line`
+                            // pre-fills the editor with it, then continue —
+                            // the busy-park gate at the top will wait for
+                            // Idle before drawing the new prompt.
+                            next_initial = if buf.is_empty() { None } else { Some(buf) };
+                            continue;
+                        }
                         LineRead::Err(e) => {
                             eprintln!("Readline: {e}");
                             return Ok(session);
@@ -676,8 +706,11 @@ pub async fn drive_repl(
                         let mut prompt_rl =
                             rl.take().expect("editor present at input prompt");
                         let prompt_for_read = prompt.clone();
+                        let read_line_active = busy_state.read_line_active.clone();
+                        read_line_active.store(true, Ordering::SeqCst);
                         let read = tokio::task::spawn_blocking(move || {
                             let line = prompt_rl.read_line(&prompt_for_read);
+                            read_line_active.store(false, Ordering::SeqCst);
                             (prompt_rl, line)
                         });
                         let (returned_rl, line_result) = read.await?;
@@ -694,6 +727,12 @@ pub async fn drive_repl(
                                 continue;
                             }
                             LineRead::HostCommand(_) => continue,
+                            LineRead::ExternalBreak(_) => {
+                                // Foreign Busy during a stdin input prompt:
+                                // just retry. Stdin prompts don't have an
+                                // accumulator to merge into.
+                                continue;
+                            }
                             LineRead::Err(e) => {
                                 eprintln!("Readline (input_request): {e}");
                                 break String::new();

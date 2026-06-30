@@ -35,6 +35,18 @@ pub struct BusyState {
     pub notify: Arc<Notify>,
     /// session name currently holding the kernel busy, for display.
     pub holder: Arc<Mutex<Option<String>>>,
+    /// reedline's `with_break_signal` flag. Flipped to `true` when a
+    /// foreign session goes Busy so reedline's in-flight `read_line`
+    /// returns `Signal::ExternalBreak(buffer)` instead of fighting the
+    /// foreign output's writes with its own prompt repaint.
+    pub break_signal: Arc<AtomicBool>,
+    /// True while a reedline `read_line` is in flight on the blocking
+    /// thread. The renderer uses this to decide whether to route foreign
+    /// output through reedline's external printer (when reedline is the
+    /// one drawing the screen) or directly to stdout (when reedline is
+    /// suspended via `break_signal`, so plain stdout writes don't fight
+    /// raw mode).
+    pub read_line_active: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -150,65 +162,70 @@ impl Renderer {
             Some(session_name.unwrap_or("jet").to_string())
         };
 
-        log::info!(
-            "Handling event: {:?} (own_session={is_own_session})",
-            event.data
-        );
-
         let is_foreign = !is_own_session;
         match event.data {
+            // --- content events ---
             EventData::ExecuteInput { code } => {
-                // Skip the kernel's iopub echo of *our own* input —
-                // reedline already drew the prompt locally. For any
-                // other session's input we render `[name]> code` so the
-                // user can follow what other clients are doing.
                 if is_foreign {
-                    self.write_line(&format!("> {code}"), prefix.as_deref(), is_foreign)?;
+                    self.render_foreign_execute_input(&code, prefix.as_deref())?;
+                }
+                // Own-session ExecuteInput is intentionally skipped:
+                // reedline already drew the input on the prompt line.
+            }
+            EventData::Stream { name: _, text } => {
+                if is_foreign {
+                    self.render_foreign_chunk(&text, prefix.as_deref())?;
+                } else {
+                    self.write(&text, prefix.as_deref(), is_foreign)?;
+                }
+            }
+            EventData::Error { traceback } => {
+                if is_foreign {
+                    self.render_foreign_chunk(&traceback, prefix.as_deref())?;
+                    self.foreign_ensure_newline()?;
+                } else {
+                    self.write(&traceback, prefix.as_deref(), is_foreign)?;
+                    self.ensure_newline()?;
                 }
             }
             EventData::DisplayData { data } => {
-                self.render_data(&data, prefix.as_deref(), is_foreign)?
-            }
-            EventData::Stream { name: _, text } => {
-                self.write(&text, prefix.as_deref(), is_foreign)?;
-            }
-            EventData::Error { traceback } => {
-                self.write(&traceback, prefix.as_deref(), is_foreign)?;
-                self.ensure_newline()?;
+                if is_foreign {
+                    self.render_foreign_data(&data, prefix.as_deref())?;
+                } else {
+                    self.render_data(&data, prefix.as_deref(), is_foreign)?;
+                }
             }
             EventData::Banner { text } => self.write_line(&text, None, false)?,
+
+            // --- lifecycle events ---
+            EventData::Busy { .. } => {
+                // Foreign Busy parks our prompt and trips reedline's
+                // break_signal so any in-flight `read_line` returns
+                // `ExternalBreak(buffer)` and yields the terminal.
+                if !is_own_session {
+                    self.busy_state.busy.store(true, Ordering::SeqCst);
+                    *self.busy_state.holder.lock().unwrap() =
+                        session_name.map(|s| s.to_string());
+                    self.busy_state.break_signal.store(true, Ordering::SeqCst);
+                }
+            }
             EventData::Idle { parent_id } => {
                 if !is_own_session {
-                    // Flush any trailing partial line that never got a
-                    // newline so it shows up before the prompt is redrawn.
-                    self.flush_foreign_partial()?;
-                    // Without an external printer wired (e.g. tests), we
-                    // still emit a fresh `> ` directly so the next prompt
-                    // doesn't collide with the foreign output. With a
-                    // printer, reedline redraws the prompt itself.
-                    if self.external_printer.is_none() {
-                        self.ensure_newline()?;
-                        let mut w = self.writer.lock().unwrap();
-                        write!(w, "> ")?;
-                        w.flush()?;
-                    }
-                    // Release the REPL prompt-gate that was set when this
-                    // session went Busy.
+                    // If the last foreign write left the cursor mid-line
+                    // (e.g. a trailing partial Stream chunk with no \n),
+                    // emit one now so reedline's resume `read_line` anchors
+                    // its prompt on a fresh row below the foreign content
+                    // rather than overwriting it.
+                    self.foreign_ensure_newline()?;
+                    // Release the prompt-gate.
                     self.busy_state.busy.store(false, Ordering::SeqCst);
                     *self.busy_state.holder.lock().unwrap() = None;
                     self.busy_state.notify.notify_waiters();
                 }
                 let _ = self.idle_tx.send(parent_id.unwrap_or_default());
             }
-            EventData::Busy { .. } => {
-                // Another session has started executing. Set the
-                // prompt-gate so this REPL parks instead of drawing a new
-                // prompt over the in-flight output.
-                if !is_own_session {
-                    self.busy_state.busy.store(true, Ordering::SeqCst);
-                    *self.busy_state.holder.lock().unwrap() = session_name.map(|s| s.to_string());
-                }
-            }
+
+            // --- side-channel events: forward to REPL via mpsc ---
             EventData::InputRequest {
                 prompt,
                 password,
@@ -240,6 +257,117 @@ impl Renderer {
         Ok(())
     }
 
+    /// Format the session tag (e.g. `[jet] ` in dim grey) for foreign output.
+    fn foreign_tag(prefix: Option<&str>) -> String {
+        prefix
+            .map(|p| format!("{} ", ansi::dim(&format!("[{p}]"))))
+            .unwrap_or_default()
+    }
+
+    /// Foreign `ExecuteInput`: write `[name] > code` between two `\r\n`s so
+    /// the line sits on its own row outside reedline's
+    /// `previous_prompt_rows_range`. Without those bookends, reedline's
+    /// resume from `ExternalBreak` reuses the prior prompt position and
+    /// clears down over our foreign content.
+    fn render_foreign_execute_input(&self, code: &str, prefix: Option<&str>) -> Result<()> {
+        let tag = Self::foreign_tag(prefix);
+        let mut w = self.writer.lock().unwrap();
+        let mut at_start = self.at_line_start.lock().unwrap();
+        // Multi-line cells: the first line takes a `> ` indicator; each
+        // continuation line takes `+ `, matching the prompt style. Each
+        // wrapped line gets its own session tag.
+        write!(w, "\r\n")?;
+        for (i, line) in code.split('\n').enumerate() {
+            let indicator = if i == 0 { "> " } else { "+ " };
+            write!(w, "{tag}{indicator}{line}\r\n")?;
+        }
+        *at_start = true;
+        w.flush()?;
+        Ok(())
+    }
+
+    /// Foreign streaming text (Stream, Error, plain-text DisplayData).
+    /// Prefixes every fresh line with the session tag, translates `\n` to
+    /// `\r\n` so we don't staircase under reedline's raw mode, and tracks
+    /// `at_line_start` so partial chunks don't get a mid-line prefix.
+    fn render_foreign_chunk(&self, body: &str, prefix: Option<&str>) -> Result<()> {
+        if body.is_empty() {
+            return Ok(());
+        }
+        let tag = Self::foreign_tag(prefix);
+        let mut w = self.writer.lock().unwrap();
+        let mut at_start = self.at_line_start.lock().unwrap();
+        // Both '\n' and '\r' end a "visual line" — '\r' is used by spinners
+        // to redraw a line in place, and we want each redraw to start with
+        // a fresh prefix.
+        for segment in body.split_inclusive(['\n', '\r']) {
+            if *at_start {
+                write!(w, "{tag}")?;
+            }
+            if let Some(stripped) = segment.strip_suffix('\n') {
+                write!(w, "{stripped}\r\n")?;
+            } else {
+                write!(w, "{segment}")?;
+            }
+            *at_start = segment.ends_with(['\n', '\r']);
+        }
+        w.flush()?;
+        Ok(())
+    }
+
+    /// Foreign `DisplayData`. Inline kitty PNGs when graphics are enabled;
+    /// otherwise tag a `[image/png N bytes]` placeholder. Falls back to
+    /// `text/plain` like the own-session path.
+    fn render_foreign_data(&self, data: &Value, prefix: Option<&str>) -> Result<()> {
+        if !data.is_object() {
+            return Ok(());
+        }
+        if let Some(image_data) = data.get("image/png").and_then(|s| s.as_str()) {
+            if self.render_graphics {
+                let mut w = self.writer.lock().unwrap();
+                let mut at_start = self.at_line_start.lock().unwrap();
+                match emit_png(&mut *w, image_data) {
+                    Ok(()) => *at_start = true,
+                    Err(e) => {
+                        log::warn!("kitty render failed: {e}");
+                        let tag = Self::foreign_tag(prefix);
+                        write!(w, "{tag}Image render failed: {e}\r\n")?;
+                        *at_start = true;
+                    }
+                }
+                w.flush()?;
+            } else {
+                let len = base64::engine::general_purpose::STANDARD
+                    .decode(image_data)
+                    .map(|b| b.len())
+                    .unwrap_or(0);
+                let placeholder = format!("[image/png {len} bytes]");
+                self.render_foreign_chunk(&placeholder, prefix)?;
+                self.foreign_ensure_newline()?;
+            }
+            return Ok(());
+        }
+        if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
+            self.render_foreign_chunk(t, prefix)?;
+            self.foreign_ensure_newline()?;
+        }
+        Ok(())
+    }
+
+    /// Like `ensure_newline` but uses `\r\n` (safe in raw mode too). For
+    /// the foreign path, where reedline may still be in raw mode when we
+    /// write.
+    fn foreign_ensure_newline(&self) -> Result<()> {
+        let mut w = self.writer.lock().unwrap();
+        let mut at_start = self.at_line_start.lock().unwrap();
+        if !*at_start {
+            write!(w, "\r\n")?;
+            *at_start = true;
+            w.flush()?;
+        }
+        Ok(())
+    }
+
     /// Write a chunk to the terminal, optionally inserting `[prefix] ` at
     /// the start of every new line. Honours streaming boundaries: if the
     /// previous write ended without a newline, the next call continues
@@ -250,10 +378,15 @@ impl Renderer {
             return Ok(());
         }
         // Foreign-session output goes through reedline's external printer
-        // (when wired) so it doesn't fight the active prompt's raw mode.
-        // The display `prefix` is independent — an unnamed foreign client
-        // still routes through the printer, just without a `[...]` tag.
-        if is_foreign && self.external_printer.is_some() {
+        // ONLY while reedline is actively running `read_line` (and thus
+        // owns the screen + raw mode). When reedline has been suspended via
+        // the break signal, we write directly to stdout below — no raw
+        // mode is held, so `\n` works normally and we avoid reedline's
+        // buggy `print_external_message` accounting.
+        if is_foreign
+            && self.external_printer.is_some()
+            && self.busy_state.read_line_active.load(Ordering::SeqCst)
+        {
             return self.write_foreign(text, prefix);
         }
         let mut w = self.writer.lock().unwrap();
@@ -300,7 +433,10 @@ impl Renderer {
         let needs_newline = !text.ends_with('\n');
         self.write(text, prefix, is_foreign)?;
         if needs_newline {
-            if is_foreign && self.external_printer.is_some() {
+            if is_foreign
+                && self.external_printer.is_some()
+                && self.busy_state.read_line_active.load(Ordering::SeqCst)
+            {
                 self.flush_foreign_partial()?;
             } else {
                 let mut w = self.writer.lock().unwrap();
@@ -474,7 +610,7 @@ mod tests {
         assert_eq!(
             std::str::from_utf8(&bytes).unwrap(),
             &format!(
-                "{} Error\n{} Something went wrong",
+                "{} Error\r\n{} Something went wrong",
                 ansi::dim("[my-session]"),
                 ansi::dim("[my-session]"),
             )
@@ -500,7 +636,7 @@ mod tests {
         let bytes = captured.lock().unwrap();
         assert_eq!(
             std::str::from_utf8(&bytes).unwrap(),
-            &format!("{} hello world\n{} bye", ansi::dim("[s]"), ansi::dim("[s]"))
+            &format!("{} hello world\r\n{} bye", ansi::dim("[s]"), ansi::dim("[s]"))
         );
     }
 
@@ -531,7 +667,7 @@ mod tests {
         let bytes = captured.lock().unwrap();
         assert_eq!(
             std::str::from_utf8(&bytes).unwrap(),
-            &format!("mine\n{} theirs\n", ansi::dim("[bob]"))
+            &format!("mine\n{} theirs\r\n", ansi::dim("[bob]"))
         );
     }
 

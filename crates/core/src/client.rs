@@ -90,6 +90,45 @@ pub fn make_client_id(name: Option<&str>) -> String {
     )
 }
 
+/// Render a kernel message as a single-line JSON object combining
+/// `header_id`, `parent_id`, and the spread of `content`. Falls back to
+/// `Debug` if serialization fails. Used by `log::debug!` traces of every
+/// message in and out of the kernel.
+fn fmt_msg(msg: &JupyterMessage) -> String {
+    // `JupyterMessageContent` is `#[serde(untagged)]` over struct variants,
+    // so it serializes to a JSON object. Spread its fields after our
+    // identifying header fields. Relies on `serde_json/preserve_order` for
+    // stable field order.
+    let mut obj = serde_json::Map::new();
+    obj.insert(
+        "msg_type".to_string(),
+        Value::String(msg.header.msg_type.clone()),
+    );
+    obj.insert(
+        "header_id".to_string(),
+        Value::String(msg.header.msg_id.clone()),
+    );
+    obj.insert(
+        "parent_id".to_string(),
+        match msg.parent_header.as_ref() {
+            Some(h) => Value::String(h.msg_id.clone()),
+            None => Value::Null,
+        },
+    );
+    match serde_json::to_value(&msg.content) {
+        Ok(Value::Object(map)) => {
+            for (k, v) in map {
+                obj.insert(k, v);
+            }
+        }
+        Ok(other) => {
+            obj.insert("content".to_string(), other);
+        }
+        Err(_) => return format!("{:?}", msg),
+    }
+    serde_json::to_string(&Value::Object(obj)).unwrap_or_else(|_| format!("{:?}", msg))
+}
+
 /// One routed frame for a particular in-flight request, tagged with
 /// the ZMQ channel it arrived on (so consumers can reconstruct typed
 /// [`crate::events::Event`]s — `JupyterMessage::channel` is `None` for
@@ -454,6 +493,7 @@ impl Client {
         // delivers it synchronously to the boot listener's mpsc, so a
         // consumer that pulls one frame before drawing its prompt sees
         // the banner first.
+        log::debug!("kernel to client shell (handshake): {}", fmt_msg(&reply));
         router.dispatch(Channel::Shell, reply);
 
         // Handshake succeeded — we're talking to a live kernel.
@@ -659,11 +699,7 @@ impl CompletionHandle {
     /// Returns `None` if the request stream ends without a reply — treat
     /// that as "no completions" rather than an error so a flaky completion
     /// path doesn't disrupt the prompt.
-    pub async fn complete(
-        &self,
-        code: String,
-        cursor_pos: usize,
-    ) -> Result<Option<CompleteReply>> {
+    pub async fn complete(&self, code: String, cursor_pos: usize) -> Result<Option<CompleteReply>> {
         let req: JupyterMessage = CompleteRequest { code, cursor_pos }.into();
         let msg_id = req.header.msg_id.clone();
         let rx = self.router.register(msg_id.clone());
@@ -977,19 +1013,29 @@ fn spawn_socket_loop(
             tokio::select! {
                 biased;
                 read = shell.read() => match read {
-                    Ok(msg) => router.dispatch(Channel::Shell, msg),
+                    Ok(msg) => {
+                        log::debug!("kernel to client shell: {}", fmt_msg(&msg));
+                        router.dispatch(Channel::Shell, msg)
+                    },
                     Err(e) => { mark_exited("shell.read", Some(&e)); return; }
                 },
                 read = iopub.read() => match read {
-                    Ok(msg) => router.dispatch(Channel::IoPub, msg),
+                    Ok(msg) => {
+                        log::debug!("kernel to client iopub: {}", fmt_msg(&msg));
+                        router.dispatch(Channel::IoPub, msg)
+                    },
                     Err(e) => { mark_exited("iopub.read", Some(&e)); return; }
                 },
                 read = stdin_sock.read() => match read {
-                    Ok(msg) => router.dispatch(Channel::Stdin, msg),
+                    Ok(msg) => {
+                        log::debug!("kernel to client stdin: {}", fmt_msg(&msg));
+                        router.dispatch(Channel::Stdin, msg)
+                    },
                     Err(e) => { mark_exited("stdin.read", Some(&e)); return; }
                 },
                 send = shell_send_rx.recv() => match send {
                     Some(msg) => {
+                        log::debug!("client to kernel shell: {}", fmt_msg(&msg));
                         if let Err(e) = shell.send(msg).await {
                             mark_exited("shell.send", Some(&e));
                             return;
@@ -999,6 +1045,7 @@ fn spawn_socket_loop(
                 },
                 send = stdin_send_rx.recv() => match send {
                     Some(msg) => {
+                        log::debug!("client to kernel stdin: {}", fmt_msg(&msg));
                         if let Err(e) = stdin_sock.send(msg).await {
                             mark_exited("stdin.send", Some(&e));
                             return;
