@@ -26,10 +26,6 @@ T["send_repl delivers every line through the plugin"] = function()
 		MiniTest.skip("jet binary missing: " .. jet_bin)
 	end
 
-	local xdg = vim.fn.tempname()
-	vim.fn.mkdir(xdg, "p")
-	vim.env.XDG_DATA_HOME = xdg
-
 	require("jet").setup({ jet_binary = jet_bin })
 
 	local Kernel = require("jet.core.kernel")
@@ -71,7 +67,6 @@ T["send_repl delivers every line through the plugin"] = function()
 		require("jet.core.engine").stop(kernel.session_id)
 	end)
 	pcall(vim.fn.jobstop, kernel.term.job_id)
-	vim.fn.delete(xdg, "rf")
 
 	if not ok then
 		error("marker never appeared in the REPL buffer.\n" .. 'expected "' .. pattern .. "\ngot:\n" .. term_text())

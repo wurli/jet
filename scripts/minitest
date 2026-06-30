@@ -16,6 +16,21 @@ cd "$(dirname "$0")/.."
 
 export JET_KERNEL_JSON="${JET_KERNEL_JSON:-$HOME/Library/Jupyter/kernels/python3/kernel.json}"
 
+_prev_xdg_data_home="${XDG_DATA_HOME-}"
+_prev_xdg_data_home_set="${XDG_DATA_HOME+set}"
+_tmp_xdg_data_home="$(mktemp -d -t jet-minitest-xdg.XXXXXX)"
+export XDG_DATA_HOME="$_tmp_xdg_data_home"
+
+cleanup() {
+  rm -rf "$_tmp_xdg_data_home"
+  if [ "$_prev_xdg_data_home_set" = "set" ]; then
+    export XDG_DATA_HOME="$_prev_xdg_data_home"
+  else
+    unset XDG_DATA_HOME
+  fi
+}
+trap cleanup EXIT
+
 if [ ! -d deps/mini.nvim ]; then
   echo "fetching mini.nvim into deps/mini.nvim ..."
   mkdir -p deps

@@ -29,13 +29,9 @@ T["chansend over plain pipe stdin delivers every line"] = function()
 		MiniTest.skip("jet binary missing: " .. jet_bin)
 	end
 
-	local xdg = vim.fn.tempname()
-	vim.fn.mkdir(xdg, "p")
-
 	local marker = "JETPIPEOK-" .. tostring(os.time()) .. "-" .. tostring(math.random(1e9))
 	local output = {}
 	local job_id = vim.fn.jobstart({ jet_bin, "start", kernel_json }, {
-		env = { XDG_DATA_HOME = xdg },
 		on_stdout = function(_, data, _)
 			for _, l in ipairs(data) do
 				table.insert(output, l)
@@ -67,7 +63,6 @@ T["chansend over plain pipe stdin delivers every line"] = function()
 	end, 100)
 
 	vim.fn.jobstop(job_id)
-	vim.fn.delete(xdg, "rf")
 
 	if not ok then
 		error(
