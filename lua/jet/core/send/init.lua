@@ -1,4 +1,3 @@
-local get = require("jet.core.send.get_code")
 local utils = require("jet.core.send.utils")
 
 local M = {}
@@ -7,37 +6,64 @@ M.send_chunk = function()
 	--
 end
 
-M.send_auto = function()
-	local code = get.get_auto()
-	local lnum = vim.fn.line(".")
+--TODO: I think this API probably needs some polish. Doesn't feel particularly
+--elegant to me. This function probs does too much:
+-- * (optionally) gets code to send
+-- * filters out comments and blank lines
+-- * Finds a kernel
+-- * Sends the code to the kernel
+-- * (optionally) moves the cursor
+---@param r jet.send.Range?
+---@param move_cursor boolean?
+M.send_auto = function(r, move_cursor)
+	r = r or require("jet.core.send.get_code").get_auto()
+	move_cursor = move_cursor == nil and true or false
 
-	if not code or #code == 0 then
+	if not r then
 		return
 	end
 
-	local ft, commentstring = utils.local_lang_info()
+	local text = vim.api.nvim_buf_get_text(r.buf, r.start_row, r.start_col, r.end_row, r.end_col, {})
 
-	---@param line string
-	local is_significant = function(line)
-		return line and line:match("%S") and not utils.is_comment(line, commentstring)
+	if #text == 0 then
+		return
 	end
 
-	local code_filtered = vim.tbl_filter(is_significant, code)
+	local lang_info = utils.local_lang_info({ buf = r.buf, row = r.start_row, col = r.start_col })
+	local ft, commentstring = lang_info.filetype, lang_info.commentstring
+
+	local code_filtered = vim.tbl_filter(function(line)
+		return line:match("%S") and not utils.is_comment(line, commentstring)
+	end, text)
+
+	if #code_filtered == 0 then
+		return
+	end
 
 	require("jet.core.api").get_connected({ filetype = ft, primary = true }, function(k)
 		table.insert(code_filtered, "")
 		k:send_repl(code_filtered)
 
-		local new_lnum = lnum + #code
-		while not is_significant(vim.api.nvim_buf_get_lines(0, new_lnum - 1, new_lnum, false)[1]) do
-			new_lnum = new_lnum + 1
+		if move_cursor then
+			local next_line = r.end_row + 1
+			local next_significant_line = utils.next_significant_line({
+				buf = r.buf,
+				row = next_line,
+				col = 0,
+			}) or next_line
+			vim.fn.cursor(next_significant_line + 1, 0)
 		end
-		vim.fn.cursor(new_lnum, 0)
 
 		if vim.fn.mode():lower() == "v" then
 			local esc_termcode = "\27"
 			vim.api.nvim_feedkeys(esc_termcode, "n", false)
 		end
+	end)
+end
+
+M.send_motion = function()
+	return require("jet.core.send.get_code").get_motion(function(rng)
+		M.send_auto(rng, false)
 	end)
 end
 

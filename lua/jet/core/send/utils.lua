@@ -1,35 +1,33 @@
 local M = {}
 
--- Adapted from https://github.com/neovim/neovim/blob/master/runtime/lua/vim/_comment.lua
----@param buf? integer
----@param pos? [integer, integer]
----@return string, string # Filetype and commentstring
-M.local_lang_info = function(buf, pos)
-	buf = buf or 0
-	pos = pos or { vim.fn.line("."), vim.fn.col(".") }
-	local buf_ft = vim.bo[buf].filetype
-	local buf_cs = vim.bo[buf].commentstring
+--- Adapted from https://github.com/neovim/neovim/blob/master/runtime/lua/vim/_comment.lua
+---@param pos jet.send.Pos
+---@return { filetype: string, commentstring: string }
+M.local_lang_info = function(pos)
+	local buf_ft = vim.bo[pos.buf].filetype
+	local buf_cs = vim.bo[pos.buf].commentstring
 
-	local ts_parser = vim.treesitter.get_parser(buf, "")
+	local ts_parser = vim.treesitter.get_parser(pos.buf, "")
 	if not ts_parser then
-		return buf_ft, buf_cs
+		return {
+			filetype = buf_ft,
+			commentstring = buf_cs,
+		}
 	end
-
-	-- Try to get 'commentstring' associated with local tree-sitter language.
-	-- This is useful for injected languages (like markdown with code blocks).
-	local row, col = pos[1] - 1, pos[2]
-	local ref_range = { row, col, row, col + 1 }
 
 	-- Get 'commentstring' from tree-sitter captures' metadata.
 	-- Traverse backwards to prefer narrower captures.
-	local captures = vim.treesitter.get_captures_at_pos(buf, row, col)
+	local captures = vim.treesitter.get_captures_at_pos(pos.buf, pos.row, pos.col - 1)
 	for i = #captures, 1, -1 do
 		local id, metadata = captures[i].id, captures[i].metadata
 		local metadata_cs = metadata["bo.commentstring"] or metadata[id] and metadata[id]["bo.commentstring"] --[[@as string?]]
 		local metadata_ft = metadata["bo.filetype"] or metadata[id] and metadata[id]["bo.filetype"] --[[@as string?]]
 
 		if metadata_cs and metadata_ft then
-			return metadata_ft, metadata_cs
+			return {
+				filetype = metadata_ft,
+				commentstring = metadata_cs,
+			}
 		end
 	end
 
@@ -42,7 +40,7 @@ M.local_lang_info = function(buf, pos)
 
 	---@param lang_tree vim.treesitter.LanguageTree
 	local function traverse(lang_tree, level)
-		if not lang_tree:contains(ref_range) then
+		if not lang_tree:contains({ pos.row, pos.col, pos.row, pos.col }) then
 			return
 		end
 
@@ -62,7 +60,10 @@ M.local_lang_info = function(buf, pos)
 	end
 	traverse(ts_parser, 1)
 
-	return (treesitter_ft or buf_ft), (treesitter_cs or buf_cs)
+	return {
+		filetype = (treesitter_ft or buf_ft),
+		commentstring = (treesitter_cs or buf_cs),
+	}
 end
 
 ---@param text string
@@ -85,6 +86,24 @@ M.is_comment = function(text, commentstring)
 
 	text = vim.trim(text)
 	return startswith(text, cs_left) and endswith(text, cs_right)
+end
+
+---@param pos jet.send.Pos
+---@return number? 1-indexed line number
+M.next_significant_line = function(pos)
+	local lang_info = M.local_lang_info(pos)
+	local cur_line = pos.row
+
+	while true do
+		cur_line = cur_line + 1
+		local line = vim.api.nvim_buf_get_lines(pos.buf, cur_line, cur_line + 1, false)[1]
+		if not line then
+			return nil
+		end
+		if line:match("%S") and not M.is_comment(line, lang_info.commentstring) then
+			return cur_line
+		end
+	end
 end
 
 return M
