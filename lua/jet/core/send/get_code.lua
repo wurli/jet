@@ -6,7 +6,6 @@ local utils = require("jet.core.utils")
 
 ---@class jet.getcode
 local M = {
-	---@private
 	---@type table<string, jet.getcode>
 	filetype = {
 		markdown = require("jet.core.send.markdown"),
@@ -39,8 +38,7 @@ end
 
 ---@return string[]?
 M.get_auto = function()
-	local mode = vim.fn.mode()
-	if vim.tbl_contains({ "v", "V", "" }, mode) then
+	if vim.tbl_contains({ "v", "V", "" }, vim.fn.mode()) then
 		return M.get_visual()
 	end
 	return M.get_expr()

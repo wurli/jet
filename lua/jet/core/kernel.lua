@@ -23,6 +23,7 @@ local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 ---@field cmd string[]
 ---@field owned boolean
 ---@field filetype? string
+---@field on_msg_hooks table<string, fun(k: jet.kernel, msg: jet.jupyter.msg)>
 ---@field comms table<string, string> comm_name -> id
 local Kernel = {}
 Kernel.__index = Kernel
@@ -49,6 +50,7 @@ function Kernel.init_owned(opts)
 	local obj = vim.tbl_extend("force", opts, {
 		session_name = opts.session_name or "nvim",
 		owned = true,
+		on_msg_hooks = {},
 		comms = {},
 	})
 
@@ -75,6 +77,7 @@ function Kernel.init_external(opts)
 		spec = view.spec,
 		spec_path = view.session.kernelspec_path,
 		owned = false,
+		on_msg_hooks = {},
 		comms = {},
 	}, Kernel)
 
@@ -198,6 +201,21 @@ function Kernel:has_lua_client()
 	return self.client_id ~= nil
 end
 
+--TODO: stop poll on kernel close
+function Kernel:handle_stream()
+	---@param res jet.kernel.response
+	utils.poll(self.stream, function(res)
+		for _, hook in pairs(self.on_msg_hooks) do
+			if res.status == "busy" then
+				hook(self, res.msg)
+				return "continue"
+			else
+				return "wait"
+			end
+		end
+	end)
+end
+
 ---@param callback? fun(k: jet.kernel)
 function Kernel:start_lua_client(callback)
 	if self:has_lua_client() then
@@ -216,6 +234,7 @@ function Kernel:start_lua_client(callback)
 		cb = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
 	end
 
+	--TODO: stop poll on kernel close
 	---@param res jet.init.response?
 	utils.poll(cb, function(res)
 		if res.status == "ready" then
@@ -240,6 +259,8 @@ function Kernel:start_lua_client(callback)
 			for _, hook in ipairs(config.hooks.on_lua_client_start) do
 				hook(self)
 			end
+
+			self:handle_stream()
 
 			if callback then
 				callback(self)
@@ -315,7 +336,7 @@ function Kernel:close()
 end
 
 ---@class jet.kernel.comm_open.opts
----@field listener? fun(res: jet.kernel.response)
+---@field listener? fun(res: jet.jupyter.msg)
 ---@field listener_interval? number In milliseconds, default 50ms
 
 ---@param name string
@@ -339,7 +360,7 @@ function Kernel:comm_open(name, data, opts)
 				-- The comm has been closed, so stop polling
 				return "exit"
 			elseif res.status == "busy" then
-				opts.listener(res)
+				opts.listener(res.msg)
 				return "continue"
 			else
 				return "wait"
@@ -350,19 +371,22 @@ function Kernel:comm_open(name, data, opts)
 	return comm_id
 end
 
----@class jet.kernel.listen.opts : jet.listen.opts
----This function can return:
---- - `"wait"`: The listener will be called again after the `interval`
---- - `"continue"`: The listener will be called again immediately
---- - `"exit"`: Stop listening
----@field listener fun(res: jet.kernel.response): "wait" | "continue" | "exit"
----@field interval? number In milliseconds, default 50ms
-
----@param opts jet.kernel.listen.opts
-function Kernel:listen(opts)
-	local listener = require("jet.core.engine").listen(self.client_id, opts or {})
-	utils.poll(listener, opts.listener, { interval = opts.interval })
-end
+-- NOTE: we might need this one day but not now, so commenting until a clear
+-- use case arises.
+--
+-- ---@class jet.kernel.listen.opts : jet.listen.opts
+-- ---This function can return:
+-- --- - `"wait"`: The listener will be called again after the `interval`
+-- --- - `"continue"`: The listener will be called again immediately
+-- --- - `"exit"`: Stop listening
+-- ---@field listener fun(res: jet.kernel.response): "wait" | "continue" | "exit"
+-- ---@field interval? number In milliseconds, default 50ms
+--
+-- ---@param opts jet.kernel.listen.opts
+-- function Kernel:listen(opts)
+-- 	local listener = require("jet.core.engine").listen(self.client_id, opts or {})
+-- 	utils.poll(listener, opts.listener, { interval = opts.interval })
+-- end
 
 ---@param comm_id string
 ---@param data table

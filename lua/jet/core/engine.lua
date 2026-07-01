@@ -220,13 +220,24 @@ end
 ---| "input_request" | "input_reply"
 ---| "comm_open" | "comm_msg" | "comm_close"
 
+---@class jet.jupyter.msg.header
+---@field msg_id string
+---@field session string
+---@field username string
+---@field date string
+---@field msg_type jet.msg_type
+---@field version string
+---@field subshell_id string?
+
+---@class jet.jupyter.msg
+---@field header jet.jupyter.msg.header
+---@field parent_header jet.jupyter.msg.header?
+---@field metadata table
+---@field content table
+
 ---@class jet.kernel.response
 ---@field status "busy" | "pending"
----@field channel? jet.channel
----@field type jet.msg_type
----@field data table
-
----@alias jet.kernel.callback fun(): jet.kernel.response?
+---@field msg jet.jupyter.msg
 
 ---@class jet.listen.opts
 ---@field channel? jet.channel | jet.channel[]
@@ -237,7 +248,7 @@ end
 ---@field session_id? string
 ---@field client_id string
 ---@field kernel_info jet.kernel.info
----@field stream jet.kernel.callback
+---@field stream fun(): jet.kernel.response?
 
 ---@class jet.session_info
 ---@field session_id string
@@ -262,14 +273,14 @@ end
 ---TODO: should accept short paths like ~/...
 ---@field show_spec fun(path: string): jet.kernel.spec
 ---@field show_session fun(session_id: string): { session: jet.session_info, spec: jet.kernel.spec }
----@field execute_code fun(client_id: string, code: string, user_expression: table?): jet.kernel.callback
----@field is_complete fun(client_id: string, code: string): jet.kernel.callback
+---@field execute_code fun(client_id: string, code: string, user_expression: table?): fun(): jet.kernel.response?
+---@field is_complete fun(client_id: string, code: string): fun(): jet.kernel.response?
 ---@field get_completions fun(client_id: string, code: string): table?
----@field comm_open fun(client_id: string, comm_id: string, data: table): string, jet.kernel.callback
----@field comm_send fun(client_id: string, comm_id: string, data: table): jet.kernel.callback
----@field comm_info fun(client_id: string, target_name: string?): jet.kernel.callback
----@field comm_listen fun(client_id: string, comm_id: string): jet.kernel.callback
----@field listen fun(client_id: string, opts?: jet.listen.opts): jet.kernel.callback
+---@field comm_open fun(client_id: string, comm_id: string, data: table): string, fun(): jet.kernel.response?
+---@field comm_send fun(client_id: string, comm_id: string, data: table): fun(): jet.kernel.response?
+---@field comm_info fun(client_id: string, target_name: string?): fun(): jet.kernel.response?
+---@field comm_listen fun(client_id: string, comm_id: string): fun(): jet.kernel.response?
+---@field listen fun(client_id: string, opts?: jet.listen.opts): fun(): jet.kernel.response?
 ---@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string)
 ---@field make_session_id fun(lang: string): string
 local out = loader()
