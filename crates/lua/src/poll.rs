@@ -7,8 +7,8 @@
 //! - `{status="pending"}` when nothing has arrived yet
 //! - `nil` once the kernel has gone idle for this request
 
+use crate::to_lua_value;
 use jet_core::client::{RequestStream, TryRecv};
-use jet_core::events::raw_msg_type_and_content;
 use mlua::prelude::*;
 use std::cell::RefCell;
 
@@ -24,12 +24,10 @@ pub fn make_poll(lua: &Lua, stream: RequestStream) -> LuaResult<LuaFunction> {
         };
         match stream.try_recv() {
             TryRecv::Frame(f) => {
-                let (msg_type, content) = raw_msg_type_and_content(&f.message);
+                // let (msg_type, content) = raw_msg_type_and_content(&f.message);
                 let t = lua.create_table()?;
                 t.set("status", "busy")?;
-                t.set("channel", f.channel.name())?;
-                t.set("type", msg_type)?;
-                t.set("data", crate::to_lua_value(lua, &content)?)?;
+                t.set("msg", to_lua_value(lua, &f.message)?)?;
                 Ok(LuaValue::Table(t))
             }
             TryRecv::Empty => {

@@ -245,14 +245,6 @@ fn media_to_value(content: &[MediaType]) -> Value {
     Value::Object(map)
 }
 
-/// Build a raw `(msg_type, content)` JSON pair from a [`JupyterMessage`].
-/// Used by the Lua router which forwards untyped frames to its callers.
-pub fn raw_msg_type_and_content(msg: &JupyterMessage) -> (String, Value) {
-    let msg_type = msg.message_type().to_string();
-    let content = serde_json::to_value(&msg.content).unwrap_or(Value::Null);
-    (msg_type, content)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
