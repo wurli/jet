@@ -2,4 +2,5 @@
 /target
 /kernels
 /deps
+/notes
 *.log
