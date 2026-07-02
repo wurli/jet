@@ -8,9 +8,9 @@ use jet_core::manager::{Session, SessionStore, generate_session_name};
 use mlua::prelude::*;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use tokio::sync::oneshot;
 use std::sync::Arc;
 use std::time::SystemTime;
+use tokio::sync::oneshot;
 
 use jet_core::client::RequestStream;
 
@@ -34,7 +34,7 @@ use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 pub fn start(
     lua: &Lua,
     (spec_path, connection_file, session_name): (String, Option<String>, Option<String>),
-) -> LuaResult<LuaFunction> {
+) -> LuaResult<(LuaFunction, Option<String>)> {
     let spec = KernelSpec::load(&PathBuf::from(&spec_path))
         .with_context(|| format!("loading kernelspec {spec_path}"))
         .into_lua_err()?;
@@ -68,11 +68,12 @@ pub fn start(
     };
 
     let (tx, rx) = tokio::sync::oneshot::channel();
+    let id = session_id.clone();
     runtime().spawn(async move {
-        let _ = tx.send(Client::spawn(&spec, conn_path, session_name.as_deref(), session_id).await);
+        let _ = tx.send(Client::spawn(&spec, conn_path, session_name.as_deref(), id).await);
     });
 
-    make_lifecycle_poll(lua, rx, store_entry)
+    Ok((make_lifecycle_poll(lua, rx, store_entry)?, session_id))
 }
 
 /// `jet.attach(session_id, connection_file?, session_name?) -> poll`
