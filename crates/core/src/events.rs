@@ -141,22 +141,38 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             code: ei.code.clone(),
         },
         (Channel::IoPub, JupyterMessageContent::ErrorOutput(err)) => {
+            // Note 1 (iopub vs shell):
+            // Kernels can omit error info on both the shell and IoPub. Shell only goes back to the
+            // client that ran the code, but IoPub is broadcast to all clients. For this reason it
+            // seems that the conventional behaviour for clients is to ignore the shell reply and
+            // only display the IoPub error.
             // https://github.com/posit-dev/positron/issues/1053
+
+            // Note 2 (traceback vs ename/evalue):
+            // JupyterLab ignores the ename and evalue if the traceback is present. This is probably
+            // influenced by ipykernel, since here there is overlap in traceback and ename/evalue
+            // content. Other kernels seem to do this too, e.g. Ark rolls ename and evalue into the
+            // traceback if you use `--session-mode notebook` (but not otherwise, leading to omitted
+            // info in the error message).
             let mut traceback = "".to_string();
 
-            if !err.ename.is_empty() {
-                traceback.push_str(&err.ename);
-                traceback.push_str(": ");
-            }
-
-            if !err.evalue.is_empty() {
-                traceback.push_str("\n");
-                traceback.push_str(&err.evalue);
-            }
-
             if !err.traceback.is_empty() {
-                traceback.push_str("\n");
                 traceback.push_str(&err.traceback.join("\n"));
+            } else {
+                if !err.ename.is_empty() {
+                    traceback.push_str(&err.ename);
+                    traceback.push_str(": ");
+                }
+
+                if !err.evalue.is_empty() {
+                    traceback.push_str("\n");
+                    traceback.push_str(&err.evalue);
+                }
+
+                if !err.traceback.is_empty() {
+                    traceback.push_str("\n");
+                    traceback.push_str(&err.traceback.join("\n"));
+                }
             }
 
             EventData::Error { traceback }
