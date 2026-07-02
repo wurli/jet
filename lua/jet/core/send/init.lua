@@ -54,7 +54,7 @@ M.send_auto = function(r, move_cursor)
 				buf = r.buf,
 				row = next_line,
 				col = 0,
-			}) or next_line
+			}) or (next_line + 1)
 			vim.fn.cursor(next_significant_line + 1, 0)
 		end
 
