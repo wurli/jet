@@ -114,6 +114,10 @@ function Kernel:open_term(callback, win_config)
 			}, win_config or config.repl_win_opts or {})
 		)
 
+		-- When the cursor is at the bottom of the REPL you get aut-scroll when
+		-- new lines appear. This is a good state to start in.
+		vim.api.nvim_win_set_cursor(self.term.win, { vim.api.nvim_buf_line_count(self.term.buf), 0 })
+
 		vim.wo[self.term.win].number = false
 		vim.wo[self.term.win].relativenumber = false
 
