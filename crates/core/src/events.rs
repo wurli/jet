@@ -139,16 +139,23 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             code: ei.code.clone(),
         },
         (Channel::IoPub, JupyterMessageContent::ErrorOutput(err)) => {
-            let traceback = if err.traceback.is_empty() {
-                match (err.ename.is_empty(), err.evalue.is_empty()) {
-                    (false, false) => format!("{}: {}", err.ename, err.evalue),
-                    (true, false) => err.evalue.clone(),
-                    (false, true) => err.ename.clone(),
-                    (true, true) => String::new(),
-                }
-            } else {
-                err.traceback.join("\n")
-            };
+            let mut traceback = "".to_string();
+
+            if !err.ename.is_empty() {
+                traceback.push_str(&err.ename);
+                traceback.push_str(": ");
+            }
+
+            if !err.evalue.is_empty() {
+                traceback.push_str("\n");
+                traceback.push_str(&err.evalue);
+            }
+
+            if !err.traceback.is_empty() {
+                traceback.push_str("\n");
+                traceback.push_str(&err.traceback.join("\n"));
+            }
+
             EventData::Error { traceback }
         }
         (Channel::Shell, JupyterMessageContent::KernelInfoReply(reply)) => EventData::Banner {
