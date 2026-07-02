@@ -49,7 +49,7 @@ M.send_auto = function(r, move_cursor)
 		k:send_repl(code_filtered)
 
 		if move_cursor then
-			local next_line = r.end_row + 1
+			local next_line = r.end_row
 			local next_significant_line = utils.next_significant_line({
 				buf = r.buf,
 				row = next_line,
