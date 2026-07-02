@@ -30,6 +30,7 @@ local Api = {}
 ---@field filetype? string
 ---@field display_name? string
 ---@field primary? boolean Implies `status` = "connected"
+---@field default? boolean Only gets the default kernel for `filetype` (see `config.default_kernels`)
 ---@field status? (jet.kernel.status)[]
 
 ---@param kernels jet.kernel[]
@@ -59,10 +60,18 @@ local filter_kernels = function(kernels, opts)
 			return false
 		end
 
-		-- filetype is present for connected kernels if added through hooks,
-		-- and for other kernels if explicitly configured
-		if opts.filetype and opts.filetype ~= k.filetype then
-			return false
+		if opts.filetype then
+			-- filetype is present for connected kernels if added through hooks,
+			-- and for other kernels if explicitly configured
+			if opts.filetype ~= k.filetype then
+				return false
+			end
+
+			local spec_path = require("jet.config").options.default_kernels[opts.filetype]
+			spec_path = type(spec_path) == "function" and spec_path() or spec_path
+			if k.spec_path ~= spec_path then
+				return false
+			end
 		end
 
 		if
@@ -204,29 +213,60 @@ Api.get_connected = function(filters, callback)
 	end
 end
 
----Open a REPL for a kernel.
+---@param kernels jet.kernel[]
+---@param filters jet.api.list_kernels.filters[]
+---@param callback fun(k: jet.kernel)
+local try_pick = function(kernels, filters, callback)
+	if #kernels == 0 then
+		vim.notify("Could not find any matching kernels on the system", vim.log.levels.WARN)
+		return
+	end
+
+	for _, f in ipairs(filters) do
+		local matches = filter_kernels(kernels, f)
+		if #matches == 1 then
+			callback(matches[1])
+			return
+		elseif #matches > 1 then
+			select_kernel(kernels, "Open a Jupyter REPL", function(k)
+				callback(k)
+			end)
+			return
+		end
+	end
+
+	---@param k jet.kernel
+	select_kernel(kernels, "Open a Jupyter REPL", function(k)
+		callback(k)
+	end)
+end
+
+---Perform some action on a kernel
 ---
 ---The kernel may be running in Neovim already, running in a Jet session
 ---outside of Neovim, or not yet running.
+---
+---1. Starts with a list of all kernels, including those connected to nvim,
+---   inactive kernels, and kernels running externally (e.g. in tmux or in
+---   another nvim session in the same directory).
+---2. If the list contains only one *running* kernel, this is passed to
+---   `callback`.
+---3. If the list contains only one *inactive* kernel and this kernel is marked
+---   as 'default' for its filetype (see `config.default_kernels`), this kernel
+---   is passed to `callback`.
+---4. If neither 2 or 3 apply, the user is prompted to select a kernel via
+---   `vim.ui.select()`.
+---
+---TODO: document available filters here
 ---
 ---@param filters jet.api.list_kernels.filters
 ---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
 Api.get_any = function(filters, init_opts, callback)
-	filters = filters or {}
-
-	local running = Api.list_kernels(filters, init_opts)
-
-	if #running == 0 then
-		vim.notify("Could not find any kernels on the system", vim.log.levels.WARN)
-	elseif #running == 1 and running[1]:status() == "connected" then
-		callback(running[1])
-	else
-		---@param k jet.kernel
-		select_kernel(running, "Open a Jupyter REPL", function(k)
-			callback(k)
-		end)
-	end
+	try_pick(Api.list_kernels(filters or {}, init_opts), {
+		{ status = { "connected", "connecting" } },
+		{ status = { "inactive" }, default = true },
+	}, callback)
 end
 
 return Api
