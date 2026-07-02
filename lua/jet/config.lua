@@ -13,9 +13,10 @@ M.defaults = {
 	default_kernels = {},
 	repl_win_opts = {}, ---@type vim.api.keyset.win_config
 	hooks = {
-		on_kernel_init = {}, ---@type fun(k: jet.kernel)[] end,
-		on_lua_client_start = {}, ---@type fun(k: jet.kernel)[] end,
-		on_kernel_close = {}, ---@type fun(k: jet.kernel)[] end,
+		on_kernel_init = {}, ---@type fun(k: jet.kernel)[]
+		on_lua_client_start = {}, ---@type fun(k: jet.kernel)[]
+		on_kernel_close = {}, ---@type fun(k: jet.kernel)[]
+		on_send_pre = {}, ---@type fun(k: jet.kernel, code: string[])[]
 	},
 	send = {
 		---If `false` (the default), then when sending several complete

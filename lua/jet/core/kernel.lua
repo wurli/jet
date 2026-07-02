@@ -23,6 +23,7 @@ local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 ---@field cmd string[]
 ---@field owned boolean
 ---@field filetype? string
+---TODO: should live in config like other hooks (for discoverability/consitency)
 ---@field on_msg_hooks table<string, fun(k: jet.kernel, msg: jet.jupyter.msg)>
 ---@field comms table<string, string> comm_name -> id
 local Kernel = {}
@@ -397,17 +398,35 @@ end
 ---@param code string | string[]
 function Kernel:send_repl(code)
 	assert(self.term and self.term.job_id, "Kernel has no repl job id")
+	if type(code) == "string" then
+		code = vim.split(code, "[\n\r]", { plain = false })
+	end
+
+	-- Remove trailing empty lines
+	for i = #code, 1, -1 do
+		if code[i] == "" then
+			table.remove(code, i)
+		else
+			break
+		end
+	end
+
+	-- Allow the user to modify the code before we send it. This is
+	-- particularly helpful, e.g. for ipython, which requires an extra newline
+	-- at the end of statements which end on an indented line in order to be
+	-- actually sent to the kernel (otherwise you get the continuation prompt
+	-- '+ ...').
+	for _, hook in ipairs(config.hooks.on_send_pre) do
+		hook(self, code)
+	end
 
 	-- Wrap in a bracketed-paste sequence so the REPL on the other end
 	-- accumulates the whole block as one cell instead of evaluating each
 	-- line separately, then submit with a single CR (Enter, in raw mode).
 	-- This is exactly what a terminal emits on Cmd/Ctrl+V — works with
 	-- any REPL that honors bracketed paste.
-	if type(code) == "table" then
-		code = table.concat(code, "\r")
-	end
-
-	code = code:gsub("\r-$", "")
+	---@diagnostic disable-next-line: param-type-mismatch
+	code = table.concat(code, "\r")
 
 	-- We use bracketed paste so the Jet REPL knows not to evaluate the code
 	-- until the end of the paste. This matches behaviour of Positron.
