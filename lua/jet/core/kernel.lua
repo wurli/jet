@@ -4,6 +4,8 @@ local utils = require("jet.core.utils")
 
 local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
 
+local STARTING_KERNEL_SENTINEL = "<pending>"
+
 ---@class jet.term
 ---@field job_id integer
 ---@field buf integer
@@ -179,13 +181,16 @@ function Kernel:create_term(callback)
 	end
 end
 
----@alias jet.kernel.status "connected"
+---@alias jet.kernel.status "connecting"
+---| "connected"
 ---| "external"
 ---| "inactive"
 
 ---@return jet.kernel.status
 function Kernel:status()
-	if self.client_id then
+	if self.client_id == STARTING_KERNEL_SENTINEL then
+		return "connecting"
+	elseif self.client_id then
 		return "connected"
 	elseif self.session_id then
 		return "external"
@@ -233,22 +238,23 @@ function Kernel:start_lua_client(callback)
 	local cb
 	if self.owned then
 		assert(self.spec_path, "Kernel spec_path is not set")
-		cb = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
+		cb, self.session_id = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
+		self.client_id = STARTING_KERNEL_SENTINEL
+		assert(self.session_id, "Kernel did not return a session id")
 	else
 		assert(self.session_id, "Kernel session_id is not set")
 		cb = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
 	end
 
+	manager:insert(self)
+
 	--TODO: stop poll on kernel close
 	---@param res jet.init.response?
 	utils.poll(cb, function(res)
 		if res.status == "ready" then
-			self.session_id = res.session_id
 			self.client_id = res.client_id
 			self.kernel_info = res.kernel_info
 			self.stream = res.stream
-
-			manager:insert(self)
 
 			-- Try resolving filetype after kernel started autocmd so the user
 			-- has a chance to override it.

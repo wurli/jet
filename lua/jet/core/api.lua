@@ -37,7 +37,7 @@ local Api = {}
 ---@return jet.kernel[]
 local filter_kernels = function(kernels, opts)
 	opts = opts or {}
-	opts.status = opts.status or { "connected", "external", "inactive" }
+	opts.status = opts.status or { "connecting", "connected", "external", "inactive" }
 	opts.status = type(opts.status) == "string" and { opts.status } or opts.status
 
 	---@param k jet.kernel
@@ -81,7 +81,7 @@ end
 ---@return jet.kernel[]
 Api.list_kernels = function(filters, init_opts)
 	filters = filters or {}
-	filters.status = filters.status or { "connected", "external", "inactive" }
+	filters.status = filters.status or { "connecting", "connected", "external", "inactive" }
 	filters.status = type(filters.status) == "string" and { filters.status } or filters.status
 
 	---@type jet.kernel[]
@@ -119,9 +119,13 @@ local select_kernel = function(kernels, msg, callback)
 		prompt = msg,
 		---@param k jet.kernel
 		format_item = function(k)
+			local status = k:status()
 			return string.format(
 				"%s  %s  %s",
-				k.client_id and "" or k.session_id and "󰺕" or "",
+				status == "connecting" and "󰪤"
+					or status == "connected" and "󰪥"
+					or status == "external" and "󰺕"
+					or status == "inactive" and "",
 				k.spec.display_name,
 				utils.path_shorten(k.spec_path)
 			)
