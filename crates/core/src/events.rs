@@ -15,6 +15,7 @@
 use jupyter_protocol::{
     ExecutionState, IsCompleteReplyStatus, JupyterMessage, JupyterMessageContent, MediaType, Stdio,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 #[derive(Debug)]
@@ -84,7 +85,8 @@ pub struct IsCompleteReplyMsg {
 /// Which ZMQ channel a message arrived on. We keep our own enum rather
 /// than reuse `jupyter_protocol::Channel` so callers don't need to import
 /// runtimed types just to feed events in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Channel {
     Shell,
     IoPub,
@@ -139,6 +141,7 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             code: ei.code.clone(),
         },
         (Channel::IoPub, JupyterMessageContent::ErrorOutput(err)) => {
+            // https://github.com/posit-dev/positron/issues/1053
             let mut traceback = "".to_string();
 
             if !err.ename.is_empty() {

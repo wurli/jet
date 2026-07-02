@@ -230,6 +230,7 @@ end
 ---@field subshell_id string?
 
 ---@class jet.jupyter.msg
+---@field channel jet.channel
 ---@field header jet.jupyter.msg.header
 ---@field parent_header jet.jupyter.msg.header?
 ---@field metadata table

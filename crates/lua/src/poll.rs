@@ -24,10 +24,14 @@ pub fn make_poll(lua: &Lua, stream: RequestStream) -> LuaResult<LuaFunction> {
         };
         match stream.try_recv() {
             TryRecv::Frame(f) => {
-                // let (msg_type, content) = raw_msg_type_and_content(&f.message);
+                let msg = to_lua_value(lua, &f.message)?
+                    .as_table()
+                    .cloned()
+                    .expect("JupyterMessage serializes to a table");
+                msg.set("channel", lua.to_value(&f.channel)?)?;
                 let t = lua.create_table()?;
                 t.set("status", "busy")?;
-                t.set("msg", to_lua_value(lua, &f.message)?)?;
+                t.set("msg", msg)?;
                 Ok(LuaValue::Table(t))
             }
             TryRecv::Empty => {
