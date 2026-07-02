@@ -16,11 +16,15 @@ end
 ---@param r jet.send.Range?
 ---@param move_cursor boolean?
 M.send_auto = function(r, move_cursor)
-	r = r or require("jet.core.send.get_code").get_auto()
 	move_cursor = move_cursor == nil and true or false
 
 	if not r then
-		return
+		local curr_row = vim.fn.line(".") - 1
+		local expr_row = utils.next_significant_line({ buf = 0, row = curr_row - 1, col = 0 }) or curr_row
+		r = require("jet.core.send.get_code").get_auto({ buf = 0, row = expr_row, col = 0 })
+		if not r then
+			return
+		end
 	end
 
 	local text = vim.api.nvim_buf_get_text(r.buf, r.start_row, r.start_col, r.end_row, r.end_col, {})
