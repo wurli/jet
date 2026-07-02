@@ -154,7 +154,16 @@ function Kernel:create_term(callback)
 
 		-- buf_call since the buf is not yet attached to a window.
 		vim.api.nvim_buf_call(self.term.buf, function()
-			self.term.job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), { term = true })
+			self.term.job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), {
+				term = true,
+				on_exit = function()
+					-- TODO: perhaps we don't want this - e.g. a kernel crashes
+					-- and suddenly all the info from the console is gone. For
+					-- now it's convenient, but maybe review in future or add
+					-- config.
+					vim.api.nvim_buf_delete(self.term.buf, { force = true })
+				end,
+			})
 		end)
 
 		-- On TermEnter, record this kernel as the last used
