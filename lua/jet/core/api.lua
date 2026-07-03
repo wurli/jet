@@ -48,10 +48,12 @@ M.filter_kernels = function(kernels, opts)
 				return false
 			end
 
-			local spec_path = require("jet.config").options.default_kernels[opts.filetype]
-			spec_path = type(spec_path) == "function" and spec_path() or spec_path
-			if k.spec_path ~= spec_path then
-				return false
+			if opts.default then
+				local spec_path = require("jet.config").options.default_kernels[opts.filetype]
+				spec_path = type(spec_path) == "function" and spec_path() or spec_path
+				if k.spec_path ~= spec_path then
+					return false
+				end
 			end
 		end
 
