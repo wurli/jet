@@ -251,6 +251,8 @@ end
 ---@field kernel_info jet.kernel.info
 ---@field stream fun(): jet.kernel.response?
 
+---@alias jet.init.callback fun(): jet.init.response?
+
 ---@class jet.session_info
 ---@field session_id string
 ---@field closed_at string?
@@ -264,8 +266,8 @@ end
 ---@field working_dir string
 
 ---@class jet.engine
----@field start fun(spec_path: string, connection_file: string?, session_name: string?): fun(): jet.init.response?
----@field attach fun(session_id: string?, connection_file: string?, session_name: string?): fun(): jet.init.response?
+---@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.init.callback, jet.session_info?
+---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.init.callback, jet.session_info?
 ---@field stop fun(session_id: string)
 ---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }

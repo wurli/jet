@@ -34,12 +34,12 @@ use crate::runtime::{KERNELS, KernelHandle, get, runtime};
 pub fn start(
     lua: &Lua,
     (spec_path, connection_file, session_name): (String, Option<String>, Option<String>),
-) -> LuaResult<(LuaFunction, Option<String>)> {
+) -> LuaResult<(LuaFunction, Option<LuaValue>)> {
     let spec = KernelSpec::load(&PathBuf::from(&spec_path))
         .with_context(|| format!("loading kernelspec {spec_path}"))
         .into_lua_err()?;
 
-    let (conn_path, session_id, store_entry) = match connection_file {
+    let (conn_path, store_entry) = match connection_file {
         Some(p) => {
             let path = PathBuf::from(p);
             if path.exists() {
@@ -48,7 +48,7 @@ pub fn start(
                     path.display(),
                 )));
             }
-            (Some(path), None, None)
+            (Some(path), None)
         }
         None => {
             let store = SessionStore::default().into_lua_err()?;
@@ -61,19 +61,23 @@ pub fn start(
                     &cwd,
                 )
                 .into_lua_err()?;
-            let id = entry.meta().session_id.clone();
             let path = entry.connection_file_path();
-            (Some(path), Some(id), Some(entry))
+            (Some(path), Some(entry))
         }
     };
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let id = session_id.clone();
+    let id = store_entry.as_ref().map(|s| s.meta().session_id.clone());
     runtime().spawn(async move {
         let _ = tx.send(Client::spawn(&spec, conn_path, session_name.as_deref(), id).await);
     });
 
-    Ok((make_lifecycle_poll(lua, rx, store_entry)?, session_id))
+    let meta = store_entry
+        .as_ref()
+        .map(|s| crate::to_lua_value(lua, &s.meta()))
+        .transpose()?;
+
+    Ok((make_lifecycle_poll(lua, rx, store_entry)?, meta))
 }
 
 /// `jet.attach(session_id, connection_file?, session_name?) -> poll`
@@ -91,23 +95,21 @@ pub fn start(
 pub fn attach(
     lua: &Lua,
     (session_id, connection_file, session_name): (Option<String>, Option<String>, Option<String>),
-) -> LuaResult<LuaFunction> {
-    let (path, session_id) = match (session_id, connection_file) {
+) -> LuaResult<(LuaFunction, Option<LuaValue>)> {
+    let (path, store_entry) = match (session_id, connection_file) {
         (Some(id), None) => {
-            let path = SessionStore::default()
+            let session = SessionStore::default()
                 .into_lua_err()?
                 .open(&id)
-                .into_lua_err()?
-                .connection_file_path();
-            (path, Some(id))
+                .into_lua_err()?;
+            (session.connection_file_path(), Some(session))
         }
         (None, Some(p)) => {
             let path = PathBuf::from(p);
-            let id = SessionStore::default()
+            let session = SessionStore::default()
                 .ok()
-                .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
-                .map(|s| s.meta().session_id.clone());
-            (path, id)
+                .and_then(|s| s.find_by_connection_file(&path).ok().flatten());
+            (path, session)
         }
         (None, None) => {
             return Err(LuaError::external(anyhow::anyhow!(
@@ -122,11 +124,17 @@ pub fn attach(
     };
 
     let (tx, rx) = oneshot::channel();
+    let id = store_entry.as_ref().map(|s| s.meta().session_id.clone());
     runtime().spawn(async move {
-        let _ = tx.send(Client::attach(&path, session_name.as_deref(), session_id).await);
+        let _ = tx.send(Client::attach(&path, session_name.as_deref(), id).await);
     });
 
-    make_lifecycle_poll(lua, rx, None)
+    let meta = store_entry
+        .as_ref()
+        .map(|s| crate::to_lua_value(lua, &s.meta()))
+        .transpose()?;
+
+    Ok((make_lifecycle_poll(lua, rx, store_entry)?, meta))
 }
 
 /// Result delivered from the spawned boot future to the Lua-side poll closure.

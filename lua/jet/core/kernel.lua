@@ -19,9 +19,9 @@ local STARTING_KERNEL_SENTINEL = "<pending>"
 ---@field spec_path string
 ---@field kernel_info? jet.kernel.info
 ---@field session_id? string
+---@field session_info? jet.session_info
 ---@field client_id? string
 ---@field term? jet.term
----@field connection_file? string
 ---@field cmd string[]
 ---@field owned boolean
 ---@field filetype? string
@@ -42,7 +42,6 @@ setmetatable(Kernel, {
 ---@field spec_path string
 ---@field session_name? string
 ---@field spec? jet.kernel.spec | jet.kernel.paritalspec
----@field connection_file? string
 
 ---@param opts jet.kernel.init_owned.opts
 function Kernel.init_owned(opts)
@@ -247,13 +246,17 @@ function Kernel:start_lua_client(callback)
 	if self.owned then
 		---@diagnostic disable-next-line: unnecessary-assert
 		assert(self.spec_path, "Kernel spec_path is not set")
-		cb, self.session_id = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
+		cb, self.session_info = require("jet.core.engine").start(self.spec_path, nil, self.session_name)
+
+		assert(self.session_info, "Kernel did not return session info")
+		self.session_id = self.session_info.session_id
+
 		self.client_id = STARTING_KERNEL_SENTINEL
 		---@diagnostic disable-next-line: unnecessary-assert
 		assert(self.session_id, "Kernel did not return a session id")
 	else
 		assert(self.session_id, "Kernel session_id is not set")
-		cb = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
+		cb, self.session_info = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
 	end
 
 	manager:insert(self)
