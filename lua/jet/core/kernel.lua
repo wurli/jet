@@ -57,6 +57,7 @@ function Kernel.init_owned(opts)
 	})
 
 	local out = setmetatable(obj, Kernel)
+	Kernel.try_resolve_filetype(out)
 
 	for _, hook in ipairs(config.hooks.on_kernel_init) do
 		hook(out)
@@ -83,6 +84,8 @@ function Kernel.init_external(opts)
 		on_msg_hooks = {},
 		comms = {},
 	}, Kernel)
+
+	Kernel.try_resolve_filetype(out)
 
 	for _, hook in ipairs(config.hooks.on_kernel_init) do
 		hook(out)
@@ -317,17 +320,28 @@ function Kernel:try_resolve_filetype()
 	if self.filetype then
 		return
 	end
-	if self.kernel_info and self.kernel_info.language_info and self.kernel_info.language_info.file_extension then
-		local ft, _, is_fallback = vim.filetype.match({
-			-- Idk if 'dummy-file' is ever gonna make a difference, felt right tho
-			filename = "dummy-file" .. self.kernel_info.language_info.file_extension,
-		})
-		if ft and not is_fallback then
+	local shorten = require("jet.core.utils").path_shorten
+	for ft, default_spec in pairs(config.default_kernels) do
+		local s = type(default_spec) == "string" and default_spec or default_spec()
+		if s and shorten(s) == shorten(self.spec_path) then
 			self.filetype = ft
+			return
 		end
-	else
-		--TODO: advertise autocmd help page as a way to override this!
-		utils.log_warn("Could not resolve filetype for kernel '%s'.", self.spec.display_name, self.session_id)
+	end
+
+	if self.kernel_info then
+		if self.kernel_info.language_info and self.kernel_info.language_info.file_extension then
+			local ft, _, is_fallback = vim.filetype.match({
+				-- Idk if 'dummy-file' is ever gonna make a difference, felt right tho
+				filename = "dummy-file" .. self.kernel_info.language_info.file_extension,
+			})
+			if ft and not is_fallback then
+				self.filetype = ft
+			end
+		else
+			--TODO: advertise autocmd help page as a way to override this!
+			utils.log_warn("Could not resolve filetype for kernel '%s'.", self.spec.display_name, self.session_id)
+		end
 	end
 end
 

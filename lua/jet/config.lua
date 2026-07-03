@@ -9,7 +9,7 @@ M.defaults = {
 	stop_on_nvim_quit = true,
 	auto_set_primary = true, ---@type boolean
 	---key=filetype, value=kernelspec path
-	---@type table<string, string | fun(): string>
+	---@type table<string, string | fun(): string?>
 	default_kernels = {},
 	repl_win_opts = {}, ---@type vim.api.keyset.win_config
 	hooks = {

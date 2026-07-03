@@ -32,51 +32,6 @@ M.poll = function(callback, handler, opts)
 	run()
 end
 
----@param opts { extension?: string, language?: string }
----@return string
-M.resolve_filetype = function(opts)
-	if opts.extension then
-		if opts.extension:sub(1, 1) ~= "." then
-			opts.extension = "." .. opts.extension
-		end
-
-		local ft, _ = vim.filetype.match({ filename = "file" .. opts.extension })
-
-		if ft then
-			return ft
-		end
-	end
-
-	-- TODO: add a mapped list which users can add to.
-	-- Turns out this is quite handy to have, e.g. if you have a ftplugin named
-	-- 'R.lua' then 'R' will be returned by `vim.fn.getcompletion("", "filetype")`.
-	-- Obvs you should probs just rename your ftplugin, but it's not an obvious fix.
-	if opts.language then
-		-- :'(
-		local vim_filetypes = vim.fn.getcompletion("", "filetype")
-
-		-- If vim has a built-in filetype which matches the language then we
-		-- can be pretty sure that's the one.
-		for _, ft in ipairs(vim_filetypes) do
-			if ft:lower() == opts.language:lower() then
-				return ft
-			end
-		end
-
-		-- If vim has no matching built-in filetype then use the kernel
-		-- language anyway.
-		M.log_debug(
-			"Could not resolve kernel filetype for extension `%s`; falling back to language `%s`",
-			opts.extension,
-			opts.language
-		)
-
-		return opts.language
-	end
-
-	error(("Could not resolve filetype based on extension `%s`"):format(opts.extension))
-end
-
 -- vim.keymap.set("n", "<cr>", function()
 -- 	vim.print(M.get_filetype(0, { vim.fn.line("."), vim.fn.col(".") }))
 -- end, {})
@@ -123,18 +78,7 @@ end
 ---@param path string
 ---@return string
 M.path_shorten = function(path)
-	local p = vim.fn.expand(path)
-	path = type(p) == "string" and p or path
-	for _, x in ipairs({
-		-- CWD should be preferred over HOME - hence why `pairs` not used
-		{ abbv = ".", expansion = vim.fn.getcwd() },
-		{ abbv = "~", expansion = vim.fn.expand("~") },
-	}) do
-		if path:sub(1, #x.expansion) == x.expansion then
-			return x.abbv .. path:sub(#x.expansion + 1)
-		end
-	end
-	return path
+	return vim.fn.simplify(vim.fn.fnamemodify(path, ":~:."))
 end
 
 ---@return string[]
