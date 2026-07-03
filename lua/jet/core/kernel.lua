@@ -469,6 +469,33 @@ function Kernel:send_repl(code)
 	vim.fn.chansend(self.term.job_id, code .. "\r")
 end
 
+---@param code string | string[]
+---@param silent boolean
+---@param callback? fun(res: jet.kernel.response)
+function Kernel:send_lua(code, silent, callback)
+	assert(self.client_id, "Kernel has no client id")
+	if type(code) == "table" then
+		code = table.concat(code, "\n")
+	end
+	local responder = require("jet.core.engine").execute_code(self.client_id, code, silent, {})
+
+	if not callback then
+		return
+	end
+
+	utils.poll(responder, function(res)
+		if not res then
+			return "exit"
+		end
+		if res.status == "busy" then
+			callback(res)
+			return "continue"
+		else
+			return "wait"
+		end
+	end, { interval = 30 })
+end
+
 -- ---@param code string | string[]
 -- ---@param user_expressions table<string, string>?
 -- function Kernel:execute(code, user_expressions)

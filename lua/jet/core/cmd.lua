@@ -107,6 +107,13 @@ M.setup = function()
 		if args[1] == "attach" then
 			return api.get_external({}, {}, open)
 		end
+
+		if args[1] == "send" and args[2] then
+			---@param k jet.kernel
+			return api.get_any({}, {}, function(k)
+				k:send_lua(args[2], false)
+			end)
+		end
 	end, {
 		desc = "Jet: work with Jupyter kernels",
 		nargs = "*",
