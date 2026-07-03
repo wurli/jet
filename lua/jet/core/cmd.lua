@@ -81,11 +81,16 @@ local parse_args = function(args, argspec, from)
 end
 
 M.setup = function()
+	local ui = require("jet.core.ui")
 	local api = require("jet.core.api")
 
 	vim.api.nvim_create_user_command("Jet", function(opts)
 		local args = opts.fargs
 		local open = require("jet.core.kernel").open_term
+
+		if #args == 0 then
+			return ui.show()
+		end
 
 		if args[1] == "repl" then
 			return api.get_any(parse_args(args, FILTER_ARGSPEC, 2), {}, open)
@@ -106,7 +111,7 @@ M.setup = function()
 		desc = "Jet: work with Jupyter kernels",
 		nargs = "*",
 		---@diagnostic disable-next-line: unused-local
-		complete = function(prefix, line, col)
+		complete = function(_, line, _)
 			local args = vim.split(line, " +", { trimempty = true })
 			if args[1] ~= "Jet" then
 				return {}

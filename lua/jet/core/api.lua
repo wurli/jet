@@ -11,7 +11,7 @@ local M = {}
 ---@field display_name? string
 ---@field primary? boolean Implies `status` = "connected"
 ---@field default? boolean Only gets the default kernel for `filetype` (see `config.default_kernels`)
----@field status? (jet.kernel.status)[]
+---@field status? jet.kernel.status | jet.kernel.status[]
 
 ---@param kernels jet.kernel[]
 ---@param opts? jet.api.list_kernels.filters
@@ -23,7 +23,8 @@ M.filter_kernels = function(kernels, opts)
 
 	---@param k jet.kernel
 	return vim.tbl_filter(function(k)
-		if not vim.tbl_contains(opts.status, k:status()) then
+		local status, _ = k:status()
+		if not vim.tbl_contains(opts.status, status) then
 			return false
 		end
 
@@ -86,7 +87,7 @@ M.list_kernels = function(filters, init_opts)
 		for _, k in ipairs(require("jet.core.engine").list_sessions()) do
 			-- Don't include sessions that are already connected to Neovim
 			if not manager.kernels[k.session_id] then
-				local init = vim.tbl_extend("keep", { session_id = k.session_id }, init_opts or {})
+				local init = vim.tbl_extend("keep", { session_id = k.session_id }, init_opts or {}) --[[@as jet.kernel.init_external.opts]]
 				table.insert(kernels, kernel.init_external(init))
 			end
 		end
@@ -94,7 +95,7 @@ M.list_kernels = function(filters, init_opts)
 
 	if vim.tbl_contains(filters.status, "inactive") then
 		for _, k in ipairs(require("jet.core.engine").list_kernels()) do
-			local init = vim.tbl_extend("keep", { spec_path = k.path, spec = k.spec }, init_opts or {})
+			local init = vim.tbl_extend("keep", { spec_path = k.path, spec = k.spec }, init_opts or {}) --[[@as jet.kernel.init_owned.opts]]
 			table.insert(kernels, kernel.init_owned(init))
 		end
 	end
@@ -108,16 +109,8 @@ local select_kernel = function(kernels, msg, callback)
 		prompt = msg,
 		---@param k jet.kernel
 		format_item = function(k)
-			local status = k:status()
-			return string.format(
-				"%s  %s  %s",
-				status == "connecting" and "󰪤"
-					or status == "connected" and "󰪥"
-					or status == "external" and "󰺕"
-					or status == "inactive" and "",
-				k.spec.display_name,
-				utils.path_shorten(k.spec_path)
-			)
+			local _, status_icon = k:status()
+			return string.format("%s  %s  %s", status_icon, k.spec.display_name, utils.path_shorten(k.spec_path))
 		end,
 	}, function(choice)
 		if choice then

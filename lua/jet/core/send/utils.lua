@@ -20,10 +20,10 @@ M.local_lang_info = function(pos)
 	local captures = vim.treesitter.get_captures_at_pos(pos.buf, pos.row, pos.col - 1)
 	for i = #captures, 1, -1 do
 		local id, metadata = captures[i].id, captures[i].metadata
-		local metadata_cs = metadata["bo.commentstring"] or metadata[id] and metadata[id]["bo.commentstring"] --[[@as string?]]
-		local metadata_ft = metadata["bo.filetype"] or metadata[id] and metadata[id]["bo.filetype"] --[[@as string?]]
+		local metadata_cs = metadata["bo.commentstring"] or metadata[id] and metadata[id]["bo.commentstring"]
+		local metadata_ft = metadata["bo.filetype"] or metadata[id] and metadata[id]["bo.filetype"]
 
-		if metadata_cs and metadata_ft then
+		if metadata_cs and metadata_ft and type(metadata_ft) == "string" then
 			return {
 				filetype = metadata_ft,
 				commentstring = metadata_cs,
@@ -89,7 +89,7 @@ M.is_comment = function(text, commentstring)
 end
 
 ---@param pos jet.send.Pos
----@return number? 1-indexed line number
+---@return integer? 1-indexed line number
 M.next_significant_line = function(pos)
 	local lang_info = M.local_lang_info(pos)
 	local cur_line = pos.row

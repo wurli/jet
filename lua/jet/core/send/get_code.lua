@@ -12,17 +12,17 @@ local M = {
 
 --- TODO: swap for vim.Pos once it's stabilised
 ---@class jet.send.Pos
----@field buf number
----@field row number 0-indexed
----@field col number 0-indexed
+---@field buf integer
+---@field row integer 0-indexed
+---@field col integer 0-indexed
 
 --- TODO: swap for vim.Range once it's stabilised
 ---@class jet.send.Range
----@field buf number
----@field start_row number 0-indexed
----@field start_col number 0-indexed
----@field end_row number 0-indexed
----@field end_col number 0-indexed
+---@field buf integer
+---@field start_row integer 0-indexed
+---@field start_col integer 0-indexed
+---@field end_row integer 0-indexed
+---@field end_col integer 0-indexed
 
 ---@return jet.send.Pos
 M.curr_pos = function()
@@ -79,6 +79,8 @@ M.get_visual = function()
 	local mode = vim.fn.mode()
 	if vim.tbl_contains({ "v", "V", "" }, mode) then
 		local region = vim.fn.getregionpos(vim.fn.getpos("v"), vim.fn.getpos("."), { type = mode })
+		assert(region and region[1] and region[#region], "Failed to get visual region")
+
 		local pos1 = region[1][1]
 		local pos2 = region[#region][2]
 
@@ -112,6 +114,7 @@ end
 ---@return fun(): "g@" # A function that can be used in an operator-pending mapping
 M.get_motion = function(callback)
 	return function()
+		---@diagnostic disable-next-line: global-in-non-module
 		-- Unfortunately doesn't seem to work if the callback is a member of this module
 		_G.JET_OP_PENDING_CALLBACK = callback
 		vim.o.operatorfunc = "v:lua.require'jet.core.send.get_code'._handle_curr_motion"
@@ -132,6 +135,7 @@ M._handle_curr_motion = function(mode)
 			-- Keeps lua_ls happy
 			or "Something has gone wrong!",
 	})
+	assert(region and region[1] and region[#region], "Failed to get motion region")
 	local pos1 = region[1][1]
 	local pos2 = region[#region][2]
 
@@ -144,6 +148,7 @@ M._handle_curr_motion = function(mode)
 	}
 
 	_G.JET_OP_PENDING_CALLBACK(code)
+	---@diagnostic disable-next-line: global-in-non-module
 	_G.JET_OP_PENDING_CALLBACK = nil
 end
 

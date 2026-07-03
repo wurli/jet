@@ -72,6 +72,7 @@ end
 ---@param opts jet.kernel.init_external.opts
 ---@return jet.kernel
 function Kernel.init_external(opts)
+	---@diagnostic disable-next-line: unnecessary-assert
 	assert(opts.session_id, "Kernel session ID is not set")
 	local view = require("jet.core.engine").show_session(opts.session_id)
 
@@ -107,6 +108,8 @@ end
 ---@param win_config? vim.api.keyset.win_config
 function Kernel:open_term(callback, win_config)
 	local open = function()
+		assert(self.term, "kernel.term is nil")
+
 		self.term.win = vim.api.nvim_open_win(
 			self.term.buf,
 			false,
@@ -138,14 +141,13 @@ end
 ---@param callback? fun(k: jet.kernel)
 function Kernel:create_term(callback)
 	local connect = function()
-		---@diagnostic disable-next-line: missing-fields
-		self.term = { buf = vim.api.nvim_create_buf(false, true) }
+		local term_buf = vim.api.nvim_create_buf(false, true)
 
 		--TODO: document this
-		vim.b[self.term.buf].jet = { session_id = self.session_id }
+		vim.b[term_buf].jet = { session_id = self.session_id }
 
 		vim.api.nvim_create_autocmd("BufWipeout", {
-			buffer = self.term.buf,
+			buffer = term_buf,
 			group = augroup,
 			callback = function()
 				self:close()
@@ -153,22 +155,24 @@ function Kernel:create_term(callback)
 		})
 
 		-- buf_call since the buf is not yet attached to a window.
-		vim.api.nvim_buf_call(self.term.buf, function()
-			self.term.job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), {
+		vim.api.nvim_buf_call(term_buf, function()
+			assert(self.session_id, "Kernel has no session id")
+			local term_job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), {
 				term = true,
 				on_exit = function()
 					-- TODO: perhaps we don't want this - e.g. a kernel crashes
 					-- and suddenly all the info from the console is gone. For
 					-- now it's convenient, but maybe review in future or add
 					-- config.
-					vim.api.nvim_buf_delete(self.term.buf, { force = true })
+					vim.api.nvim_buf_delete(term_buf, { force = true })
 				end,
 			})
+			self.term = { job_id = term_job_id, buf = term_buf }
 		end)
 
 		-- On TermEnter, record this kernel as the last used
 		-- TODO: configure whether or not this should automatically happen
-		if config.auto_set_primary then
+		if config.auto_set_primary and self.term then
 			vim.api.nvim_create_autocmd("TermEnter", {
 				buffer = self.term.buf,
 				group = augroup,
@@ -190,23 +194,18 @@ function Kernel:create_term(callback)
 	end
 end
 
----@alias jet.kernel.status "connecting"
----| "connected"
----| "external"
----| "inactive"
+---@alias jet.kernel.status "connecting" | "connected" | "external" | "inactive"
 
----@return jet.kernel.status
+---@return jet.kernel.status, string
 function Kernel:status()
 	if self.client_id == STARTING_KERNEL_SENTINEL then
-		return "connecting"
+		return "connecting", "󰪤"
 	elseif self.client_id then
-		return "connected"
+		return "connected", "󰪥"
 	elseif self.session_id then
-		return "external"
-	elseif self.spec_path then
-		return "inactive"
+		return "external", "󰺕"
 	else
-		error("Kernel has neither client_id, session_id or spec_path: " .. vim.inspect(self))
+		return "inactive", ""
 	end
 end
 
@@ -246,9 +245,11 @@ function Kernel:start_lua_client(callback)
 
 	local cb
 	if self.owned then
+		---@diagnostic disable-next-line: unnecessary-assert
 		assert(self.spec_path, "Kernel spec_path is not set")
 		cb, self.session_id = require("jet.core.engine").start(self.spec_path, self.connection_file, self.session_name)
 		self.client_id = STARTING_KERNEL_SENTINEL
+		---@diagnostic disable-next-line: unnecessary-assert
 		assert(self.session_id, "Kernel did not return a session id")
 	else
 		assert(self.session_id, "Kernel session_id is not set")
@@ -260,6 +261,9 @@ function Kernel:start_lua_client(callback)
 	--TODO: stop poll on kernel close
 	---@param res jet.init.response?
 	utils.poll(cb, function(res)
+		if not res then
+			return "exit"
+		end
 		if res.status == "ready" then
 			self.client_id = res.client_id
 			self.kernel_info = res.kernel_info
@@ -336,8 +340,10 @@ function Kernel:close()
 	end
 
 	vim.schedule(function()
-		if vim.api.nvim_buf_is_valid(self.term.buf) then
-			vim.api.nvim_buf_delete(self.term.buf, { force = true })
+		if self.term and self.term.buf then
+			if vim.api.nvim_buf_is_valid(self.term.buf) then
+				vim.api.nvim_buf_delete(self.term.buf, { force = true })
+			end
 		end
 	end)
 
@@ -357,7 +363,7 @@ end
 
 ---@class jet.kernel.comm_open.opts
 ---@field listener? fun(res: jet.jupyter.msg)
----@field listener_interval? number In milliseconds, default 50ms
+---@field listener_interval? integer In milliseconds, default 50ms
 
 ---@param name string
 ---@param data? table
@@ -411,6 +417,7 @@ end
 ---@param comm_id string
 ---@param data table
 function Kernel:comm_send(comm_id, data)
+	assert(self.client_id)
 	require("jet.core.engine").comm_send(self.client_id, comm_id, data)
 end
 

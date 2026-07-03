@@ -8,10 +8,8 @@ local M = {}
 ---	    either "exit", "continue", or "wait" to control the polling behavior
 ---
 ---@param callback fun(): any
----@param handler fun(result): nil | "wait" Continue polling after `interval` milliseconds
----| "continue" Pass the result to `handler()`
----| "exit" Terminate
----@param opts? { interval?: number }
+---@param handler fun(result): nil | "wait" | "continue" | "exit"
+---@param opts? { interval?: integer }
 M.poll = function(callback, handler, opts)
 	opts = opts or {}
 	local function run()
@@ -125,7 +123,8 @@ end
 ---@param path string
 ---@return string
 M.path_shorten = function(path)
-	path = vim.fn.expand(path)
+	local p = vim.fn.expand(path)
+	path = type(p) == "string" and p or path
 	for _, x in ipairs({
 		-- CWD should be preferred over HOME - hence why `pairs` not used
 		{ abbv = ".", expansion = vim.fn.getcwd() },

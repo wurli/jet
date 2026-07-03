@@ -7,7 +7,7 @@ M.defaults = {
 	jet_binary = "jet",
 	stop_on_buf_wipeout = true,
 	stop_on_nvim_quit = true,
-	auto_set_primary = true,
+	auto_set_primary = true, ---@type boolean
 	---key=filetype, value=kernelspec path
 	---@type table<string, string | fun(): string>
 	default_kernels = {},
@@ -38,7 +38,9 @@ M.options = nil
 ---@param options? jet.config
 function M.set(options)
 	if options and options.jet_binary then
-		options.jet_binary = vim.fn.expand(options.jet_binary)
+		local bin = vim.fn.expand(options.jet_binary)
+		assert(type(bin) == "string" and vim.fn.executable(bin) == 1, "jet_binary must be an executable")
+		options.jet_binary = bin
 	end
 
 	M.options = vim.tbl_deep_extend("force", M.defaults, options or {})
