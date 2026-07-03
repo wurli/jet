@@ -2,27 +2,7 @@ local kernel = require("jet.core.kernel")
 local utils = require("jet.core.utils")
 local manager = require("jet.core.manager")
 
-local Api = {}
-
--- jet ui mockup
---
--- +--------------------------------------------------------------+
--- |                           Jet                                |
--- |                                                              |
--- | (<Enter>) Open (auto)  (n) New session  (x) Shut down        |
--- |                                                              |
--- | Ark R Kernel                                   (kernelspec)  |
--- |   session 1 (nvim)                            (session_id)  |
--- |   session 2 (nvim)                            (session_id)  |
--- | 󰺕  session 3 (external)                        (session_id)  |
--- |                                                              |
--- | Ipython                                        (kernelspec)  |
--- |   session 1 (nvim)                            (session_id)  |
--- |                                                              |
--- | Rust                                           (kernelspec)  |
--- |   start a new session                                       |
--- |                                                              |
--- +--------------------------------------------------------------+
+local M = {}
 
 ---@class jet.api.list_kernels.filters
 ---@field session_id? string Implies `status` = "connected" or "external"
@@ -36,7 +16,7 @@ local Api = {}
 ---@param kernels jet.kernel[]
 ---@param opts? jet.api.list_kernels.filters
 ---@return jet.kernel[]
-local filter_kernels = function(kernels, opts)
+M.filter_kernels = function(kernels, opts)
 	opts = opts or {}
 	opts.status = opts.status or { "connecting", "connected", "external", "inactive" }
 	opts.status = type(opts.status) == "string" and { opts.status } or opts.status
@@ -88,7 +68,7 @@ end
 ---@param filters jet.api.list_kernels.filters
 ---@param init_opts? {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@return jet.kernel[]
-Api.list_kernels = function(filters, init_opts)
+M.list_kernels = function(filters, init_opts)
 	filters = filters or {}
 	filters.status = filters.status or { "connecting", "connected", "external", "inactive" }
 	filters.status = type(filters.status) == "string" and { filters.status } or filters.status
@@ -119,7 +99,7 @@ Api.list_kernels = function(filters, init_opts)
 		end
 	end
 
-	return filter_kernels(kernels, filters)
+	return M.filter_kernels(kernels, filters)
 end
 
 ---@param kernels jet.kernel[]
@@ -151,11 +131,11 @@ end
 ---@param filters jet.api.list_kernels.filters
 ---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-Api.get_inactive = function(filters, init_opts, callback)
+M.get_inactive = function(filters, init_opts, callback)
 	filters = filters or {}
 	filters.status = { "inactive" }
 
-	local kernels = Api.list_kernels(filters, init_opts)
+	local kernels = M.list_kernels(filters, init_opts)
 
 	if #kernels == 0 then
 		vim.notify("Could not find any kernels on the system", vim.log.levels.WARN)
@@ -174,11 +154,11 @@ end
 ---@param filters jet.api.list_kernels.filters
 ---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-Api.get_external = function(filters, init_opts, callback)
+M.get_external = function(filters, init_opts, callback)
 	filters = filters or {}
 	filters.status = { "external" }
 
-	local external = Api.list_kernels(filters, init_opts)
+	local external = M.list_kernels(filters, init_opts)
 
 	if #external == 0 then
 		vim.notify("No external running kernels to attach to", vim.log.levels.WARN)
@@ -195,11 +175,11 @@ end
 ---
 ---@param filters? jet.api.list_kernels.filters
 ---@param callback fun(k: jet.kernel)
-Api.get_connected = function(filters, callback)
+M.get_connected = function(filters, callback)
 	filters = filters or {}
 	filters.status = { "connected" }
 
-	local matches = Api.list_kernels(filters)
+	local matches = M.list_kernels(filters)
 
 	if #matches == 0 then
 		vim.notify("No running kernels to attach to", vim.log.levels.WARN)
@@ -223,7 +203,7 @@ local try_pick = function(kernels, filters, callback)
 	end
 
 	for _, f in ipairs(filters) do
-		local matches = filter_kernels(kernels, f)
+		local matches = M.filter_kernels(kernels, f)
 		if #matches == 1 then
 			callback(matches[1])
 			return
@@ -262,11 +242,11 @@ end
 ---@param filters jet.api.list_kernels.filters
 ---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-Api.get_any = function(filters, init_opts, callback)
-	try_pick(Api.list_kernels(filters or {}, init_opts), {
+M.get_any = function(filters, init_opts, callback)
+	try_pick(M.list_kernels(filters or {}, init_opts), {
 		{ status = { "connected", "connecting" } },
 		{ status = { "inactive" }, default = true },
 	}, callback)
 end
 
-return Api
+return M
