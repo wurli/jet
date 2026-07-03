@@ -175,7 +175,7 @@ pub struct StartArgs {
     pub no_graphics: bool,
 
     /// A name used to identify the client.
-    #[arg(long)]
+    #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
 
     #[command(flatten)]
@@ -212,7 +212,7 @@ pub struct AttachArgs {
     pub banner: bool,
 
     /// A name used to identify the client.
-    #[arg(long)]
+    #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
 
     #[command(flatten)]
@@ -253,7 +253,7 @@ pub struct ExecuteArgs {
     pub no_graphics: bool,
 
     /// A name used to identify the client.
-    #[arg(long)]
+    #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
 
     #[command(flatten)]
@@ -286,7 +286,7 @@ pub struct SendArgs {
     pub silent: bool,
 
     /// A name used to identify the client.
-    #[arg(long)]
+    #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
 
     #[command(flatten)]
@@ -320,7 +320,7 @@ pub struct StopArgs {
     pub connection_file: Option<PathBuf>,
 
     /// A name used to identify the client shutting down the kernel.
-    #[arg(long)]
+    #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
 
     #[command(flatten)]
