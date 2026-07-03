@@ -39,6 +39,11 @@ pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
     Ok(())
 }
 
+pub fn run_skill() -> Result<()> {
+    print!("{}", include_str!("skill.md"));
+    Ok(())
+}
+
 pub fn run_show(args: ShowArgs) -> Result<()> {
     let view = jet_core::manager::show_session(&args.session_id)?;
     println!("{}", serde_json::to_string_pretty(&view)?);

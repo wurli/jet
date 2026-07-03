@@ -67,19 +67,24 @@ pub enum Command {
     /// target shape as `jet execute`, minus rendering options.
     #[command(alias = "se")]
     Send(SendArgs),
+
+    /// Print the bundled agent skill documentation (SKILL.md) to stdout.
+    #[command()]
+    Skill,
 }
 
 impl Command {
-    pub fn global(&self) -> &GlobalArgs {
+    pub fn global(&self) -> Option<&GlobalArgs> {
         match self {
-            Command::Start(c) => &c.global,
-            Command::Attach(c) => &c.global,
-            Command::ListSessions(c) => &c.global,
-            Command::ListKernels(c) => &c.global,
-            Command::Stop(c) => &c.global,
-            Command::Execute(c) => &c.global,
-            Command::Send(c) => &c.global,
-            Command::Show(c) => &c.global,
+            Command::Start(c) => Some(&c.global),
+            Command::Attach(c) => Some(&c.global),
+            Command::ListSessions(c) => Some(&c.global),
+            Command::ListKernels(c) => Some(&c.global),
+            Command::Stop(c) => Some(&c.global),
+            Command::Execute(c) => Some(&c.global),
+            Command::Send(c) => Some(&c.global),
+            Command::Show(c) => Some(&c.global),
+            Command::Skill => None,
         }
     }
 }

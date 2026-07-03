@@ -21,7 +21,9 @@ use cli::{Args, Command};
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    jet_core::logger::init_logger(args.command.global().log.as_deref());
+    if let Some(g) = args.command.global() {
+        jet_core::logger::init_logger(g.log.as_deref());
+    }
     match args.command {
         Command::Start(c) => commands::run_connect(c).await,
         Command::Attach(c) => commands::run_attach(c).await,
@@ -31,5 +33,6 @@ async fn main() -> Result<()> {
         Command::Execute(c) => commands::run_execute(c).await,
         Command::Send(c) => commands::run_send(c).await,
         Command::Show(c) => commands::run_show(c),
+        Command::Skill => commands::run_skill(),
     }
 }
