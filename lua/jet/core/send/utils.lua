@@ -1,6 +1,10 @@
 local M = {}
 
---- Adapted from https://github.com/neovim/neovim/blob/master/runtime/lua/vim/_comment.lua
+---Adapted from https://github.com/neovim/neovim/blob/master/runtime/lua/vim/_comment.lua
+---NOTE: if this causes issues in the future (e.g. we don't actually want the
+---range-specific filetype) we could instead return a table of candidate
+---filetypes and commentstrings, then match these against kernel filetypes
+---until we find a match. Don't do this until it's clear that it's a real issue.
 ---@param pos jet.send.Pos
 ---@return { filetype: string, commentstring: string }
 M.local_lang_info = function(pos)
@@ -31,11 +35,11 @@ M.local_lang_info = function(pos)
 		end
 	end
 
-	-- - Get 'commentstring' from the deepest LanguageTree which both contains
-	--   reference range and has valid 'commentstring' (meaning it has at least
-	--   one associated 'filetype' with valid 'commentstring').
-	--   In simple cases using `parser:language_for_range()` would be enough, but
-	--   it fails for languages without valid 'commentstring' (like 'comment').
+	-- Get filetype and commentstring from the deepest LanguageTree which
+	-- both contains reference range and has valid 'commentstring' and
+	-- 'filetype'. In simple cases using `parser:language_for_range()` would be
+	-- enough, but it might return a language without a valid 'commentstring',
+	-- (like 'comment'), which is not very useful for our purposes.
 	local treesitter_ft, treesitter_cs, res_level = nil, nil, 0
 
 	---@param lang_tree vim.treesitter.LanguageTree
@@ -44,12 +48,12 @@ M.local_lang_info = function(pos)
 			return
 		end
 
-		treesitter_ft = lang_tree:lang()
-		local filetypes = vim.treesitter.language.get_filetypes(treesitter_ft)
-		for _, ft in ipairs(filetypes) do
-			local cur_cs = vim.filetype.get_option(ft, "commentstring")
-			if cur_cs ~= "" and level > res_level then
+		local filetypes = vim.treesitter.language.get_filetypes(lang_tree:lang())
+		for _, curr_ft in ipairs(filetypes) do
+			local cur_cs = vim.filetype.get_option(curr_ft, "commentstring")
+			if cur_cs ~= "" and curr_ft ~= "" and level > res_level then
 				treesitter_cs = cur_cs
+				treesitter_ft = curr_ft
 				break
 			end
 		end
