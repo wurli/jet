@@ -81,6 +81,26 @@ M.path_shorten = function(path)
 	return vim.fn.simplify(vim.fn.fnamemodify(path, ":~:."))
 end
 
+M.path_normalize = function(path)
+	return vim.fs.abspath(vim.fs.normalize(path))
+end
+
+---@param x string
+---@param y string
+---@return boolean
+M.path_eq = function(x, y)
+	local out = M.path_normalize(x) == M.path_normalize(y)
+	vim.print({
+		x = x,
+		y = y,
+		x_normalized = M.path_normalize(x),
+		y_normalized = M.path_normalize(y),
+		out = out,
+	})
+
+	return out
+end
+
 ---@return string[]
 M.get_all_filetypes = function()
 	return vim.fn.getcompletion("", "filetype")
