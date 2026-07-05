@@ -7,7 +7,7 @@ local M = {}
 ---@class jet.api.list_kernels.filters
 ---@field session_id? string Implies `status` = "connected" or "external"
 ---@field spec_path? string
----@field filetype? string
+---@field filetype? string | boolean `true` gets the filetype at the current position
 ---@field display_name? string
 ---@field primary? boolean Implies `status` = "connected"
 ---@field default? boolean Only gets the default kernel for `filetype` (see `config.default_kernels`)
@@ -20,6 +20,7 @@ M.filter_kernels = function(kernels, opts)
 	opts = opts or {}
 	opts.status = opts.status or { "connecting", "connected", "external", "inactive" }
 	opts.status = type(opts.status) == "string" and { opts.status } or opts.status
+	opts.filetype = opts.filetype == true and vim.bo.filetype or opts.filetype
 
 	---@param k jet.kernel
 	return vim.tbl_filter(function(k)
