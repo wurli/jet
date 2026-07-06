@@ -26,7 +26,13 @@ fn shell_request(lua: &Lua, handle: &KernelHandle, msg: JupyterMessage) -> LuaRe
 
 pub fn execute_code(
     lua: &Lua,
-    (session_id, code, silent, user_expressions): (String, String, bool, LuaTable),
+    (session_id, code, silent, allow_stdin, user_expressions): (
+        String,
+        String,
+        bool,
+        bool,
+        LuaTable,
+    ),
 ) -> LuaResult<LuaFunction> {
     let handle = get(&session_id).into_lua_err()?;
     // ExecuteRequest expects `HashMap<String, String>` — flatten anything
@@ -52,7 +58,7 @@ pub fn execute_code(
         silent: silent,
         store_history: true,
         user_expressions: user_expr_map,
-        allow_stdin: false,
+        allow_stdin: allow_stdin,
         stop_on_error: true,
     }
     .into();
