@@ -24,13 +24,15 @@ local kernel = utils.start_kernel(jet, "/Users/JACOB.SCOTT1/Library/Jupyter/kern
 local received_input_request = false
 local received_value = ""
 
-for msg in kernel.execute("v = input('ASK> '); print('GOT:' + v)") do
-	if msg.status == "busy" then
-		if msg.type == "input_request" then
+for res in kernel.execute("v = input('ASK> '); print('GOT:' + v)") do
+	local msg = res.msg
+	if res.status == "busy" then
+		if msg.header.msg_type == "input_request" then
 			received_input_request = true
+			print("here")
 			kernel.provide_stdin("", "bananas")
-		elseif msg.type == "stream" and msg.data and msg.data.text then
-			received_value = received_value .. msg.data.text
+		elseif msg.header.msg_type == "stream" and msg.content and msg.content.text then
+			received_value = received_value .. msg.content.text
 		end
 	end
 end

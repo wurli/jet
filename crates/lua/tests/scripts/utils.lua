@@ -89,7 +89,7 @@ M.start_kernel = function(jet, spec)
 			return iter(con.stream)
 		end,
 		execute = function(code)
-			return iter(jet.execute_code(con.client_id, code, false, {}))
+			return iter(jet.execute_code(con.client_id, code, false, true, {}))
 		end,
 		comm_open = function(target_name, data)
 			local comm_id, cb = jet.comm_open(con.client_id, target_name, data)
