@@ -291,20 +291,9 @@ impl Renderer {
         *active = Some(name.to_string());
         drop(active);
         let color = ansi::session_color(name);
-        let cols = crossterm::terminal::size()
-            .map(|(c, _)| c as usize)
-            .unwrap_or(80);
-        // "┌ name " is 3 visible columns plus the name's char count.
-        let head_visible = 3 + name.chars().count();
-        let dash_count = cols.saturating_sub(head_visible).max(1);
-        let dashes: String = std::iter::repeat('─').take(dash_count).collect();
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
-        write!(
-            w,
-            "{color}┌ {name} {dashes}{reset}\r\n",
-            reset = ansi::RESET
-        )?;
+        write!(w, "{color}┌─{name}{reset}\r\n", reset = ansi::RESET)?;
         *at_start = true;
         w.flush()?;
         Ok(())
@@ -646,10 +635,8 @@ mod tests {
 
     /// Stable expectation for the block header: session-color + "┌ name "
     /// + dashes filling the terminal width. Tests only check that the
-    /// output *starts with* `{color}┌ {name} ` and ends with a `\r\n`,
-    /// so terminal-width changes don't break the assertions.
     fn header_prefix(name: &str) -> String {
-        format!("{}┌ {name} ", ansi::session_color(name))
+        format!("{}┌─{name}{}\r\n", ansi::session_color(name), ansi::RESET)
     }
     fn gutter(name: &str) -> String {
         format!("{}│{} ", ansi::session_color(name), ansi::RESET)

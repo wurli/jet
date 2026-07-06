@@ -408,7 +408,8 @@ fn two_clients_foreign_print_is_tagged_and_visible() {
     let conn = temp_conn_file("foreign");
     let conn_str = conn.to_string_lossy().to_string();
     // Give t2 a name so t1 sees its output tagged — unnamed clients don't show a prefix.
-    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
 
     t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
     assert!(
@@ -603,7 +604,7 @@ fn foreign_attach_session_name_appears_as_prefix() {
 
     t2.send(b"print(\"x\")\n").unwrap();
     assert!(
-        t1.wait_for_screen("┌ alpha ", Duration::from_secs(15)),
+        t1.wait_for_screen("┌─alpha", Duration::from_secs(15)),
         "t1 never saw `alpha` block header"
     );
     t1.settle(Duration::from_millis(700), Duration::from_secs(5));
@@ -635,7 +636,7 @@ fn foreign_start_session_name_appears_as_prefix() {
 
     t1.send(b"print(\"y\")\n").unwrap();
     assert!(
-        t2.wait_for_screen("┌ beta ", Duration::from_secs(15)),
+        t2.wait_for_screen("┌─beta", Duration::from_secs(15)),
         "t2 never saw `beta` block header"
     );
     t2.settle(Duration::from_millis(700), Duration::from_secs(5));
@@ -662,7 +663,8 @@ fn foreign_multi_line_cell_renders_with_continuation_prefix() {
     let conn_str = conn.to_string_lossy().to_string();
     // Give t2 a session name so its output appears with a prefix on t1 —
     // unnamed clients don't show a prefix since there's nothing to display.
-    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("bob")).expect("spawn pair");
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, Some("bob")).expect("spawn pair");
 
     // Drive t2 through a continuation prompt. Each \n submits a line;
     // ipykernel's is_complete returns Incomplete until the def-block is
@@ -716,7 +718,7 @@ fn back_to_back_foreign_executes_share_one_header() {
     t1.settle(Duration::from_millis(700), Duration::from_secs(5));
 
     let screen = t1.snapshot_screen();
-    let header_count = screen.matches("┌ gamma ").count();
+    let header_count = screen.matches("┌─gamma").count();
     assert_eq!(
         header_count, 1,
         "back-to-back foreign executes should share one header, got {header_count} in:\n{screen}"
@@ -779,7 +781,8 @@ fn foreign_traceback_lines_are_tagged() {
     let conn = temp_conn_file("foreign-error");
     let conn_str = conn.to_string_lossy().to_string();
     // Give t2 a name so its traceback appears tagged on t1.
-    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
 
     t2.send(b"raise ValueError(\"oh no\")\n").unwrap();
     // Wait for the error to land in the rendered screen — the
