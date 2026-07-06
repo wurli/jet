@@ -276,7 +276,7 @@ end
 ---TODO: should accept short paths like ~/...
 ---@field show_spec fun(path: string): jet.kernel.spec
 ---@field show_session fun(session_id: string): { session: jet.session_info, spec: jet.kernel.spec }
----@field execute_code fun(client_id: string, code: string, silent: bool, user_expression: table?): fun(): jet.kernel.response?
+---@field execute_code fun(client_id: string, code: string, silent: bool, allow_stdin: bool, user_expression: table?): fun(): jet.kernel.response?
 ---@field is_complete fun(client_id: string, code: string): fun(): jet.kernel.response?
 ---@field get_completions fun(client_id: string, code: string): table?
 ---@field comm_open fun(client_id: string, comm_id: string, data: table): string, fun(): jet.kernel.response?

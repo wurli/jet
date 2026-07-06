@@ -50,7 +50,6 @@ function Kernel.init_owned(opts)
 	end
 
 	local obj = vim.tbl_extend("force", opts, {
-		session_name = opts.session_name or "nvim",
 		owned = true,
 		on_msg_hooks = {},
 		comms = {},
@@ -249,7 +248,7 @@ function Kernel:start_lua_client(callback)
 	if self.owned then
 		---@diagnostic disable-next-line: unnecessary-assert
 		assert(self.spec_path, "Kernel spec_path is not set")
-		cb, self.session_info = require("jet.core.engine").start(self.spec_path, nil, self.session_name)
+		cb, self.session_info = require("jet.core.engine").start(self.spec_path, nil)
 
 		assert(self.session_info, "Kernel did not return session info")
 		self.session_id = self.session_info.session_id
@@ -259,7 +258,7 @@ function Kernel:start_lua_client(callback)
 		assert(self.session_id, "Kernel did not return a session id")
 	else
 		assert(self.session_id, "Kernel session_id is not set")
-		cb, self.session_info = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
+		cb, self.session_info = require("jet.core.engine").attach(self.session_id, nil)
 	end
 
 	manager:insert(self)
@@ -330,6 +329,7 @@ function Kernel:try_resolve_filetype()
 	end
 
 	if self.kernel_info then
+		---@diagnostic disable-next-line: unnecessary-if
 		if self.kernel_info.language_info and self.kernel_info.language_info.file_extension then
 			local ft, _, is_fallback = vim.filetype.match({
 				-- Idk if 'dummy-file' is ever gonna make a difference, felt right tho
@@ -491,7 +491,7 @@ function Kernel:send_lua(code, silent, callback)
 	if type(code) == "table" then
 		code = table.concat(code, "\n")
 	end
-	local responder = require("jet.core.engine").execute_code(self.client_id, code, silent, {})
+	local responder = require("jet.core.engine").execute_code(self.client_id, code, silent, true, {})
 
 	if not callback then
 		return
