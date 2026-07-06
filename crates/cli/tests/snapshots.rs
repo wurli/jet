@@ -407,7 +407,8 @@ fn two_clients_foreign_print_is_tagged_and_visible() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("foreign");
     let conn_str = conn.to_string_lossy().to_string();
-    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+    // Give t2 a name so t1 sees its output tagged — unnamed clients don't show a prefix.
+    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
 
     t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
     assert!(
@@ -659,7 +660,9 @@ fn foreign_multi_line_cell_renders_with_continuation_prefix() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("foreign-multi");
     let conn_str = conn.to_string_lossy().to_string();
-    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+    // Give t2 a session name so its output appears with a prefix on t1 —
+    // unnamed clients don't show a prefix since there's nothing to display.
+    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("bob")).expect("spawn pair");
 
     // Drive t2 through a continuation prompt. Each \n submits a line;
     // ipykernel's is_complete returns Incomplete until the def-block is
@@ -736,8 +739,9 @@ fn foreign_execute_preserves_observer_unsent_buffer_once() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("preserve-buf");
     let conn_str = conn.to_string_lossy().to_string();
+    // Give t2 a name so its output lands with a gutter prefix on t1.
     let (mut t1, mut t2) =
-        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+        start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
 
     // t1 types (but does not submit) a partial line.
     t1.send(b"print(\"HI\")").unwrap();
@@ -774,7 +778,8 @@ fn foreign_traceback_lines_are_tagged() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("foreign-error");
     let conn_str = conn.to_string_lossy().to_string();
-    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+    // Give t2 a name so its traceback appears tagged on t1.
+    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
 
     t2.send(b"raise ValueError(\"oh no\")\n").unwrap();
     // Wait for the error to land in the rendered screen — the

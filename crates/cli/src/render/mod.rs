@@ -57,16 +57,17 @@ pub struct Renderer {
     pub is_complete_tx: Option<mpsc::UnboundedSender<IsCompleteReplyMsg>>,
     pub busy_state: BusyState,
     writer: SharedWriter,
-    // The session name passed via --session-name (None or "jet" if not
-    // set). Output that originated from this same session is shown
-    // un-prefixed; output from any *other* session sharing the kernel
-    // is tagged so the user can tell who's typing.
+    // The session name passed via --session-name, or None when not set.
+    // Output that originated from this same session is shown un-prefixed;
+    // output from any *other named* session sharing the kernel is tagged
+    // so the user can tell who's typing. Unnamed clients (None / "") never
+    // show a prefix — there's nothing meaningful to display.
     own_session_name: Option<String>,
     // Our own client_id (the full `<name>---repl---<rand>` string).
     // Foreign-vs-own is determined by comparing the event's full
     // parent_session against this, not just the name portion — two
     // clients sharing the kernel without `--session-name` both produce
-    // `jet---repl---<rand>` so a name-only compare wrongly merges them.
+    // `---repl---<rand>` so a name-only compare wrongly merges them.
     own_client_id: Option<String>,
     // True when the next byte we write will start a fresh line, so a
     // session prefix should be emitted before it. Tracked across writes
@@ -144,29 +145,28 @@ impl Renderer {
         let parent = event.parent_session.as_deref();
         let session_name = parent.and_then(|id| id.split("---").next());
 
-        // Identity is the full client_id (`<name>---repl---<rand>`), not
-        // just the name — two clients sharing the kernel without
-        // `--session-name` both report `jet` as the name. When we know
-        // our own client_id, compare against that. Without one (tests,
-        // or callers that didn't set it), fall back to name-only.
-        // Messages with no parent_session at all (banners, replies to
-        // our own kernel_info_request) are always treated as own.
+        // Identity is the full client_id (`<name>---repl---<rand>`), not just the name — two
+        // clients sharing the kernel without `--session-name` both produce `---repl---<rand>` (empty
+        // name prefix). When we know our own client_id, compare against that. Without one (tests, or
+        // callers that didn't set it), fall back to name-only matching against own_session_name (""
+        // when unset). Messages with no parent_session at all (banners, replies to our own
+        // kernel_info_request) are always treated as own.
         let is_own_session = match (parent, self.own_client_id.as_deref()) {
             (None, _) => true,
             (Some(p), Some(own_id)) => p == own_id,
             (Some(_), None) => {
-                let own_name = self.own_session_name.as_deref().unwrap_or("jet");
+                let own_name = self.own_session_name.as_deref().unwrap_or("");
                 session_name == Some(own_name)
             }
         };
-        // Display tag: show `[name]` on every foreign line so the user
-        // can tell another client is typing — even when the foreign
-        // client used the default name (`jet`). Own-session output is
-        // un-prefixed (reedline's own prompt makes ownership obvious).
+        // Display tag: show `[name]` on every foreign line so the user can tell another client is
+        // typing. Unnamed foreign clients (empty session name) produce no prefix — nothing to show.
+        // Own-session output is un-prefixed (reedline's own prompt makes ownership obvious).
         let prefix = if is_own_session {
             None
         } else {
-            Some(session_name.unwrap_or("jet").to_string())
+            let name = session_name.unwrap_or("").to_string();
+            if name.is_empty() { None } else { Some(name) }
         };
 
         let is_foreign = !is_own_session;
@@ -767,9 +767,12 @@ mod tests {
         let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let writer: SharedWriter = captured.clone();
         let (tx, _rx) = mpsc::unbounded_channel();
+        // No session name set → own_session_name fallback is "". A client_id
+        // built with no name produces "---repl---<rand>"; its leading segment
+        // (before "---") is "" which matches the fallback.
         let r = Renderer::new(false, tx, writer);
         r.handle_event(Event {
-            parent_session: Some("jet---repl".into()),
+            parent_session: Some("---repl---abc123".into()),
             data: EventData::Stream {
                 name: "stdout".into(),
                 text: "a\nb".into(),

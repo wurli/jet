@@ -77,15 +77,15 @@ use crate::jupyter_zmq_client::{
 use crate::kernel::Kernel;
 
 /// Generate a client id of the form `<name>---repl---<rand>`. Kernels report this back in
-/// the parent header so we can see which client triggered a message. `'jet'` is a special
-/// value which won't be printed in the CLI; other values get surfaced to show when another
-/// client (e.g. an agent) is interacting with the kernel.
+/// the parent header so we can see which client triggered a message. When `name` is `None`
+/// the prefix is empty (`---repl---<rand>`), and the CLI will not display a tag for that
+/// client. Pass a non-empty name (via `--session-name`) to surface foreign-client attribution.
 pub fn make_client_id(name: Option<&str>) -> String {
     use rand::Rng;
     log::info!("Generated new client id: {:?}", name);
     format!(
         "{}---repl---{:x}",
-        name.unwrap_or("jet"),
+        name.unwrap_or(""),
         rand::thread_rng().r#gen::<u64>()
     )
 }
@@ -405,8 +405,8 @@ impl Drop for Client {
 
 impl Client {
     /// Spawn a kernel and bring up a fully-handshaked client over it. The session name
-    /// is mixed into a fresh client id (see [`make_client_id`]); `'jet'` keeps the id
-    /// invisible to the CLI's renderer, anything else surfaces as a foreign-client tag.
+    /// is mixed into a fresh client id (see [`make_client_id`]); `None` produces an unnamed
+    /// client whose output is never tagged in the CLI renderer.
     ///
     /// Returns `(client, kernel_info, boot_stream)`. `boot_stream` is a no-filter
     /// [`listen`] subscriber registered before the handshake reply is dispatched, so a
