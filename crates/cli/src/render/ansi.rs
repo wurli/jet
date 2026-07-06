@@ -11,6 +11,38 @@ pub const RESET: &str = "\x1b[0m";
 pub const RED: &str = "\x1b[31m";
 pub const YELLOW: &str = "\x1b[33m";
 
+/// Round-robin per-session foreground color: the first foreign session
+/// gets blue, the next orange, then green, cyan, magenta, yellow —
+/// cycling once we exhaust the palette. Same name → same color for the
+/// life of the process. Red is intentionally omitted so error output
+/// still stands out.
+pub fn session_color(name: &str) -> &'static str {
+    const PALETTE: &[&str] = &[
+        "\x1b[34m",       // blue
+        "\x1b[38;5;208m", // orange (256-color)
+        "\x1b[32m",       // green
+        "\x1b[36m",       // cyan
+        "\x1b[35m",       // magenta
+        "\x1b[33m",       // yellow
+    ];
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static ASSIGN: Mutex<Option<(HashMap<String, usize>, usize)>> = Mutex::new(None);
+    let mut guard = ASSIGN.lock().unwrap();
+    let state = guard.get_or_insert_with(|| (HashMap::new(), 0));
+    let idx = match state.0.get(name) {
+        Some(&i) => i,
+        None => {
+            let i = state.1;
+            state.1 = state.1.wrapping_add(1);
+            state.0.insert(name.to_string(), i);
+            i
+        }
+    };
+    PALETTE[idx % PALETTE.len()]
+}
+
+
 /// Dim text on / off. Use the explicit `UNDIM` (`22m`) rather than
 /// `RESET` so surrounding color attributes survive.
 pub const DIM: &str = "\x1b[2m";

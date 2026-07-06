@@ -5,11 +5,12 @@ expression: t1.snapshot_screen()
 Python <version>
 Type 'copyright', 'credits' or 'license' for more information
 IPython <version>
-[jet] > raise ValueError("oh no")
-[jet] ---------------------------------------------------------------------------
-[jet] ValueError                                Traceback (most recent call last)
-[jet] Cell In[1], line 1
-[jet] ----> 1 raise ValueError("oh no")
-[jet]
-[jet] ValueError: oh no
+┌ jet ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│ > raise ValueError("oh no")
+│ ---------------------------------------------------------------------------
+│ ValueError                                Traceback (most recent call last)
+│ Cell In[1], line 1
+│ ----> 1 raise ValueError("oh no")
+│
+│ ValueError: oh no
 >

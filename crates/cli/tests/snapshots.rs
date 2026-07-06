@@ -606,8 +606,8 @@ fn foreign_attach_session_name_appears_as_prefix() {
 
     t2.send(b"print(\"x\")\n").unwrap();
     assert!(
-        t1.wait_for_screen("[alpha]", Duration::from_secs(15)),
-        "t1 never saw `[alpha]` prefix"
+        t1.wait_for_screen("┌ alpha ", Duration::from_secs(15)),
+        "t1 never saw `alpha` block header"
     );
     t1.settle(Duration::from_millis(700), Duration::from_secs(5));
 
@@ -638,8 +638,8 @@ fn foreign_start_session_name_appears_as_prefix() {
 
     t1.send(b"print(\"y\")\n").unwrap();
     assert!(
-        t2.wait_for_screen("[beta]", Duration::from_secs(15)),
-        "t2 never saw `[beta]` prefix"
+        t2.wait_for_screen("┌ beta ", Duration::from_secs(15)),
+        "t2 never saw `beta` block header"
     );
     t2.settle(Duration::from_millis(700), Duration::from_secs(5));
 
@@ -686,6 +686,83 @@ fn foreign_multi_line_cell_renders_with_continuation_prefix() {
         "foreign_multi_line_cell_renders_with_continuation_prefix",
         t1.snapshot_screen()
     );
+    t2.shutdown();
+    t1.shutdown();
+}
+
+/// Two foreign executes from the *same* session in a row should share a
+/// single block header — the second execute keeps the gutter going, no
+/// redraw of `┌ name ─…`.
+#[test]
+fn back_to_back_foreign_executes_share_one_header() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("btb-header");
+    let conn_str = conn.to_string_lossy().to_string();
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, Some("gamma")).expect("spawn pair");
+
+    t2.send(b"print(\"one\")\n").unwrap();
+    assert!(
+        t1.wait_for_screen("│ one", Duration::from_secs(15)),
+        "t1 never saw first foreign output"
+    );
+    t1.settle(Duration::from_millis(400), Duration::from_secs(3));
+    t2.send(b"print(\"two\")\n").unwrap();
+    assert!(
+        t1.wait_for_screen("│ two", Duration::from_secs(15)),
+        "t1 never saw second foreign output"
+    );
+    t1.settle(Duration::from_millis(700), Duration::from_secs(5));
+
+    let screen = t1.snapshot_screen();
+    let header_count = screen.matches("┌ gamma ").count();
+    assert_eq!(
+        header_count, 1,
+        "back-to-back foreign executes should share one header, got {header_count} in:\n{screen}"
+    );
+
+    t2.shutdown();
+    t1.shutdown();
+}
+
+/// Observer has an in-progress unsent buffer (`print("HI")`) when a
+/// foreign session executes something. After the foreign block finishes
+/// and reedline redraws the prompt, the buffer should appear exactly
+/// once — not duplicated. Regression test for a bug where
+/// ExternalBreak(buf) + subsequent InsertString(buf) doubled the text.
+#[test]
+fn foreign_execute_preserves_observer_unsent_buffer_once() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("preserve-buf");
+    let conn_str = conn.to_string_lossy().to_string();
+    let (mut t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+
+    // t1 types (but does not submit) a partial line.
+    t1.send(b"print(\"HI\")").unwrap();
+    t1.settle(Duration::from_millis(300), Duration::from_secs(2));
+    // t2 executes something so t1 sees foreign output land while its
+    // read_line is in flight.
+    t2.send(b"print(\"x\")\n").unwrap();
+    assert!(
+        t1.wait_for_screen("│ x", Duration::from_secs(15)),
+        "t1 never saw foreign output"
+    );
+    t1.settle(Duration::from_millis(700), Duration::from_secs(5));
+
+    let screen = t1.snapshot_screen();
+    let matches = screen.matches("print(\"HI\")").count();
+    assert_eq!(
+        matches, 1,
+        "observer's unsent buffer must appear exactly once, got {matches} in:\n{screen}"
+    );
+
     t2.shutdown();
     t1.shutdown();
 }

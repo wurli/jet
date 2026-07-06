@@ -85,6 +85,12 @@ pub struct Renderer {
     // when a complete line finally arrives.
     external_printer: Option<reedline::ExternalPrinter<String>>,
     foreign_line_buf: Arc<Mutex<String>>,
+    // Name of the foreign session whose "block" we're currently drawing.
+    // Set when we emit the top rule; cleared when an own-session
+    // ExecuteInput arrives (observer took the terminal back). Back-to-
+    // back foreign blocks from the *same* session keep this set, so we
+    // skip redrawing the header and just extend the `│` gutter.
+    active_foreign_session: Arc<Mutex<Option<String>>>,
 }
 
 impl Renderer {
@@ -105,6 +111,7 @@ impl Renderer {
             at_line_start: Arc::new(Mutex::new(true)),
             external_printer: None,
             foreign_line_buf: Arc::new(Mutex::new(String::new())),
+            active_foreign_session: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -168,8 +175,13 @@ impl Renderer {
             EventData::ExecuteInput { code } => {
                 if is_foreign {
                     self.render_foreign_execute_input(&code, prefix.as_deref())?;
+                } else {
+                    // Observer just submitted a cell — any prior foreign
+                    // visual block is now closed; the next foreign event
+                    // should redraw its own header.
+                    *self.active_foreign_session.lock().unwrap() = None;
                 }
-                // Own-session ExecuteInput is intentionally skipped:
+                // Own-session ExecuteInput is intentionally not rendered:
                 // reedline already drew the input on the prompt line.
             }
             EventData::Stream { name: _, text } => {
@@ -257,29 +269,62 @@ impl Renderer {
         Ok(())
     }
 
-    /// Format the session tag (e.g. `[jet] ` in dim grey) for foreign output.
+    /// Left-gutter marker prefixed to every foreign-output line
+    /// (`│ ` in the session's deterministic color). Empty when the
+    /// caller didn't supply a prefix.
     fn foreign_tag(prefix: Option<&str>) -> String {
         prefix
-            .map(|p| format!("{} ", ansi::dim(&format!("[{p}]"))))
+            .map(|p| format!("{}│{} ", ansi::session_color(p), ansi::RESET))
             .unwrap_or_default()
     }
 
-    /// Foreign `ExecuteInput`: write `[name] > code` between two `\r\n`s so
-    /// the line sits on its own row outside reedline's
-    /// `previous_prompt_rows_range`. Without those bookends, reedline's
-    /// resume from `ExternalBreak` reuses the prior prompt position and
-    /// clears down over our foreign content.
+    /// If we're not already inside a visual block for this foreign
+    /// session, emit the top rule (`┌ name ─────…`) sized to the current
+    /// terminal width and remember the session name. Same-session
+    /// back-to-back blocks skip the header — the gutter alone carries
+    /// attribution.
+    fn ensure_block_header(&self, prefix: Option<&str>) -> Result<()> {
+        let Some(name) = prefix else { return Ok(()) };
+        let mut active = self.active_foreign_session.lock().unwrap();
+        if active.as_deref() == Some(name) {
+            return Ok(());
+        }
+        *active = Some(name.to_string());
+        drop(active);
+        let color = ansi::session_color(name);
+        let cols = crossterm::terminal::size().map(|(c, _)| c as usize).unwrap_or(80);
+        // "┌ name " is 3 visible columns plus the name's char count.
+        let head_visible = 3 + name.chars().count();
+        let dash_count = cols.saturating_sub(head_visible).max(1);
+        let dashes: String = std::iter::repeat('─').take(dash_count).collect();
+        let mut w = self.writer.lock().unwrap();
+        let mut at_start = self.at_line_start.lock().unwrap();
+        write!(
+            w,
+            "{color}┌ {name} {dashes}{reset}\r\n",
+            reset = ansi::RESET
+        )?;
+        *at_start = true;
+        w.flush()?;
+        Ok(())
+    }
+
+    /// Foreign `ExecuteInput`: emit the block header if this is a new
+    /// session block, then write each code line as `│ > line` (first) or
+    /// `│ + line` (continuation).
     fn render_foreign_execute_input(&self, code: &str, prefix: Option<&str>) -> Result<()> {
+        // Erase the current line first: reedline's ExternalBreak leaves
+        // its own `> ` prompt on screen, and we want the foreign block
+        // to overwrite it rather than sit below an empty prompt row.
+        {
+            let mut w = self.writer.lock().unwrap();
+            write!(w, "\r\x1b[2K")?;
+            w.flush()?;
+        }
+        self.ensure_block_header(prefix)?;
         let tag = Self::foreign_tag(prefix);
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
-        // Multi-line cells: the first line takes a `> ` indicator; each
-        // continuation line takes `+ `, matching the prompt style. Each
-        // wrapped line gets its own session tag.
-        // Erase the current line first: reedline's ExternalBreak leaves
-        // its own `> ` prompt on screen, and we want the foreign line to
-        // overwrite it rather than sit below an empty prompt row.
-        write!(w, "\r\x1b[2K")?;
         for (i, line) in code.split('\n').enumerate() {
             let indicator = if i == 0 { "> " } else { "+ " };
             write!(w, "{tag}{indicator}{line}\r\n")?;
@@ -297,6 +342,7 @@ impl Renderer {
         if body.is_empty() {
             return Ok(());
         }
+        self.ensure_block_header(prefix)?;
         let tag = Self::foreign_tag(prefix);
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
@@ -326,6 +372,7 @@ impl Renderer {
             return Ok(());
         }
         if let Some(image_data) = data.get("image/png").and_then(|s| s.as_str()) {
+            self.ensure_block_header(prefix)?;
             if self.render_graphics {
                 let mut w = self.writer.lock().unwrap();
                 let mut at_start = self.at_line_start.lock().unwrap();
@@ -473,7 +520,8 @@ impl Renderer {
             .external_printer
             .as_ref()
             .expect("write_foreign called without printer");
-        let tag = prefix_name.map(|p| format!("{} ", ansi::dim(&format!("[{p}]"))));
+        self.ensure_block_header(prefix_name)?;
+        let tag = prefix_name.map(|p| format!("{}│{} ", ansi::session_color(p), ansi::RESET));
         let mut buf = self.foreign_line_buf.lock().unwrap();
         for segment in text.split_inclusive(['\n', '\r']) {
             if buf.is_empty()
@@ -595,6 +643,17 @@ mod tests {
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), "oops");
     }
 
+    /// Stable expectation for the block header: session-color + "┌ name "
+    /// + dashes filling the terminal width. Tests only check that the
+    /// output *starts with* `{color}┌ {name} ` and ends with a `\r\n`,
+    /// so terminal-width changes don't break the assertions.
+    fn header_prefix(name: &str) -> String {
+        format!("{}┌ {name} ", ansi::session_color(name))
+    }
+    fn gutter(name: &str) -> String {
+        format!("{}│{} ", ansi::session_color(name), ansi::RESET)
+    }
+
     #[test]
     fn stream_event_prefixes_first_line_and_subsequent_lines() {
         let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
@@ -610,14 +669,10 @@ mod tests {
         })
         .unwrap();
         let bytes = captured.lock().unwrap();
-        assert_eq!(
-            std::str::from_utf8(&bytes).unwrap(),
-            &format!(
-                "{} Error\r\n{} Something went wrong",
-                ansi::dim("[my-session]"),
-                ansi::dim("[my-session]"),
-            )
-        );
+        let s = std::str::from_utf8(&bytes).unwrap();
+        let g = gutter("my-session");
+        assert!(s.starts_with(&header_prefix("my-session")), "got: {s:?}");
+        assert!(s.contains(&format!("\r\n{g}Error\r\n{g}Something went wrong")), "got: {s:?}");
     }
 
     #[test]
@@ -637,10 +692,10 @@ mod tests {
             .unwrap();
         }
         let bytes = captured.lock().unwrap();
-        assert_eq!(
-            std::str::from_utf8(&bytes).unwrap(),
-            &format!("{} hello world\r\n{} bye", ansi::dim("[s]"), ansi::dim("[s]"))
-        );
+        let s = std::str::from_utf8(&bytes).unwrap();
+        let g = gutter("s");
+        assert!(s.starts_with(&header_prefix("s")), "got: {s:?}");
+        assert!(s.contains(&format!("{g}hello world\r\n{g}bye")), "got: {s:?}");
     }
 
     #[test]
@@ -668,10 +723,10 @@ mod tests {
         .unwrap();
 
         let bytes = captured.lock().unwrap();
-        assert_eq!(
-            std::str::from_utf8(&bytes).unwrap(),
-            &format!("mine\n{} theirs\r\n", ansi::dim("[bob]"))
-        );
+        let s = std::str::from_utf8(&bytes).unwrap();
+        assert!(s.starts_with("mine\n"), "own output should be unprefixed: {s:?}");
+        assert!(s.contains(&header_prefix("bob")), "got: {s:?}");
+        assert!(s.contains(&format!("{}theirs\r\n", gutter("bob"))), "got: {s:?}");
     }
 
     #[test]
@@ -689,10 +744,9 @@ mod tests {
         })
         .unwrap();
         let bytes = captured.lock().unwrap();
-        assert_eq!(
-            std::str::from_utf8(&bytes).unwrap(),
-            &format!("{} frame1\r{} frame2", ansi::dim("[s]"), ansi::dim("[s]"))
-        );
+        let s = std::str::from_utf8(&bytes).unwrap();
+        let g = gutter("s");
+        assert!(s.contains(&format!("{g}frame1\r{g}frame2")), "got: {s:?}");
     }
 
     #[test]

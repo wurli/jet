@@ -576,14 +576,15 @@ pub async fn drive_repl(
                             continue;
                         }
                         LineRead::HostCommand(_) => continue,
-                        LineRead::ExternalBreak(buf) => {
+                        LineRead::ExternalBreak(_buf) => {
                             // A foreign session went Busy while we were in
-                            // `read_line`. reedline returned the in-progress
-                            // buffer; stash it so the next `read_line`
-                            // pre-fills the editor with it, then continue —
-                            // the busy-park gate at the top will wait for
-                            // Idle before drawing the new prompt.
-                            next_initial = if buf.is_empty() { None } else { Some(buf) };
+                            // `read_line`. reedline keeps the in-progress
+                            // buffer in the editor's state across the
+                            // suspend/resume cycle, so we don't need to
+                            // re-insert it — the next `read_line` will
+                            // redraw the prompt with the buffer already
+                            // present. The busy-park gate at the top waits
+                            // for Idle before drawing the new prompt.
                             continue;
                         }
                         LineRead::Err(e) => {
