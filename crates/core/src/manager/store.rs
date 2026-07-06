@@ -205,12 +205,8 @@ pub struct SessionView {
 pub fn show_session(session_id: &str) -> Result<SessionView> {
     let session = SessionStore::default()?.open(session_id)?;
     let meta = session.meta().clone();
-    let spec = crate::kernel::KernelSpec::load(&meta.kernelspec_path).with_context(|| {
-        format!(
-            "loading kernelspec {}",
-            meta.kernelspec_path.display()
-        )
-    })?;
+    let spec = crate::kernel::KernelSpec::load(&meta.kernelspec_path)
+        .with_context(|| format!("loading kernelspec {}", meta.kernelspec_path.display()))?;
     Ok(SessionView {
         session: meta,
         spec,

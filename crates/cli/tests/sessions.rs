@@ -462,4 +462,3 @@ fn connect_with_connection_file_skips_session_tracking() {
         jet_dir.display(),
     );
 }
-

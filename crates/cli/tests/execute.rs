@@ -201,4 +201,3 @@ fn execute_requires_session_or_connection_file() {
         "jet execute with no target should fail",
     );
 }
-

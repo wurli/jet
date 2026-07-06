@@ -349,11 +349,7 @@ fn spawn_reader(
                     // cursor model is up to date.
                     parser_for_reader.lock().unwrap().process(chunk);
                     if chunk.windows(4).any(|w| w == b"\x1b[6n") {
-                        let (r, c) = parser_for_reader
-                            .lock()
-                            .unwrap()
-                            .screen()
-                            .cursor_position();
+                        let (r, c) = parser_for_reader.lock().unwrap().screen().cursor_position();
                         // vt100 returns 0-indexed; DSR is 1-indexed.
                         let reply = format!("\x1b[{};{}R", r + 1, c + 1);
                         let mut w = writer_for_reader.lock().unwrap();
@@ -411,8 +407,7 @@ fn two_clients_foreign_print_is_tagged_and_visible() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("foreign");
     let conn_str = conn.to_string_lossy().to_string();
-    let (t1, mut t2) =
-        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
 
     t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
     assert!(
@@ -544,7 +539,8 @@ fn backspace_merges_continuation_back_into_editor() {
     // Assemble the marker at runtime so the typed echo doesn't itself
     // contain it — only kernel-executed `print` output will.
     let marker = "merged-backspace-9f31";
-    h.send(b"print(chr(109) + \"erged-backspace-9f31\")\n").unwrap();
+    h.send(b"print(chr(109) + \"erged-backspace-9f31\")\n")
+        .unwrap();
     assert!(
         h.wait_for(marker, Duration::from_secs(10)),
         "marker {marker:?} never appeared — merge-back regressed"
@@ -601,8 +597,8 @@ fn foreign_attach_session_name_appears_as_prefix() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("name-attach");
     let conn_str = conn.to_string_lossy().to_string();
-    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, Some("alpha"))
-        .expect("spawn pair");
+    let (t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, Some("alpha")).expect("spawn pair");
 
     t2.send(b"print(\"x\")\n").unwrap();
     assert!(
@@ -629,8 +625,8 @@ fn foreign_start_session_name_appears_as_prefix() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("name-start");
     let conn_str = conn.to_string_lossy().to_string();
-    let (mut t1, t2) = start_pair(&kernel_json, &xdg, &conn_str, Some("beta"), None)
-        .expect("spawn pair");
+    let (mut t1, t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, Some("beta"), None).expect("spawn pair");
     // t2 is the observer here; give it longer to land its own prompt and
     // settle before t1 starts firing iopub at it. (The default
     // start_pair settle is 500ms; double it for the slower path.)
@@ -663,8 +659,7 @@ fn foreign_multi_line_cell_renders_with_continuation_prefix() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("foreign-multi");
     let conn_str = conn.to_string_lossy().to_string();
-    let (t1, mut t2) =
-        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
 
     // Drive t2 through a continuation prompt. Each \n submits a line;
     // ipykernel's is_complete returns Incomplete until the def-block is
@@ -779,8 +774,7 @@ fn foreign_traceback_lines_are_tagged() {
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("foreign-error");
     let conn_str = conn.to_string_lossy().to_string();
-    let (t1, mut t2) =
-        start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
+    let (t1, mut t2) = start_pair(&kernel_json, &xdg, &conn_str, None, None).expect("spawn pair");
 
     t2.send(b"raise ValueError(\"oh no\")\n").unwrap();
     // Wait for the error to land in the rendered screen — the
@@ -791,10 +785,7 @@ fn foreign_traceback_lines_are_tagged() {
     );
     t1.settle(Duration::from_millis(700), Duration::from_secs(3));
 
-    insta::assert_snapshot!(
-        "foreign_traceback_lines_are_tagged",
-        t1.snapshot_screen()
-    );
+    insta::assert_snapshot!("foreign_traceback_lines_are_tagged", t1.snapshot_screen());
     t2.shutdown();
     t1.shutdown();
 }

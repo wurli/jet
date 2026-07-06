@@ -572,4 +572,3 @@ fn detach_and_attach_round_trip() {
     let _ = std::fs::remove_file(&conn);
     let _ = std::fs::remove_dir_all(&xdg);
 }
-

@@ -86,7 +86,10 @@ impl Prompt for JetPrompt {
             PromptHistorySearchStatus::Passing => "",
             PromptHistorySearchStatus::Failing => "failing ",
         };
-        Cow::Owned(format!("({prefix}reverse-search: {}) ", history_search.term))
+        Cow::Owned(format!(
+            "({prefix}reverse-search: {}) ",
+            history_search.term
+        ))
     }
 }
 
@@ -364,15 +367,7 @@ pub async fn drive_repl(
             spec,
             connection_path,
             session_id,
-        } => {
-            Client::spawn(
-                spec,
-                connection_path,
-                session_name.as_deref(),
-                session_id,
-            )
-            .await?
-        }
+        } => Client::spawn(spec, connection_path, session_name.as_deref(), session_id).await?,
         ReplTarget::Attach {
             connection_path,
             session_id,
@@ -704,8 +699,7 @@ pub async fn drive_repl(
                     // plain Backspace edit; we loop until the user
                     // actually submits or aborts.
                     let value = loop {
-                        let mut prompt_rl =
-                            rl.take().expect("editor present at input prompt");
+                        let mut prompt_rl = rl.take().expect("editor present at input prompt");
                         let prompt_for_read = prompt.clone();
                         let read_line_active = busy_state.read_line_active.clone();
                         read_line_active.store(true, Ordering::SeqCst);
@@ -721,9 +715,7 @@ pub async fn drive_repl(
                             LineRead::Eof | LineRead::Interrupted => break String::new(),
                             LineRead::HostCommand(cmd) if cmd == HOSTCMD_BACKSPACE => {
                                 if let Some(LineSource::Tty(ed)) = rl.as_mut() {
-                                    ed.run_edit_commands(&[
-                                        reedline::EditCommand::Backspace,
-                                    ]);
+                                    ed.run_edit_commands(&[reedline::EditCommand::Backspace]);
                                 }
                                 continue;
                             }

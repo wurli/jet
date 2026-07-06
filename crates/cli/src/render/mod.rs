@@ -216,8 +216,7 @@ impl Renderer {
                 // `ExternalBreak(buffer)` and yields the terminal.
                 if !is_own_session {
                     self.busy_state.busy.store(true, Ordering::SeqCst);
-                    *self.busy_state.holder.lock().unwrap() =
-                        session_name.map(|s| s.to_string());
+                    *self.busy_state.holder.lock().unwrap() = session_name.map(|s| s.to_string());
                     self.busy_state.break_signal.store(true, Ordering::SeqCst);
                 }
             }
@@ -292,7 +291,9 @@ impl Renderer {
         *active = Some(name.to_string());
         drop(active);
         let color = ansi::session_color(name);
-        let cols = crossterm::terminal::size().map(|(c, _)| c as usize).unwrap_or(80);
+        let cols = crossterm::terminal::size()
+            .map(|(c, _)| c as usize)
+            .unwrap_or(80);
         // "┌ name " is 3 visible columns plus the name's char count.
         let head_visible = 3 + name.chars().count();
         let dash_count = cols.saturating_sub(head_visible).max(1);
@@ -672,7 +673,10 @@ mod tests {
         let s = std::str::from_utf8(&bytes).unwrap();
         let g = gutter("my-session");
         assert!(s.starts_with(&header_prefix("my-session")), "got: {s:?}");
-        assert!(s.contains(&format!("\r\n{g}Error\r\n{g}Something went wrong")), "got: {s:?}");
+        assert!(
+            s.contains(&format!("\r\n{g}Error\r\n{g}Something went wrong")),
+            "got: {s:?}"
+        );
     }
 
     #[test]
@@ -695,7 +699,10 @@ mod tests {
         let s = std::str::from_utf8(&bytes).unwrap();
         let g = gutter("s");
         assert!(s.starts_with(&header_prefix("s")), "got: {s:?}");
-        assert!(s.contains(&format!("{g}hello world\r\n{g}bye")), "got: {s:?}");
+        assert!(
+            s.contains(&format!("{g}hello world\r\n{g}bye")),
+            "got: {s:?}"
+        );
     }
 
     #[test]
@@ -724,9 +731,15 @@ mod tests {
 
         let bytes = captured.lock().unwrap();
         let s = std::str::from_utf8(&bytes).unwrap();
-        assert!(s.starts_with("mine\n"), "own output should be unprefixed: {s:?}");
+        assert!(
+            s.starts_with("mine\n"),
+            "own output should be unprefixed: {s:?}"
+        );
         assert!(s.contains(&header_prefix("bob")), "got: {s:?}");
-        assert!(s.contains(&format!("{}theirs\r\n", gutter("bob"))), "got: {s:?}");
+        assert!(
+            s.contains(&format!("{}theirs\r\n", gutter("bob"))),
+            "got: {s:?}"
+        );
     }
 
     #[test]

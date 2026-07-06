@@ -42,7 +42,6 @@ pub fn session_color(name: &str) -> &'static str {
     PALETTE[idx % PALETTE.len()]
 }
 
-
 /// Dim text on / off. Use the explicit `UNDIM` (`22m`) rather than
 /// `RESET` so surrounding color attributes survive.
 pub const DIM: &str = "\x1b[2m";
