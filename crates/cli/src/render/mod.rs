@@ -276,7 +276,10 @@ impl Renderer {
         // Multi-line cells: the first line takes a `> ` indicator; each
         // continuation line takes `+ `, matching the prompt style. Each
         // wrapped line gets its own session tag.
-        write!(w, "\r\n")?;
+        // Erase the current line first: reedline's ExternalBreak leaves
+        // its own `> ` prompt on screen, and we want the foreign line to
+        // overwrite it rather than sit below an empty prompt row.
+        write!(w, "\r\x1b[2K")?;
         for (i, line) in code.split('\n').enumerate() {
             let indicator = if i == 0 { "> " } else { "+ " };
             write!(w, "{tag}{indicator}{line}\r\n")?;

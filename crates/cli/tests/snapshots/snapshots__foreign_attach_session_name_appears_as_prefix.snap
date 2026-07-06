@@ -5,7 +5,6 @@ expression: t1.snapshot_screen()
 Python <version>
 Type 'copyright', 'credits' or 'license' for more information
 IPython <version>
->
 [alpha] > print("x")
 [alpha] x
 >
