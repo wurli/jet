@@ -37,15 +37,27 @@ end
 
 -- Check for messages in 'global' listener ------------------------------------
 local saw_iopub_stream_2 = false
-for msg in kernel.stream() do
+for res in kernel.stream() do
+	local msg = res.msg
 	assert(
 		msg.channel == "shell" or msg.channel == "iopub" or msg.channel == "stdin" or msg.channel == "control",
 		"expected channel field, got: " .. tostring(msg.channel)
 	)
-	if msg.channel == "iopub" and msg.type == "stream" and msg.data and msg.data.text and msg.data.text:find("2") then
+	if
+		msg.channel == "iopub"
+		and msg.header.msg_type == "stream"
+		and msg.content
+		and msg.content.text
+		and msg.content.text:find("2")
+	then
 		saw_iopub_stream_2 = true
 	end
-	if msg.channel == "iopub" and msg.type == "status" and msg.data and msg.data.execution_state == "idle" then
+	if
+		msg.channel == "iopub"
+		and msg.header.msg_type == "status"
+		and msg.content
+		and msg.content.execution_state == "idle"
+	then
 		break
 	end
 end
@@ -54,10 +66,11 @@ assert(saw_iopub_stream_2, "expected to see 'iopub'/stream frame containing '2' 
 
 -- Check for messages in filtered listener ------------------------------------
 local filtered_count = 0
-for msg in iopub_streams() do
+for res in iopub_streams() do
+	local msg = res.msg
 	filtered_count = filtered_count + 1
 	assert(msg.channel == "iopub", "filter violated channel constraint: " .. tostring(msg.channel))
-	assert(msg.type == "stream", "filter violated type constraint: " .. tostring(msg.type))
+	assert(msg.header.msg_type == "stream", "filter violated type constraint: " .. tostring(msg.header.msg_type))
 	break
 end
 assert(filtered_count > 0, "expected filtered listen to see at least one stream frame")
