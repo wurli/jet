@@ -36,6 +36,9 @@ Kernel.__index = Kernel
 ---@field session_name? string
 ---@field spec? jet.kernel.spec | jet.kernel.paritalspec
 
+---Represents a kernel which is not active. Turn it into an 'owned'/connected
+---kernel using `Kernel:start_lua_client()` or `Kernel:open_term()`.
+---
 ---@param opts jet.kernel.init_owned.opts
 function Kernel.init_owned(opts)
 	if not opts.spec then
@@ -84,18 +87,6 @@ function Kernel.init_external(opts)
 	end
 
 	return out
-end
-
----@param session_id string
-local make_attach_cmd = function(session_id)
-	return {
-		config.jet_binary,
-		"attach",
-		session_id,
-		"--banner",
-		"--session-name",
-		"nvim",
-	}
 end
 
 ---@param callback? fun(k: jet.kernel)
@@ -151,7 +142,14 @@ function Kernel:create_term(callback)
 		-- buf_call since the buf is not yet attached to a window.
 		vim.api.nvim_buf_call(term_buf, function()
 			assert(self.session_id, "Kernel has no session id")
-			local term_job_id = vim.fn.jobstart(make_attach_cmd(self.session_id), {
+			local term_job_id = vim.fn.jobstart({
+				config.jet_binary,
+				"attach",
+				self.session_id,
+				"--banner",
+				"--session-name",
+				"nvim",
+			}, {
 				term = true,
 				on_exit = function()
 					-- TODO: perhaps we don't want this - e.g. a kernel crashes
@@ -193,13 +191,13 @@ end
 ---@return jet.kernel.status, string
 function Kernel:status()
 	if self.client_id == STARTING_KERNEL_SENTINEL then
-		return "connecting", "󰪤"
+		return "connecting", "󰪤 "
 	elseif self.client_id then
-		return "connected", "󰪥"
+		return "connected", "󰪥 "
 	elseif self.session_id then
-		return "external", "󰺕"
+		return "external", "󰺕 "
 	else
-		return "inactive", ""
+		return "inactive", " "
 	end
 end
 
@@ -293,15 +291,6 @@ function Kernel:start_lua_client(callback)
 		end
 	end, { interval = 30 })
 end
-
--- function Kernel:attach_lua_client()
--- 	if not self.term then
--- 		self:run()
--- 	end
--- 	local out = require("jet.core.engine").attach(self.session_id, nil, self.session_name)
--- 	self.client_id = out.client_id
--- 	self.kernel_info = out.kernel_info
--- end
 
 --- Can only be done after the kernel is connected and we have the kernel info,
 --- since we need the file extension to resolve the filetype (kernelspec has
