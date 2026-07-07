@@ -15,7 +15,7 @@ inline in the terminal using the kitty graphics protocol.
 - For each new connection, picks 5 free TCP ports (bind-and-drop), generates
   a 16-byte hex HMAC key, writes the connection file, then opens four ZMQ
   client sockets (shell DEALER, iopub SUB, stdin DEALER, control DEALER).
-- Reads input with rustyline; builds `ExecuteRequest` and sends it on shell.
+- Reads input with reedline; builds `ExecuteRequest` and sends it on shell.
 - Streams iopub messages to stdout as they arrive (text, errors, banners,
   plots).
 - Renders `image/png` outputs via kitty graphics in unicode-placeholder
@@ -109,7 +109,7 @@ than fail.
   Falls back to 9×18 if the query fails. Override with
   `JET_CELL_PX_WIDTH` / `JET_CELL_PX_HEIGHT`.
 - **Banner ordering**: we send `kernel_info_request` and wait for its
-  idle reply before drawing the first prompt, so rustyline doesn't race
+  idle reply before drawing the first prompt, so reedline doesn't race
   the async banner write.
 - **Kernel process group**: kernels are launched with
   `Command::process_group(0)` so a tty ^C (cooked-mode SIGINT to the

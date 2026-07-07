@@ -144,11 +144,11 @@ local list_kernels = function()
 			inactive = 3,
 		}
 
-		local a_status = status_ranks[a.kernel:status()]
-		local b_status = status_ranks[b.kernel:status()]
+		local a_min_status = status_ranks[(a.connected[1] or a.external[1] or a.kernel):status()]
+		local b_min_status = status_ranks[(b.connected[1] or b.external[1] or b.kernel):status()]
 
-		if a_status ~= b_status then
-			return a_status < b_status
+		if a_min_status ~= b_min_status then
+			return a_min_status < b_min_status
 		end
 
 		return a.kernel.spec.display_name < b.kernel.spec.display_name
