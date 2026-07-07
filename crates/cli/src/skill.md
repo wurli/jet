@@ -2,20 +2,13 @@
 name: jet
 description: |
     Interact with Jupyter kernels (IPython, R (Ark), Julia, etc), including
-    ones which the user is working in. Use jet, e.g. if the user asks you to
-    run code/get values/view state/do anything else in their Python/R/other
-    interpreted language session.
+    ones which the user is working in.
 ---
 
 ## Basic Use
 
 Jet is a command line tool which can be used to interact with running Jupyter
 kernels.
-
-Note that Jet will affect interactive computing environments that the user is
-currently working in. Make sure you set
-`JET_SESSION_NAME=<claud/opus/codex/other_agent>` (this will be included
-against any input you send/output that results).
 
 ```
 ❯ jet -h
@@ -47,13 +40,14 @@ result) using `jet execute`:
 
 ```
 # list-sessions show the sessions running in the current directory
-❯ JET_SESSION_NAME=claude jet list-sessions
+❯ jet list-sessions
 2026-07-03_152521_r_dotfiles_bc9832  Ark R Kernel  2026-07-03T14:25:21Z
 ```
 
 ```
-# pass the session id to `jet execute` to run code in the user's session:
-❯ JET_SESSION_NAME=claude jet execute 2026-07-03_152521_r_dotfiles_bc9832 'print("hi")'
+# pass the session id to `jet execute` to run code in the user's session.
+# Make sure you use --session-name so the user can see who's running code in their session!
+❯ jet execute 2026-07-03_152521_r_dotfiles_bc9832 'print("hi")' --session-name claude
 [1] "hi"
 ```
 
