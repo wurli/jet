@@ -1,7 +1,5 @@
 local M = {}
 
-M.version = "4.14.1" -- x-release-please-version
-
 ---@class jet.config
 M.defaults = {
 	jet_binary = "jet",

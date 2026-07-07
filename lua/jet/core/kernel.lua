@@ -31,13 +31,6 @@ local STARTING_KERNEL_SENTINEL = "<pending>"
 local Kernel = {}
 Kernel.__index = Kernel
 
-setmetatable(Kernel, {
-	---@return jet.kernel
-	__call = function(self, ...)
-		return self.new(...)
-	end,
-})
-
 ---@class jet.kernel.init_owned.opts
 ---@field spec_path string
 ---@field session_name? string
@@ -165,7 +158,7 @@ function Kernel:create_term(callback)
 					-- and suddenly all the info from the console is gone. For
 					-- now it's convenient, but maybe review in future or add
 					-- config.
-					vim.api.nvim_buf_delete(term_buf, { force = true })
+					self:delete_term_buffer()
 				end,
 			})
 			self.term = { job_id = term_job_id, buf = term_buf }
@@ -345,6 +338,16 @@ function Kernel:try_resolve_filetype()
 	end
 end
 
+function Kernel:delete_term_buffer()
+	vim.schedule(function()
+		if self.term and self.term.buf then
+			if vim.api.nvim_buf_is_valid(self.term.buf) then
+				pcall(vim.api.nvim_buf_delete, self.term.buf, { force = true })
+			end
+		end
+	end)
+end
+
 function Kernel:close()
 	assert(self.session_id, "Kernel has no session id")
 
@@ -356,13 +359,7 @@ function Kernel:close()
 		end
 	end
 
-	vim.schedule(function()
-		if self.term and self.term.buf then
-			if vim.api.nvim_buf_is_valid(self.term.buf) then
-				vim.api.nvim_buf_delete(self.term.buf, { force = true })
-			end
-		end
-	end)
+	self:delete_term_buffer()
 
 	if self.owned and config.stop_on_buf_wipeout then
 		local ok, err = pcall(require("jet.core.engine").stop, self.session_id)
@@ -483,6 +480,10 @@ function Kernel:send_repl(code)
 	vim.fn.chansend(self.term.job_id, code .. "\r")
 end
 
+---Send code to the kernel via the Lua client.
+---
+---TODO: document difference between repl and lua clients.
+---
 ---@param code string | string[]
 ---@param silent boolean
 ---@param callback? fun(res: jet.kernel.response)

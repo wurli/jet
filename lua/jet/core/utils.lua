@@ -89,16 +89,7 @@ end
 ---@param y string
 ---@return boolean
 M.path_eq = function(x, y)
-	local out = M.path_normalize(x) == M.path_normalize(y)
-	vim.print({
-		x = x,
-		y = y,
-		x_normalized = M.path_normalize(x),
-		y_normalized = M.path_normalize(y),
-		out = out,
-	})
-
-	return out
+	return M.path_normalize(x) == M.path_normalize(y)
 end
 
 ---@return string[]
