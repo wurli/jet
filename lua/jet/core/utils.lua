@@ -46,34 +46,12 @@ M.time_since = function(t)
 
 	local seconds = math.floor(os.difftime(os.time(), t))
 
-	if seconds < 60 then
-		return string.format("%ds", seconds)
-	end
-
-	local minutes = math.floor(seconds / 60)
-	if minutes < 60 then
-		return string.format("%dm", minutes)
-	end
-
-	local hours = math.floor(minutes / 60)
-	local remaining_minutes = minutes % 60
-
-	if hours < 24 then
-		if remaining_minutes == 0 then
-			return string.format("%dh", hours)
-		else
-			return string.format("%dh%dm", hours, remaining_minutes)
-		end
-	end
-
-	local days = math.floor(hours / 24)
-	local remaining_hours = hours % 24
-
-	if remaining_hours == 0 then
-		return string.format("%dd", days)
-	else
-		return string.format("%dd%dh", days, remaining_hours)
-	end
+	return string.format(
+		"%02.f:%02.f:%02.f",
+		math.floor(seconds / 3600),
+		math.floor((seconds % 3600) / 60),
+		seconds % 60
+	)
 end
 
 ---@param t string E.g. 2026-07-07T20:11:08Z
@@ -81,14 +59,22 @@ M.parse_timestamp = function(t)
 	local yy, mm, dd, hh, mi, ss = t:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)Z")
 	assert(yy and mm and dd and hh and mi and ss, "Invalid timestamp format: " .. t)
 
-	return os.time({
+	local os_epoch = os.time({
 		year = yy,
 		month = mm,
 		day = dd,
 		hour = hh,
 		min = mi,
 		sec = ss,
+		isdst = false,
 	})
+
+	-- os_epoch uses the OS timezone, so we need to adjust it to UTC.
+	local utc = os.date("!*t", os_epoch)
+	utc.isdst = false -- Ensure that daylight saving time is not applied
+	local offset = os.difftime(os_epoch, os.time(utc))
+
+	return os_epoch + offset
 end
 
 ---Attempts to shorten a path by either using `~` for the home directory
