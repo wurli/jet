@@ -75,6 +75,7 @@ function Kernel.init_external(opts)
 		session_id = opts.session_id,
 		spec = view.spec,
 		spec_path = view.session.kernelspec_path,
+		session_info = view.session,
 		owned = false,
 		on_msg_hooks = {},
 		comms = {},
