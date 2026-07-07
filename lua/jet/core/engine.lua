@@ -257,7 +257,7 @@ end
 ---@field session_id string
 ---@field closed_at string?
 ---@field connection_file string
----@field created_at string
+---@field created_at string # E.g. 2026-07-07T20:11:08Z
 ---@field kernel_pid number?
 ---@field kernelspec_path string
 ---@field language string

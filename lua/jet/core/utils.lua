@@ -36,10 +36,14 @@ end
 -- 	vim.print(M.get_filetype(0, { vim.fn.line("."), vim.fn.col(".") }))
 -- end, {})
 
----Get the time since some time as a nicely formatted string
----@param t number
+---Get the elapsed time since `t` as a nicely formatted string
+---@param t number | string
 ---@return string
 M.time_since = function(t)
+	if type(t) == "string" then
+		t = M.parse_timestamp(t)
+	end
+
 	local seconds = math.floor(os.difftime(os.time(), t))
 
 	if seconds < 60 then
@@ -70,6 +74,21 @@ M.time_since = function(t)
 	else
 		return string.format("%dd%dh", days, remaining_hours)
 	end
+end
+
+---@param t string E.g. 2026-07-07T20:11:08Z
+M.parse_timestamp = function(t)
+	local yy, mm, dd, hh, mi, ss = t:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)Z")
+	assert(yy and mm and dd and hh and mi and ss, "Invalid timestamp format: " .. t)
+
+	return os.time({
+		year = yy,
+		month = mm,
+		day = dd,
+		hour = hh,
+		min = mi,
+		sec = ss,
+	})
 end
 
 ---Attempts to shorten a path by either using `~` for the home directory
