@@ -26,15 +26,27 @@ pub use crate::kernel_spec::{InterruptMode, KernelSpec};
 /// RAII guard for the kernel process. Drop kills + waits unless `detach`
 /// has been called. Matches the old `kallichore::server::ChildGuard`
 /// pattern, but for `tokio::process::Child`.
+///
+/// The `Child` handle can be transferred out via [`take_child`] so a
+/// background task can `wait().await` on it — that's how the `Client`
+/// gets an event-driven "kernel exited" signal instead of polling
+/// `waitpid`. Once taken, the guard falls back to `libc::kill(pid, SIGTERM)`
+/// on drop; the watcher's `wait().await` observes the exit the same way it
+/// would for any other cause of death.
 pub struct ChildGuard {
     child: Option<Child>,
+    /// Cached pid so we can SIGTERM on drop even after `take_child` has
+    /// moved the `Child` into the watcher task.
+    pid: Option<u32>,
     detached: bool,
 }
 
 impl ChildGuard {
     fn new(child: Child) -> Self {
+        let pid = child.id();
         Self {
             child: Some(child),
+            pid,
             detached: false,
         }
     }
@@ -45,7 +57,14 @@ impl ChildGuard {
     }
 
     pub fn id(&self) -> Option<u32> {
-        self.child.as_ref().and_then(Child::id)
+        self.pid
+    }
+
+    /// Move the `Child` handle out of the guard so a background task can
+    /// `wait().await` on it. The guard retains the pid for shutdown
+    /// bookkeeping and falls back to `SIGTERM` on drop.
+    pub fn take_child(&mut self) -> Option<Child> {
+        self.child.take()
     }
 }
 
@@ -57,6 +76,14 @@ impl Drop for ChildGuard {
         if let Some(mut c) = self.child.take() {
             // start_kill is non-blocking; the OS reaps after we exit.
             let _ = c.start_kill();
+            return;
+        }
+        // Child was transferred out (to the exit watcher). Signal by pid.
+        #[cfg(unix)]
+        if let Some(pid) = self.pid {
+            unsafe {
+                let _ = libc::kill(pid as libc::pid_t, libc::SIGTERM);
+            }
         }
     }
 }
@@ -188,11 +215,13 @@ pub fn log_path_for(connection_path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// The five ZMQ client connections. `Client::start_with_sink` moves shell/iopub/stdin
-/// into background tasks (and, for attached kernels, heartbeat into a liveness watcher);
-/// control stays on the `Kernel` so `interrupt()` and `shutdown()` can use it. The slots
-/// are `Option`s so the owning Client can `.take()` them; for spawned kernels heartbeat
-/// is never taken (waitpid is used instead) and just drops with the kernel.
+/// The five ZMQ client connections. `Client::bring_up` moves shell/iopub/stdin/control
+/// into background tasks (and, for attached kernels, heartbeat into a liveness watcher).
+/// The raw `Kernel::interrupt`/`Kernel::shutdown` methods use `control` when it is still
+/// present here — i.e. before a `Client` has taken it — so callers like Lua's
+/// `shutdown_kernel` can attach and send a shutdown without setting up a full Client.
+/// The slots are `Option`s so the owning Client can `.take()` them; for spawned kernels
+/// heartbeat is never taken (waitpid is used instead) and just drops with the kernel.
 #[derive(Default)]
 pub struct Channels {
     pub shell: Option<ClientShellConnection>,
@@ -383,6 +412,13 @@ impl Kernel {
     /// PID of the spawned child, if any.
     pub fn child_pid(&self) -> Option<u32> {
         self.child.as_ref().and_then(ChildGuard::id)
+    }
+
+    /// Move the `tokio::process::Child` out of the [`ChildGuard`] so an
+    /// exit watcher can `wait().await` on it. The guard keeps the pid for
+    /// its own kill-on-drop path (SIGTERM by pid).
+    pub fn take_child(&mut self) -> Option<Child> {
+        self.child.as_mut().and_then(ChildGuard::take_child)
     }
 
     /// `true` if the spawned child still exists. Sends signal 0 with

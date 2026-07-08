@@ -365,10 +365,12 @@ impl FrameRouter {
 
 /// A long-lived session over a single [`Kernel`].
 ///
-/// After construction (via [`Client::spawn`] / [`Client::attach`]) the shell/iopub/stdin
-/// sockets have been moved into background tasks; the [`Kernel`] retains only `control` +
-/// `heartbeat` + (for spawned kernels) the child process guard, which is what
-/// [`Client::interrupt`] / [`Client::shutdown`] need.
+/// After construction (via [`Client::spawn`] / [`Client::attach`]) the shell/iopub/stdin/control
+/// sockets have all been moved into background tasks; the [`Kernel`] retains only `heartbeat`
+/// (for attached kernels) + (for spawned kernels) the child process guard. Outbound
+/// control messages go through `control_tx` — the socket loop owns the socket so
+/// `shutdown_reply` frames flow through the router without waiting behind shell traffic
+/// (per the Jupyter spec's guidance to service control on a separate thread).
 pub struct Client {
     kernel: Kernel,
     /// Like `<name>---repl---<rand>`. Kernels report this back in the parent header so we can
@@ -386,8 +388,13 @@ pub struct Client {
     /// reaped (by `spawn_waitpid_watcher`), at which point `kernel.child_pid()` would
     /// otherwise return `None`.
     child_pid: Option<u32>,
+    /// Whether the kernel wants SIGINT or an `interrupt_request` on control for ^C.
+    /// Cached off the spec at bring-up so [`Client::interrupt`] can branch without
+    /// reaching into `Kernel`.
+    interrupt_mode: crate::kernel_spec::InterruptMode,
     shell_tx: UnboundedSender<JupyterMessage>,
     stdin_tx: UnboundedSender<JupyterMessage>,
+    control_tx: UnboundedSender<JupyterMessage>,
     router: Arc<FrameRouter>,
     status_tx: Arc<watch::Sender<KernelStatus>>,
     /// Background liveness watchers (heartbeat for attached kernels,
@@ -453,12 +460,17 @@ impl Client {
         client_id: String,
         session_id: Option<String>,
     ) -> Result<(Self, Value, RequestStream)> {
-        // shell/iopub/stdin always present immediately after start; the Options exist
-        // for the post-take state (control stays on kernel; heartbeat moves out below for
-        // attached kernels only).
+        // shell/iopub/stdin/control always present immediately after start; the Options
+        // exist for the post-take state (heartbeat moves out below for attached kernels
+        // only). Control moves into the socket loop so `shutdown_reply` and other
+        // control-channel frames flow through the router — per Jupyter spec, control
+        // is meant to run on a separate thread from shell so shutdown/interrupt aren't
+        // queued behind execute traffic.
         let mut shell = kernel.channels.shell.take().expect("shell channel");
         let mut iopub = kernel.channels.iopub.take().expect("iopub channel");
         let stdin_sock = kernel.channels.stdin.take().expect("stdin channel");
+        let control = kernel.channels.control.take().expect("control channel");
+        let interrupt_mode = kernel.interrupt_mode;
 
         let (status_tx, _status_rx) = watch::channel(KernelStatus::Starting);
         let status_tx = Arc::new(status_tx);
@@ -501,13 +513,16 @@ impl Client {
 
         let (shell_tx, shell_rx) = unbounded_channel::<JupyterMessage>();
         let (stdin_tx, stdin_rx) = unbounded_channel::<JupyterMessage>();
+        let (control_tx, control_rx) = unbounded_channel::<JupyterMessage>();
 
         spawn_socket_loop(
             shell,
             iopub,
             stdin_sock,
+            control,
             shell_rx,
             stdin_rx,
+            control_rx,
             router.clone(),
             status_tx.clone(),
         );
@@ -517,8 +532,11 @@ impl Client {
         //   on a kernel that has exited cleanly don't error — they block
         //   forever — so the heartbeat REQ/REP is the only way to catch
         //   a clean exit like R's `quit()`.
-        // - Spawn path (we own the child): waitpid(WNOHANG) every 500ms.
-        //   Instant, kernel-level, gives an exit status.
+        // - Spawn path (we own the child): move the `Child` handle into a
+        //   task and `wait().await` it. Fully event-driven — SIGCHLD wakes
+        //   the wait the instant the kernel dies, so we detect in-band
+        //   exits (ipykernel `quit()`, R `q()`) fast enough that the REPL
+        //   can suppress the trailing prompt redraw without a poll loop.
         // The socket loop also flips status to Exited on any read/send
         // error, so a crash is caught even if neither watcher polls in
         // time.
@@ -528,8 +546,8 @@ impl Client {
             watchers.push(spawn_heartbeat_watcher(hb, status_tx.clone()));
         }
         let child_pid = kernel.child_pid();
-        if let Some(pid) = child_pid {
-            watchers.push(spawn_waitpid_watcher(pid, status_tx.clone()));
+        if let Some(child) = kernel.take_child() {
+            watchers.push(spawn_child_wait_watcher(child, status_tx.clone()));
         }
         // Tear down open `listen()` streams the moment the kernel is
         // declared dead, regardless of which watcher detected it. The
@@ -543,8 +561,10 @@ impl Client {
                 client_id,
                 session_id,
                 child_pid,
+                interrupt_mode,
                 shell_tx,
                 stdin_tx,
+                control_tx,
                 router,
                 status_tx,
                 watchers,
@@ -663,16 +683,41 @@ impl Client {
         self.child_pid
     }
 
-    /// Forward a ^C-equivalent to the kernel.
+    /// Forward a ^C-equivalent to the kernel. `Signal`-mode kernels get a real SIGINT to
+    /// their process group (handled inside `Kernel` — needs the pid); `Message`-mode
+    /// kernels get an `interrupt_request` pushed onto the control-send channel so it
+    /// races through the socket loop without waiting behind shell traffic.
     pub async fn interrupt(&mut self) -> Result<()> {
-        self.kernel.interrupt().await
+        match self.interrupt_mode {
+            crate::kernel_spec::InterruptMode::Signal => self.kernel.interrupt().await,
+            crate::kernel_spec::InterruptMode::Message => {
+                let msg: JupyterMessage = jupyter_protocol::InterruptRequest::default().into();
+                self.control_tx
+                    .send(msg)
+                    .map_err(|e| anyhow!("control_tx.send (interrupt): {e}"))?;
+                Ok(())
+            }
+        }
     }
 
-    /// Shutdown the kernel (best-effort). Drop the [`Client`] afterwards to tear down the
-    /// reader/writer tasks; if you want the kernel to outlive this process, call
-    /// [`Client::detach`] before dropping instead.
+    /// Shutdown the kernel (best-effort). Sends `shutdown_request` on control and gives
+    /// the kernel a moment to react before returning. Drop the [`Client`] afterwards to
+    /// tear down the reader/writer tasks; if you want the kernel to outlive this process,
+    /// call [`Client::detach`] before dropping instead.
     pub async fn shutdown(&mut self) -> Result<()> {
-        self.kernel.shutdown().await
+        log::debug!("Sending shutdown_request to kernel");
+        let req = jupyter_protocol::ShutdownRequest { restart: false };
+        let msg: JupyterMessage = req.into();
+        if let Err(e) = self.control_tx.send(msg) {
+            log::warn!("shutdown_request send failed: {e}");
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        // Clean up the on-disk stderr log on graceful shutdown. Detach skips this path,
+        // so detached kernels leave the log in place for a future `attach` to tail.
+        if let Some(p) = self.kernel.log_file_path.take() {
+            let _ = std::fs::remove_file(p);
+        }
+        Ok(())
     }
 
     /// Mark the underlying kernel as detached — i.e. don't kill the
@@ -935,28 +980,23 @@ fn spawn_heartbeat_watcher(
     })
 }
 
-/// Poll `waitpid(pid, WNOHANG)` every 500ms; the moment the child
-/// changes state, transition status to `Exited`. Used for kernels we
-/// spawned ourselves (where we own the pid and tokio doesn't reap it
-/// for us until much later).
-fn spawn_waitpid_watcher(
-    pid: u32,
+/// `wait().await` on a `tokio::process::Child` and transition status to
+/// `Exited` as soon as it returns. Event-driven: SIGCHLD wakes the wait
+/// the moment the kernel dies, so in-band exits (ipykernel `quit()`,
+/// R `q()`) surface within microseconds — fast enough that the REPL's
+/// post-execute check can suppress the trailing prompt redraw. Matches
+/// kallichore's `run_child` pattern.
+fn spawn_child_wait_watcher(
+    mut child: tokio::process::Child,
     status_tx: Arc<watch::Sender<KernelStatus>>,
 ) -> tokio::task::JoinHandle<()> {
+    let pid = child.id();
     tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            let mut status: libc::c_int = 0;
-            let r = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
-            // r > 0  → child changed state and we reaped it.
-            // r == 0 → still running.
-            // r < 0  → ECHILD: tokio already reaped, child gone.
-            if r != 0 {
-                log::info!("kernel pid {pid} exited (waitpid -> {r})");
-                transition(&status_tx, KernelStatus::Exited);
-                return;
-            }
+        match child.wait().await {
+            Ok(status) => log::info!("kernel pid {pid:?} exited (status: {status})"),
+            Err(e) => log::warn!("kernel pid {pid:?} wait failed: {e}"),
         }
+        transition(&status_tx, KernelStatus::Exited);
     })
 }
 
@@ -986,8 +1026,10 @@ fn spawn_socket_loop(
     mut shell: ClientShellConnection,
     mut iopub: ClientIoPubConnection,
     mut stdin_sock: ClientStdinConnection,
+    mut control: crate::jupyter_zmq_client::ClientControlConnection,
     mut shell_send_rx: UnboundedReceiver<JupyterMessage>,
     mut stdin_send_rx: UnboundedReceiver<JupyterMessage>,
+    mut control_send_rx: UnboundedReceiver<JupyterMessage>,
     router: Arc<FrameRouter>,
     status_tx: Arc<watch::Sender<KernelStatus>>,
 ) {
@@ -1000,18 +1042,23 @@ fn spawn_socket_loop(
             transition(&status_tx, KernelStatus::Exited);
         };
         loop {
-            // `biased;` polls the arms in declaration order. Reads
-            // come before sends so a backlog of inbound frames can't
-            // be starved by a tight loop of outbound sends; shell read
-            // comes before iopub read so on the rare iteration where
-            // a reply and the matching idle are both ready we dispatch
-            // the reply (banner) first. The Jupyter spec puts
-            // busy(iopub) → reply(shell) → idle(iopub) in order, but
-            // they arrive on different sockets, so without ordering
-            // help the consumer's "wait for idle" can win the race
-            // against the renderer's "draw banner."
+            // `biased;` polls the arms in declaration order. Reads come before
+            // sends so a backlog of inbound frames can't be starved by a tight
+            // loop of outbound sends. Control read comes first so shutdown/
+            // interrupt replies never queue behind shell traffic (the Jupyter
+            // spec explicitly recommends servicing control on a separate
+            // thread for that reason); shell read then comes before iopub read
+            // so on the rare iteration where a reply and the matching idle are
+            // both ready we dispatch the reply (banner) first.
             tokio::select! {
                 biased;
+                read = control.read() => match read {
+                    Ok(msg) => {
+                        log::debug!("kernel to client control: {}", fmt_msg(&msg));
+                        router.dispatch(Channel::Control, msg)
+                    },
+                    Err(e) => { mark_exited("control.read", Some(&e)); return; }
+                },
                 read = shell.read() => match read {
                     Ok(msg) => {
                         log::debug!("kernel to client shell: {}", fmt_msg(&msg));
@@ -1048,6 +1095,16 @@ fn spawn_socket_loop(
                         log::debug!("client to kernel stdin: {}", fmt_msg(&msg));
                         if let Err(e) = stdin_sock.send(msg).await {
                             mark_exited("stdin.send", Some(&e));
+                            return;
+                        }
+                    }
+                    None => return,
+                },
+                send = control_send_rx.recv() => match send {
+                    Some(msg) => {
+                        log::debug!("client to kernel control: {}", fmt_msg(&msg));
+                        if let Err(e) = control.send(msg).await {
+                            mark_exited("control.send", Some(&e));
                             return;
                         }
                     }

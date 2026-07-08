@@ -55,6 +55,10 @@ pub struct Renderer {
     pub idle_tx: mpsc::UnboundedSender<String>,
     pub input_tx: Option<mpsc::UnboundedSender<InputRequest>>,
     pub is_complete_tx: Option<mpsc::UnboundedSender<IsCompleteReplyMsg>>,
+    /// Forwards each shell `execute_reply`'s parent_id to the REPL. Per the Jupyter
+    /// spec, "execute done" means both this reply *and* the iopub `status: idle`
+    /// with the same parent — they arrive on different sockets and may reorder.
+    pub execute_reply_tx: Option<mpsc::UnboundedSender<String>>,
     pub busy_state: BusyState,
     writer: SharedWriter,
     // The session name passed via --session-name, or None when not set.
@@ -105,6 +109,7 @@ impl Renderer {
             idle_tx,
             input_tx: None,
             is_complete_tx: None,
+            execute_reply_tx: None,
             busy_state: BusyState::default(),
             writer,
             own_session_name: None,
@@ -138,6 +143,11 @@ impl Renderer {
 
     pub fn with_is_complete_tx(mut self, tx: mpsc::UnboundedSender<IsCompleteReplyMsg>) -> Self {
         self.is_complete_tx = Some(tx);
+        self
+    }
+
+    pub fn with_execute_reply_tx(mut self, tx: mpsc::UnboundedSender<String>) -> Self {
+        self.execute_reply_tx = Some(tx);
         self
     }
 
@@ -261,6 +271,11 @@ impl Renderer {
                         status,
                         indent,
                     });
+                }
+            }
+            EventData::ExecuteReply { parent_id } => {
+                if let Some(tx) = &self.execute_reply_tx {
+                    let _ = tx.send(parent_id.unwrap_or_default());
                 }
             }
             EventData::KernelExited | EventData::Other => {}

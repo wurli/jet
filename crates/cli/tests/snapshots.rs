@@ -797,3 +797,44 @@ fn foreign_traceback_lines_are_tagged() {
     t2.shutdown();
     t1.shutdown();
 }
+
+/// `quit()` in ipykernel: the REPL should exit cleanly without drawing a
+/// trailing `> ` prompt and without printing the "Kernel exited" red
+/// warning. The ordering trap is that ipykernel emits iopub Idle before
+/// the shell `execute_reply`, so gating on Idle alone races the child's
+/// death. The "Kernel exited" message is reserved for unexpected deaths
+/// (crash, external kill) — an in-band `quit()` shouldn't surface it.
+///
+/// KNOWN-FAILING: we deliberately do not add a post-execute wait for
+/// Exited (the ~200ms of ipykernel teardown after `execute_reply` would
+/// tax every prompt). Left in the suite as a regression indicator so any
+/// future fix that eliminates the flash without adding per-prompt
+/// latency is easy to verify.
+#[test]
+#[ignore = "known-failing: quit() briefly flashes a trailing prompt; no acceptable fix yet"]
+fn quit_does_not_leave_trailing_prompt() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("quit-no-flash");
+    let conn_str = conn.to_string_lossy().to_string();
+    let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
+    h.send(b"quit()\n").unwrap();
+    h.settle(Duration::from_millis(500), Duration::from_secs(5));
+    let screen = h.snapshot_screen();
+    let prompts = screen
+        .lines()
+        .filter(|l| l == &"> quit()" || l.starts_with("> "))
+        .count();
+    assert_eq!(
+        prompts, 1,
+        "expected exactly one `> ` prompt (the one the user typed on); got {prompts}:\n{screen}"
+    );
+    assert!(
+        !screen.contains("Kernel exited"),
+        "in-band quit() should not surface 'Kernel exited'; screen:\n{screen}"
+    );
+    h.shutdown();
+}
+

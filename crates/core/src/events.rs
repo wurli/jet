@@ -58,6 +58,13 @@ pub enum EventData {
         status: IsCompleteReplyStatus,
         indent: String,
     },
+    /// Shell `execute_reply` matching a request the caller sent. Fires alongside
+    /// (and often after) the iopub `status: idle`, so consumers that need
+    /// "execute is fully done" must gate on both — the Jupyter spec explicitly
+    /// warns that the two arrive over different sockets and may reorder.
+    ExecuteReply {
+        parent_id: Option<String>,
+    },
     /// The kernel has gone away. Emitted by the reader task when its socket
     /// returns an error or the child process exits — not from a wire frame.
     KernelExited,
@@ -195,6 +202,9 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             ExecutionState::Busy => EventData::Busy { parent_id },
             _ => EventData::Other,
         },
+        (Channel::Shell, JupyterMessageContent::ExecuteReply(_)) => {
+            EventData::ExecuteReply { parent_id }
+        }
         _ => EventData::Other,
     };
 

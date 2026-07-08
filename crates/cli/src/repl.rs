@@ -332,6 +332,7 @@ pub async fn drive_repl(
     let (input_tx, mut input_rx) = tokio::sync::mpsc::unbounded_channel::<InputRequest>();
     let (is_complete_tx, mut is_complete_rx) =
         tokio::sync::mpsc::unbounded_channel::<IsCompleteReplyMsg>();
+    let (execute_reply_tx, mut execute_reply_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
     // The external printer is the channel reedline uses to interleave
     // foreign-session output with the active prompt. Wire it into both
@@ -341,6 +342,7 @@ pub async fn drive_repl(
     let renderer = Renderer::new(render_graphics, idle_tx, writer)
         .with_input_tx(input_tx)
         .with_is_complete_tx(is_complete_tx)
+        .with_execute_reply_tx(execute_reply_tx)
         .with_own_session_name(session_name.clone())
         .with_external_printer(external_printer.clone());
     let busy_state = renderer.busy_state.clone();
@@ -483,8 +485,16 @@ pub async fn drive_repl(
             });
             let line = tokio::select! {
                 _ = await_kernel_exited(session.watch_status()) => {
+                    // Kernel died while we were waiting for the user's next input. The
+                    // overwhelming common case is an in-band exit (ipykernel `quit()`, R
+                    // `quit()`) — the user asked to leave, no error to surface. Even for
+                    // genuine crashes there's nothing the user can do at this prompt, so
+                    // exit silently rather than printing a red warning that looks like a
+                    // jet bug. The `printnl!()` moves the cursor off the prompt row so
+                    // the parent shell doesn't paint its no-newline marker (`%` in zsh,
+                    // `⏎` in fish).
                     restore_terminal();
-                    eprintln!("{}", ansi::red("Kernel exited"));
+                    println!();
                     mark_session_closed(&session_id);
                     shutdown.notify_waiters();
                     exit_cleanly(0);
@@ -745,6 +755,64 @@ pub async fn drive_repl(
                 shutdown.notify_waiters();
                 exit_cleanly(0);
             }
+        }
+
+        // "Execute is fully done" requires both the terminal `status: idle` on iopub
+        // AND the `execute_reply` on shell for this msg_id. Kallichore and
+        // jupyter_console both spell this out: the two arrive on different sockets
+        // and may reorder, so gating on Idle alone is wrong. Concretely: on
+        // ipykernel's `quit()`, iopub Idle arrives, then shell execute_reply, then
+        // the kernel exits — if we redraw on Idle we paint a `> ` that is
+        // immediately followed by "Kernel exited". Waiting for both keeps this
+        // spec-correct and kernel-agnostic (works for R's `q()`, Julia, etc.
+        // without any per-language sniffing).
+        //
+        // If the kernel dies while we're waiting for the reply, `watch_status`
+        // trips to Exited — exit cleanly without drawing another prompt.
+        let watch = session.watch_status();
+        tokio::select! {
+            r = execute_reply_rx.recv() => match r {
+                Some(parent) if parent == msg_id => {}
+                // Non-matching parents (foreign execute_replies leaking through)
+                // are ignored via a re-drain loop below.
+                Some(_) => {
+                    loop {
+                        tokio::select! {
+                            r = execute_reply_rx.recv() => match r {
+                                Some(p) if p == msg_id => break,
+                                Some(_) => continue,
+                                None => break,
+                            },
+                            _ = await_kernel_exited(watch.clone()) => {
+                                mark_session_closed(&session_id);
+                                shutdown.notify_waiters();
+                                exit_cleanly(0);
+                            }
+                        }
+                    }
+                }
+                None => {}
+            },
+            _ = await_kernel_exited(watch.clone()) => {
+                mark_session_closed(&session_id);
+                shutdown.notify_waiters();
+                exit_cleanly(0);
+            }
+        }
+
+        // Both signals in hand. If the kernel is dying (an in-band exit like
+        // `quit()` / `q()`), Exited hasn't quite transitioned yet — the shell
+        // reply commonly beats the process-death socket-read-error by a few
+        // milliseconds. Wait a short window for the next `watch_status`
+        // change; if it goes to Exited, bail cleanly without redrawing. On a
+        // healthy kernel `watch_status` won't change (the kernel just went
+        // back to Idle), so the timer fires and we draw the next prompt.
+        // 30ms is short enough to be invisible under keystroke latency but
+        // comfortably longer than the socket-loop's post-exit read error.
+        if *watch.borrow() == KernelStatus::Exited {
+            mark_session_closed(&session_id);
+            shutdown.notify_waiters();
+            exit_cleanly(0);
         }
     }
 }
