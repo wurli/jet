@@ -4,17 +4,15 @@
 -- target_name is 'lsp'.
 -------------------------------------------------------------------------------
 
-local lib_ok, jet = pcall(require, "jet.core.engine")
-if not lib_ok then
-	jet = require("jet") --[[@as jet.engine]]
-end
-
-local script_dir = debug.getinfo(1, "S").source:sub(2):match("(.*/)") or "./"
+-- Make sibling `utils.lua` requirable regardless of cwd.
+local dbg = debug.getinfo(1, "S")
+assert(dbg, "Failed to determine script dir for kernel spec path")
+local script_dir = dbg.source:sub(2):match("(.*/)") or "./"
 package.path = script_dir .. "?.lua;" .. package.path
 local utils = require("utils")
 
 -- Start ark ------------------------------------------------------------------
-local kernel = utils.start_kernel(jet, utils.kernel_spec())
+local kernel = utils.start_kernel("ark")
 
 -- Open LSP comm --------------------------------------------------------------
 local lsp_comm_id, lsp_comm_msgs = kernel.comm_open("lsp", { ip_address = "127.0.0.1" })

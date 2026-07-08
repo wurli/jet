@@ -27,7 +27,7 @@ fn repo_kernels_dir() -> Option<PathBuf> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()?
         .parent()?
-        .join("kernels");
+        .join("test-kernels");
     p.exists().then_some(p)
 }
 
@@ -76,11 +76,6 @@ fn walkdir(root: &Path) -> Box<dyn Iterator<Item = PathBuf>> {
     }))
 }
 
-/// Path to the dev-installed ark kernelspec (via `scripts/install-dev-kernels.sh`).
-fn find_ark_kernelspec() -> Option<PathBuf> {
-    dev_kernel("ark")
-}
-
 enum TestKernel {
     Python,
     Ark,
@@ -104,7 +99,7 @@ fn run_lua_test_with(script_name: &str, which_kernel: TestKernel) {
             p
         }
         TestKernel::Ark => {
-            let Some(p) = find_ark_kernelspec() else {
+            let Some(p) = dev_kernel("ark") else {
                 skip("ark kernelspec missing; run scripts/install-dev-kernels.sh");
                 return;
             };

@@ -1,18 +1,5 @@
 local M = {}
 
--- Kernelspec path chosen by the Rust runner in lua_smoke.rs (which reads
--- from the repo's `kernels/` dir populated by scripts/install-dev-kernels.sh).
--- Fail loudly when the env var is missing so an inline hardcoded path
--- doesn't sneak back into the test scripts.
-function M.kernel_spec()
-	local path = os.getenv("JET_TEST_KERNEL")
-	assert(
-		path and #path > 0,
-		"JET_TEST_KERNEL not set — lua smoke tests must be driven via `cargo test -p jet_lua`"
-	)
-	return path
-end
-
 function M.tbl_len(x)
 	local n_items = 0
 	for _, _ in pairs(x) do
@@ -83,10 +70,27 @@ local await = function(poll)
 	end
 end
 
----@param jet jet.engine
-M.start_kernel = function(jet, spec)
+-- Kernelspec path chosen by the Rust runner in lua_smoke.rs (which reads
+-- from the repo's `kernels/` dir populated by scripts/install-dev-kernels.sh).
+-- Fail loudly when the env var is missing so an inline hardcoded path
+-- doesn't sneak back into the test scripts.
+function M.kernel_spec(name)
+	local debug_info = debug.getinfo(1, "S")
+	assert(debug_info, "failed to determine script dir for kernel spec path")
+	local script_dir = debug_info.source:sub(2):match("(.*/)") or "./"
+	return script_dir .. "../../../../test-kernels/" .. name .. "/kernel.json"
+end
+
+M.start_kernel = function(spec_name)
+	-- Try jet.core.engine for convenience when testing in Neovim
+	local lib_ok, jet = pcall(require, "jet.core.engine")
+	if not lib_ok then
+		---@diagnostic disable-next-line: unresolved-require
+		jet = require("jet")
+	end
+
 	---@type jet.init.response
-	local con = await(jet.start(spec))
+	local con = await(jet.start(M.kernel_spec(spec_name)))
 
 	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from start")
 	assert(type(con.kernel_info) == "table", "expected kernel info table")
@@ -129,6 +133,7 @@ M.start_kernel = function(jet, spec)
 			end
 		end,
 		stop = function()
+			assert(con.session_id, "kernel session_id missing; cannot stop")
 			jet.stop(con.session_id)
 		end,
 	}

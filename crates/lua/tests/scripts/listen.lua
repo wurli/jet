@@ -11,19 +11,15 @@
 
 -- Find libs ------------------------------------------------------------------
 
--- Try jet.core.engine for convenience when testing in Neovim
-local lib_ok, jet = pcall(require, "jet.core.engine")
-if not lib_ok then
-	jet = require("jet") --[[@as jet.engine]]
-end
-
 -- Make sibling `utils.lua` requirable regardless of cwd.
-local script_dir = debug.getinfo(1, "S").source:sub(2):match("(.*/)") or "./"
+local dbg = debug.getinfo(1, "S")
+assert(dbg, "Failed to determine script dir for kernel spec path")
+local script_dir = dbg.source:sub(2):match("(.*/)") or "./"
 package.path = script_dir .. "?.lua;" .. package.path
 local utils = require("utils")
 
 -- Start kernel ---------------------------------------------------------------
-local kernel = utils.start_kernel(jet, utils.kernel_spec())
+local kernel = utils.start_kernel("python3")
 assert(type(kernel.stream) == "function", "expected start response to include a `stream` poll")
 
 -- A separate filtered listen registered explicitly. --------------------------
