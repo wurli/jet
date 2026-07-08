@@ -20,13 +20,13 @@ local kernel = utils.start_kernel("python3")
 local received_input_request = false
 local received_value = ""
 
-for res in kernel.execute("v = input('ASK> '); print('GOT:' + v)") do
+for res in kernel:execute("v = input('ASK> '); print('GOT:' + v)", 5) do
 	local msg = res.msg
 	if res.status == "busy" then
 		if msg.header.msg_type == "input_request" then
 			received_input_request = true
 			print("here")
-			kernel.provide_stdin("", "bananas")
+			kernel:provide_stdin("", "bananas")
 		elseif msg.header.msg_type == "stream" and msg.content and msg.content.text then
 			received_value = received_value .. msg.content.text
 		end
@@ -39,4 +39,4 @@ assert(
 )
 
 -- Shut down kernel -----------------------------------------------------------
-kernel.stop()
+kernel:stop()

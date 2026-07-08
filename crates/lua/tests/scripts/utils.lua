@@ -1,5 +1,6 @@
 local M = {}
 
+---@return integer
 function M.tbl_len(x)
 	local n_items = 0
 	for _, _ in pairs(x) do
@@ -9,6 +10,8 @@ function M.tbl_len(x)
 end
 
 -- String representation of a Lua table
+---@param obj any
+---@param level integer?
 function M.dump(obj, level)
 	level = level or 4
 	local indent = (" "):rep(level)
@@ -44,9 +47,17 @@ end
 -- (`kernel.stream`, `kernel.listen(...)`) only terminate on kernel
 -- shutdown — consumers of those must `break` out themselves once they've
 -- seen enough.
-local function iter(cb)
+---@generic T
+---@param cb fun(): T
+---@param timeout_seconds integer?
+---@return fun(): T?
+local function iter(cb, timeout_seconds)
+	local start_time = os.clock()
 	return function()
 		while true do
+			if timeout_seconds and os.clock() - start_time > timeout_seconds then
+				error(string.format("Iter timeout exceeded %ss", timeout_seconds))
+			end
 			local res = cb()
 			if not res then
 				return nil
@@ -70,6 +81,18 @@ local await = function(poll)
 	end
 end
 
+local get_jet = function()
+	-- Try jet.core.engine for convenience when testing in Neovim
+	local lib_ok, jet = pcall(require, "jet.core.engine")
+	if not lib_ok then
+		---@diagnostic disable-next-line: unresolved-require
+		jet = require("jet")
+	end
+	return jet
+end
+
+M.jet = get_jet() --[[@as jet.engine]]
+
 -- Kernelspec path chosen by the Rust runner in lua_smoke.rs (which reads
 -- from the repo's `kernels/` dir populated by scripts/install-dev-kernels.sh).
 -- Fail loudly when the env var is missing so an inline hardcoded path
@@ -81,62 +104,91 @@ function M.kernel_spec(name)
 	return script_dir .. "../../../../test-kernels/" .. name .. "/kernel.json"
 end
 
-M.start_kernel = function(spec_name)
-	-- Try jet.core.engine for convenience when testing in Neovim
-	local lib_ok, jet = pcall(require, "jet.core.engine")
-	if not lib_ok then
-		---@diagnostic disable-next-line: unresolved-require
-		jet = require("jet")
-	end
+---@class jet.testing.kernel
+---@field client_id string
+---@field session_id string
+---@field kernel_info jet.kernel.info
+---@field msg_stream fun(): jet.kernel.response?
+local Kernel = {}
+Kernel.__index = Kernel
 
+function Kernel.init(spec_name)
 	---@type jet.init.response
-	local con = await(jet.start(M.kernel_spec(spec_name)))
+	local con = await(M.jet.start(M.kernel_spec(spec_name)))
 
 	assert(type(con.client_id) == "string" and #con.client_id > 0, "expected session id from start")
 	assert(type(con.kernel_info) == "table", "expected kernel info table")
 
-	return {
+	local out = {
 		client_id = con.client_id,
 		session_id = con.session_id,
 		kernel_info = con.kernel_info,
-		-- Firehose iterator (no-filter listen registered at boot). Long-lived:
-		-- only ends on kernel shutdown, so consumers must `break` when they
-		-- have what they need.
-		stream = function()
-			return iter(con.stream)
-		end,
-		execute = function(code)
-			return iter(jet.execute_code(con.client_id, code, false, true, {}))
-		end,
-		comm_open = function(target_name, data)
-			local comm_id, cb = jet.comm_open(con.client_id, target_name, data)
-			return comm_id, iter(cb)
-		end,
-		comm_info = function(target_name)
-			return iter(jet.comm_info(con.client_id, target_name))
-		end,
-		---@param comm_id string
-		comm_listen = function(comm_id)
-			return iter(jet.comm_listen(con.client_id, comm_id))
-		end,
-		provide_stdin = function(parent_id, value)
-			jet.provide_stdin(con.client_id, parent_id, value)
-		end,
-		-- Register a filtered listener once and return a factory yielding
-		-- a fresh iterator over the same underlying poll closure. Same
-		-- long-lived contract as `stream`.
-		---@param opts jet.listen.opts
-		listen = function(opts)
-			local cb = jet.listen(con.client_id, opts)
-			return function()
-				return iter(cb)
-			end
-		end,
-		stop = function()
-			assert(con.session_id, "kernel session_id missing; cannot stop")
-			jet.stop(con.session_id)
-		end,
+		msg_stream = con.stream,
 	}
+
+	return setmetatable(out, Kernel)
+end
+
+---@param timeout_seconds integer
+function Kernel:stream(timeout_seconds)
+	return iter(self.msg_stream, timeout_seconds)
+end
+
+---@param code string
+---@param timeout_seconds integer
+function Kernel:execute(code, timeout_seconds)
+	return iter(M.jet.execute_code(self.client_id, code, false, true, {}), timeout_seconds)
+end
+
+---@param target_name string
+---@param data table
+function Kernel:comm_open(target_name, data)
+	local comm_id, cb = M.jet.comm_open(self.client_id, target_name, data)
+	return comm_id, iter(cb, 10)
+end
+
+---@param comm_id string
+---@param data table
+function Kernel:comm_send(comm_id, data)
+	local cb = M.jet.comm_send(self.client_id, comm_id, data)
+	return iter(cb, 10)
+end
+
+---@param comm_id string
+---@param timeout_seconds integer
+function Kernel:comm_info(comm_id, timeout_seconds)
+	local cb = M.jet.comm_info(self.client_id, comm_id)
+	return iter(cb, timeout_seconds)
+end
+
+---@param comm_id string
+---@param timeout_seconds integer
+function Kernel:comm_listen(comm_id, timeout_seconds)
+	return iter(M.jet.comm_listen(self.client_id, comm_id), timeout_seconds)
+end
+
+---@param parent_id string
+---@param value string
+function Kernel:provide_stdin(parent_id, value)
+	M.jet.provide_stdin(self.client_id, parent_id, value)
+end
+
+---@param opts jet.listen.opts
+---@param timeout_seconds integer
+function Kernel:listen(opts, timeout_seconds)
+	local cb = M.jet.listen(self.client_id, opts)
+	return function()
+		return iter(cb, timeout_seconds)
+	end
+end
+
+function Kernel:stop()
+	M.jet.stop(self.session_id)
+end
+
+---@param spec_name string
+M.start_kernel = function(spec_name)
+	return Kernel.init(spec_name)
 end
 
 return M
