@@ -233,7 +233,6 @@ fn mark_session_closed(session_id: &Option<String>) {
 
 enum WaitResult {
     Idle,
-    Timeout,
     Closed,
     Input(InputRequest),
 }
@@ -279,16 +278,9 @@ async fn wait_for_idle(
     idle_rx: &mut UnboundedReceiver<String>,
     input_rx: &mut UnboundedReceiver<InputRequest>,
     target: &str,
-    timeout: Duration,
 ) -> WaitResult {
-    let deadline = Instant::now() + timeout;
     loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return WaitResult::Timeout;
-        }
         tokio::select! {
-            _ = tokio::time::sleep(remaining) => return WaitResult::Timeout,
             r = idle_rx.recv() => match r {
                 Some(parent) if parent == target => return WaitResult::Idle,
                 Some(_) => continue,
@@ -677,7 +669,7 @@ pub async fn drive_repl(
             let r: WaitResult = async {
                 loop {
                     tokio::select! {
-                        r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id, Duration::from_secs(300)) => return r,
+                        r = wait_for_idle(&mut idle_rx, &mut input_rx, &msg_id) => return r,
                         _ = await_kernel_exited(session.watch_status()) => return WaitResult::Closed,
                         _ = sigint.recv() => {
                             if let Err(e) = session.interrupt().await {
@@ -748,10 +740,6 @@ pub async fn drive_repl(
         match outcome {
             WaitResult::Idle => {}
             WaitResult::Input(_) => unreachable!("handled above"),
-            WaitResult::Timeout => {
-                log::warn!("timeout waiting for kernel idle (msg_id={msg_id})");
-                eprintln!("{}", ansi::yellow("Timeout waiting for kernel"));
-            }
             WaitResult::Closed => {
                 mark_session_closed(&session_id);
                 shutdown.notify_waiters();
