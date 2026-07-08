@@ -212,12 +212,13 @@ function Kernel:has_lua_client()
 	return self.client_id ~= nil
 end
 
---TODO: stop poll on kernel close
 function Kernel:handle_stream()
 	---@param res jet.kernel.response
 	utils.poll(self.stream, function(res)
 		for _, hook in pairs(self.on_msg_hooks) do
-			if res.status == "busy" then
+			if not res then
+				return "exit"
+			elseif res.status == "busy" then
 				hook(self, res.msg)
 				return "continue"
 			else
