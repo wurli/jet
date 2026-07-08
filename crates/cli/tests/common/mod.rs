@@ -122,6 +122,41 @@ pub fn scratch_xdg_dir() -> std::path::PathBuf {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// jet process helpers
+// ─────────────────────────────────────────────────────────────────────
+
+/// Spawn `jet start <kernel_json>` with piped stdin and null stdout/stderr.
+pub fn spawn_jet_start(
+    kernel_json: &std::path::Path,
+    xdg: &std::path::Path,
+) -> std::process::Child {
+    Command::new(env!("CARGO_BIN_EXE_jet"))
+        .args(["start", kernel_json.to_str().unwrap()])
+        .env("XDG_DATA_HOME", xdg)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn jet start")
+}
+
+/// Spawn `jet attach --connection-file <conn>` with piped stdin and null
+/// stdout/stderr.
+pub fn spawn_jet_attach(
+    conn: &std::path::Path,
+    xdg: &std::path::Path,
+) -> std::process::Child {
+    Command::new(env!("CARGO_BIN_EXE_jet"))
+        .args(["attach", "--connection-file", conn.to_str().unwrap()])
+        .env("XDG_DATA_HOME", xdg)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn jet attach")
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // PTY plumbing
 // ─────────────────────────────────────────────────────────────────────
 

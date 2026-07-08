@@ -17,10 +17,6 @@ use common::*;
 /// and the kernel_pid cleared — pid only makes sense for live kernels.
 #[test]
 fn session_marked_closed_on_graceful_exit() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -83,10 +79,6 @@ fn session_marked_closed_on_graceful_exit() {
 /// that timing bug — the pid we read mid-session must match a live process.
 #[test]
 fn session_records_kernel_pid_while_open() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -138,10 +130,6 @@ fn session_records_kernel_pid_while_open() {
 /// With --persist, the session stays open and the kernel keeps running.
 #[test]
 fn session_left_open_with_persist() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -229,10 +217,6 @@ fn session_left_open_with_persist() {
 /// kernel that only `jet stop` can clean up.
 #[test]
 fn kernel_dies_when_parent_killed_without_persist() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -296,10 +280,6 @@ fn kernel_dies_when_parent_killed_without_persist() {
 /// sends shutdown_request on control, and the kernel actually dies.
 #[test]
 fn jet_stop_shuts_down_persisted_kernel() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -390,10 +370,6 @@ fn jet_stop_shuts_down_persisted_kernel() {
 /// no session.json is written and `jet list-sessions` shows nothing.
 #[test]
 fn connect_with_connection_file_skips_session_tracking() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {

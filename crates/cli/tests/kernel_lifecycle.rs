@@ -8,7 +8,7 @@
 #![allow(clippy::zombie_processes)]
 
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -128,10 +128,6 @@ fn ctrl_c_interrupts_running_kernel_in_repl() {
 
 #[test]
 fn jet_exits_on_eof() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -139,17 +135,8 @@ fn jet_exits_on_eof() {
             return;
         }
     };
-    let bin = env!("CARGO_BIN_EXE_jet");
     let xdg = scratch_xdg_dir();
-
-    let mut child = Command::new(bin)
-        .args(["start", kernel_json.to_str().unwrap()])
-        .env("XDG_DATA_HOME", &xdg)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn jet");
+    let mut child = spawn_jet_start(&kernel_json, &xdg);
 
     std::thread::sleep(Duration::from_secs(3));
     drop(child.stdin.take());
@@ -178,10 +165,6 @@ fn jet_exits_on_eof() {
 /// the normal shutdown handshake, so no idle ever arrives.
 #[test]
 fn jet_exits_when_kernel_dies_mid_execute() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -189,18 +172,8 @@ fn jet_exits_when_kernel_dies_mid_execute() {
             return;
         }
     };
-    let bin = env!("CARGO_BIN_EXE_jet");
     let xdg = scratch_xdg_dir();
-
-    use std::io::Write;
-    let mut child = Command::new(bin)
-        .args(["start", kernel_json.to_str().unwrap()])
-        .env("XDG_DATA_HOME", &xdg)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn jet");
+    let mut child = spawn_jet_start(&kernel_json, &xdg);
 
     std::thread::sleep(Duration::from_secs(3));
     let mut stdin = child.stdin.take().expect("stdin piped");
@@ -235,10 +208,6 @@ fn jet_exits_when_kernel_dies_mid_execute() {
 
 #[test]
 fn jet_exits_when_kernel_quits() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
@@ -246,22 +215,12 @@ fn jet_exits_when_kernel_quits() {
             return;
         }
     };
-    let bin = env!("CARGO_BIN_EXE_jet");
     let xdg = scratch_xdg_dir();
-
-    use std::io::Write;
-    let mut child = Command::new(bin)
-        .args(["start", kernel_json.to_str().unwrap()])
-        .env("XDG_DATA_HOME", &xdg)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn jet");
+    let mut child = spawn_jet_start(&kernel_json, &xdg);
 
     std::thread::sleep(Duration::from_secs(3));
     let mut stdin = child.stdin.take().expect("stdin piped");
-    stdin.write_all(b"exit()\n").expect("write to jet stdin");
+    stdin.write_all(b"quit()\n").expect("write to jet stdin");
 
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut exited = false;
@@ -302,18 +261,8 @@ fn jet_exits_when_r_kernel_quits_spawn() {
         skip("ark kernelspec not found");
         return;
     };
-    let bin = env!("CARGO_BIN_EXE_jet");
     let xdg = scratch_xdg_dir();
-
-    use std::io::Write;
-    let mut child = Command::new(bin)
-        .args(["start", kernel_json.to_str().unwrap()])
-        .env("XDG_DATA_HOME", &xdg)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn jet");
+    let mut child = spawn_jet_start(&kernel_json, &xdg);
 
     std::thread::sleep(Duration::from_secs(3));
     let mut stdin = child.stdin.take().expect("stdin piped");
@@ -351,8 +300,6 @@ fn jet_exits_when_r_kernel_quits_attach() {
         skip("ark kernelspec not found");
         return;
     };
-    let bin = env!("CARGO_BIN_EXE_jet");
-
     let xdg = scratch_xdg_dir();
     let conn = std::env::temp_dir().join(format!(
         "jet-attach-quit-test-{:x}.json",
@@ -362,8 +309,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
 
     // Spawn persisted: get a kernel that survives jet exiting.
     {
-        use std::io::Write;
-        let mut child = Command::new(bin)
+        let mut child = Command::new(env!("CARGO_BIN_EXE_jet"))
             .args([
                 "start",
                 "--connection-file",
@@ -372,9 +318,9 @@ fn jet_exits_when_r_kernel_quits_attach() {
                 kernel_json.to_str().unwrap(),
             ])
             .env("XDG_DATA_HOME", &xdg)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .expect("spawn jet (persist)");
         std::thread::sleep(Duration::from_secs(3));
@@ -390,15 +336,7 @@ fn jet_exits_when_r_kernel_quits_attach() {
     );
 
     // Attach + quit().
-    use std::io::Write;
-    let mut attach = Command::new(bin)
-        .args(["attach", "--connection-file", &conn_str])
-        .env("XDG_DATA_HOME", &xdg)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn jet (attach)");
+    let mut attach = spawn_jet_attach(&conn, &xdg);
 
     std::thread::sleep(Duration::from_secs(3));
     let mut stdin = attach.stdin.take().expect("stdin piped");
@@ -442,10 +380,6 @@ fn jet_exits_when_r_kernel_quits_attach() {
 /// a kernel that survived past jet's exit.
 #[test]
 fn detach_and_attach_round_trip() {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {

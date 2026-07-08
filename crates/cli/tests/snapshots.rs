@@ -55,14 +55,9 @@ fn normalise_banner(line: &str) -> String {
     }
 }
 
-/// Macro replacement for `if !ipykernel_available() { skip(...); return }` +
-/// kernelspec prep. Returns the kernelspec path or `None` (logging SKIP)
-/// when the test should be silently skipped.
+/// Prep the python kernelspec, or log SKIP and return `None` if the
+/// dev-kernel install script hasn't been run.
 fn python_kernelspec_or_skip() -> Option<std::path::PathBuf> {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return None;
-    }
     match ensure_python_kernelspec() {
         Ok(p) => Some(p),
         Err(e) => {

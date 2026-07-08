@@ -15,10 +15,6 @@ use common::*;
 /// running). Returns the connection-file path; caller is responsible for
 /// killing the kernel and cleaning up.
 fn spawn_persisted_ipykernel() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
-    if !ipykernel_available() {
-        skip("ipykernel not installed");
-        return None;
-    }
     let kernel_json = match ensure_python_kernelspec() {
         Ok(p) => p,
         Err(e) => {
