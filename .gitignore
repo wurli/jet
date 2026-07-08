@@ -1,6 +1,5 @@
 .claude/
 /target
-/kernels
 /deps
 /.jet-dev
 /notes

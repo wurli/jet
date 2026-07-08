@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/Users/JACOB.SCOTT1/Repos/jet/.jet-dev/venv/bin/python",
+    "-m",
+    "ipykernel_launcher",
+    "-f",
+    "{connection_file}"
+  ],
+  "display_name": "Python 3 (python3-message)",
+  "language": "python",
+  "interrupt_mode": "message"
+}
