@@ -61,15 +61,24 @@ local active_kernel_line = function(data)
 	return out
 end
 
----@param data jet.kernel
+---@param data jet.ui.kernel_group
 local kernel_info_line = function(data)
 	local out = new_line(data)
 
 	function out:refresh()
-		self.parts = {
-			{ self.data.spec.display_name .. "    ", "OkMsg" },
-			{ self.data.spec_path, "Directory" },
-		}
+		self.parts = { { self.data.kernel.spec.display_name } }
+
+		local n_running = #self.data.connected + #self.data.external
+		if n_running > 0 then
+			table.insert(self.parts, { "  " })
+			table.insert(self.parts, {
+				string.format("(%s running instance%s)", n_running, n_running > 1 and "s" or ""),
+				"Comment",
+			})
+		end
+
+		table.insert(self.parts, { "    " })
+		table.insert(self.parts, { utils.path_shorten(self.data.kernel.spec_path), "Directory" })
 	end
 
 	return out
@@ -77,7 +86,7 @@ end
 
 local header_line = function()
 	local out = new_line(nil)
-	out.parts = { { "Jet  ", "Title" } }
+	out.parts = { { "Jet ", "Title" }, { " ", "OkMsg" } }
 	return out
 end
 
@@ -107,8 +116,13 @@ local blank_line = function()
 	return out
 end
 
----@return { kernel: jet.kernel, external: jet.kernel[], connected: jet.kernel[] }[]
-local list_kernels = function()
+---@class jet.ui.kernel_group
+---@field kernel jet.kernel
+---@field external jet.kernel[]
+---@field connected jet.kernel[]
+
+---@return jet.ui.kernel_group[]
+local list_kernel_groups = function()
 	local kernel_list = api.list_kernels({}, {})
 
 	---@type table<string, { kernel: jet.kernel, external: jet.kernel[], connected: jet.kernel[] }>
@@ -167,7 +181,7 @@ local list_kernels = function()
 end
 
 M.show = function()
-	local kernels = list_kernels()
+	local groups = list_kernel_groups()
 
 	----------------------------------------------
 	--               Write lines                --
@@ -180,14 +194,14 @@ M.show = function()
 		blank_line(),
 	}
 
-	for _, entry in ipairs(kernels) do
-		table.insert(lines, kernel_info_line(entry.kernel))
+	for _, group in ipairs(groups) do
+		table.insert(lines, kernel_info_line(group))
 		local any_connected = false
-		for _, k in ipairs(entry.connected) do
+		for _, k in ipairs(group.connected) do
 			table.insert(lines, active_kernel_line(k))
 			any_connected = true
 		end
-		for _, k in ipairs(entry.external) do
+		for _, k in ipairs(group.external) do
 			table.insert(lines, active_kernel_line(k))
 			any_connected = true
 		end
