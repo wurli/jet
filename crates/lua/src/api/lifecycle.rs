@@ -3,7 +3,7 @@
 use anyhow::Context;
 use jet_core::client::{Client, make_client_id};
 use jet_core::connection_file;
-use jet_core::kernel::{Kernel, KernelSpec, probe_kernel_alive};
+use jet_core::kernel::{AttachOptions, Kernel, KernelSpec, probe_kernel_alive};
 use jet_core::manager::{Session, SessionStore, generate_session_name};
 use mlua::prelude::*;
 use std::cell::RefCell;
@@ -125,8 +125,25 @@ pub fn attach(
 
     let (tx, rx) = oneshot::channel();
     let id = store_entry.as_ref().map(|s| s.meta().session_id.clone());
+    // Best-effort: recover interrupt_mode + pid from the tracked session so
+    // `jet.interrupt(client_id)` can actually forward ^C after an attach.
+    // Falls back to signal-mode/no-pid when the connection file isn't part
+    // of a tracked session, or the kernelspec on disk has since been removed.
+    let attach_opts = match store_entry.as_ref() {
+        Some(s) => {
+            let meta = s.meta();
+            let interrupt_mode = KernelSpec::load(&meta.kernelspec_path)
+                .map(|k| k.interrupt_mode)
+                .unwrap_or_default();
+            AttachOptions {
+                interrupt_mode,
+                pid: meta.kernel_pid,
+            }
+        }
+        None => AttachOptions::default(),
+    };
     runtime().spawn(async move {
-        let _ = tx.send(Client::attach(&path, session_name.as_deref(), id).await);
+        let _ = tx.send(Client::attach(&path, session_name.as_deref(), id, attach_opts).await);
     });
 
     let meta = store_entry
@@ -234,7 +251,10 @@ pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
             let connection = connection_file::read(path.as_path())?;
             if probe_kernel_alive(&connection).await.is_ok() {
                 let client_id = make_client_id(None);
-                let mut kernel = Kernel::attach(&path, &client_id).await?;
+                // `shutdown_kernel` sends `shutdown_request`, not an
+                // interrupt — the interrupt-mode/pid fields don't matter.
+                let mut kernel =
+                    Kernel::attach(&path, &client_id, AttachOptions::default()).await?;
                 kernel.shutdown().await
             } else {
                 Ok(())

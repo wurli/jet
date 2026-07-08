@@ -23,6 +23,9 @@ use tokio::process::{Child, Command};
 use crate::connection_file;
 pub use crate::kernel_spec::{InterruptMode, KernelSpec};
 
+// AttachOptions is defined below; also re-exported at the crate root via
+// `lib.rs` for callers that pull it in through the client layer.
+
 /// RAII guard for the kernel process. Drop kills + waits unless `detach`
 /// has been called. Matches the old `kallichore::server::ChildGuard`
 /// pattern, but for `tokio::process::Child`.
@@ -231,9 +234,26 @@ pub struct Channels {
     pub heartbeat: Option<ClientHeartbeatConnection>,
 }
 
+/// Optional out-of-band context for [`Kernel::attach`]. The connection file
+/// alone doesn't tell us how to interrupt the kernel (spec-driven) or which
+/// pid to send SIGINT to (we didn't spawn it); callers that know either
+/// piece — typically because the session-store entry recorded them — pass
+/// them in here.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AttachOptions {
+    pub interrupt_mode: InterruptMode,
+    pub pid: Option<u32>,
+}
+
 pub struct Kernel {
     /// Some when we spawned the kernel ourselves; None when we attached.
     child: Option<ChildGuard>,
+    /// PID of an attached kernel we do NOT own — supplied by the caller when it
+    /// has out-of-band knowledge (e.g. a session-store entry). Used by signal-
+    /// mode interrupt so a `jet attach` can still `kill -INT` the kernel pgid.
+    /// `None` for spawned kernels (use `child.id()` instead) and for attaches
+    /// where the caller doesn't know the pid.
+    attached_pid: Option<u32>,
     /// Connection file path. Tempfiles get cleaned up on drop.
     _connection_path: ConnectionPath,
     pub interrupt_mode: InterruptMode,
@@ -340,6 +360,7 @@ impl Kernel {
 
         Ok(Self {
             child: Some(guard),
+            attached_pid: None,
             _connection_path: conn_path,
             interrupt_mode: spec.interrupt_mode,
             channels,
@@ -358,6 +379,7 @@ impl Kernel {
     pub fn synthetic_for_test(log_file_path: Option<PathBuf>) -> Self {
         Self {
             child: None,
+            attached_pid: None,
             _connection_path: ConnectionPath::OwnedTemp(default_temp_path()),
             interrupt_mode: InterruptMode::Signal,
             channels: Channels::default(),
@@ -367,10 +389,28 @@ impl Kernel {
         }
     }
 
+    /// Test-only escape hatch to set the tracked pid on a synthetic Kernel,
+    /// standing in for what [`Kernel::attach`] would set from `AttachOptions`.
+    #[cfg(test)]
+    pub fn set_attached_pid_for_test(&mut self, pid: u32) {
+        self.attached_pid = Some(pid);
+    }
+
     /// Attach to an already-running kernel via its connection file. We do
     /// not own the child process; dropping this `Kernel` does not stop
     /// the kernel.
-    pub async fn attach(connection_path: &Path, client_id: &str) -> Result<Self> {
+    ///
+    /// `opts` supplies out-of-band info the connection file doesn't carry —
+    /// the kernelspec's `interrupt_mode` and the OS pid of the running
+    /// kernel — so `^C` forwarding works on attach. Callers that don't
+    /// know either fall back to the defaults: signal-mode with no pid,
+    /// which turns `interrupt()` into a no-op (best we can do without
+    /// the kernelspec).
+    pub async fn attach(
+        connection_path: &Path,
+        client_id: &str,
+        opts: AttachOptions,
+    ) -> Result<Self> {
         let info = connection_file::read(connection_path)?;
         // ZMQ DEALER/SUB sockets start to dead endpoints without
         // complaint and just queue forever, so probe the shell port
@@ -382,11 +422,9 @@ impl Kernel {
         let log_file_path = log_path.exists().then_some(log_path);
         Ok(Self {
             child: None,
+            attached_pid: opts.pid,
             _connection_path: ConnectionPath::Persistent(connection_path.to_path_buf()),
-            // No kernelspec on attach — assume signal-mode so ^C goes to
-            // the kernel pgid. Override via a dedicated method if a use
-            // case appears.
-            interrupt_mode: InterruptMode::Signal,
+            interrupt_mode: opts.interrupt_mode,
             channels,
             log_file_path,
             #[cfg(unix)]
@@ -466,8 +504,8 @@ impl Kernel {
     }
 
     fn interrupt_signal(&self) -> Result<()> {
-        let Some(pid) = self.child_pid() else {
-            // Attached or already gone — nothing to signal.
+        let Some(pid) = self.child_pid().or(self.attached_pid) else {
+            // Attached without a known pid, or already gone — nothing to signal.
             return Ok(());
         };
         // We launched the kernel via setsid(), so it's the leader of its
@@ -651,6 +689,72 @@ mod tests {
             .get_envs()
             .filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string())))
             .collect()
+    }
+
+    /// Signal-mode `interrupt()` on an *attached* kernel (no `child`, but a
+    /// caller-supplied pid) must send SIGINT to that pid's process group.
+    /// Regression guard for `jet attach` on a kernelspec that uses
+    /// `interrupt_mode: signal` — before the fix `Kernel::attach` dropped
+    /// the pid on the floor and `interrupt_signal` silently short-circuited.
+    #[tokio::test]
+    async fn interrupt_signals_attached_pid() {
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+        use std::time::{Duration, Instant};
+
+        // Spawn a real child in its own process group so `kill(-pgid, ...)`
+        // matches how a jet-launched kernel is arranged.
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id();
+
+        // Build a synthetic Kernel that represents an *attached* kernel:
+        // no owned `child`, but with the pid supplied out-of-band (what
+        // `Kernel::attach` sets from `AttachOptions::pid`).
+        let mut kernel = super::Kernel::synthetic_for_test(None);
+        kernel.set_attached_pid_for_test(pid);
+        // Default is already Signal, but make the intent explicit.
+        kernel.interrupt_mode = InterruptMode::Signal;
+
+        kernel.interrupt().await.expect("interrupt should not error");
+
+        // Wait for the child to die; assert it was killed by SIGINT within
+        // a couple of seconds. `sleep` doesn't install a handler, so SIGINT
+        // terminates it with WIFSIGNALED / WTERMSIG == SIGINT.
+        use std::os::unix::process::ExitStatusExt;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match child.try_wait().expect("try_wait") {
+                Some(status) => {
+                    assert_eq!(
+                        status.signal(),
+                        Some(libc::SIGINT),
+                        "sleep should have been terminated by SIGINT, got {status:?}"
+                    );
+                    break;
+                }
+                None if Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    panic!("sleep didn't exit within 3s — SIGINT was not delivered");
+                }
+                None => std::thread::sleep(Duration::from_millis(50)),
+            }
+        }
+    }
+
+    /// Signal-mode `interrupt()` with neither `child` nor `attached_pid`
+    /// (an attach where the caller had no pid — e.g. a raw
+    /// `--connection-file` outside the session store) is a documented
+    /// best-effort no-op. Guard the contract so a future refactor doesn't
+    /// accidentally start erroring here.
+    #[tokio::test]
+    async fn interrupt_signal_without_pid_is_a_noop() {
+        let mut kernel = super::Kernel::synthetic_for_test(None);
+        kernel.interrupt_mode = InterruptMode::Signal;
+        kernel.interrupt().await.expect("no-pid path must not error");
     }
 
     #[test]

@@ -20,7 +20,7 @@ use jet_core::events::{InputRequest, IsCompleteReplyMsg, from_message};
 use jet_core::jupyter_protocol::{
     ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
 };
-use jet_core::kernel::KernelSpec;
+use jet_core::kernel::{AttachOptions, KernelSpec};
 use jet_core::manager::{Session, SessionStore};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -312,6 +312,11 @@ pub enum ReplTarget<'a> {
         connection_path: &'a Path,
         /// SessionStore id this kernel is bound to (the `session.json` slug).
         session_id: Option<String>,
+        /// Kernelspec-derived interrupt mode + kernel pid, when the caller
+        /// could recover them from the session store. The connection file
+        /// alone doesn't carry either, so without this ^C forwarding is a
+        /// no-op after `jet attach`.
+        attach_opts: AttachOptions,
         /// Render the kernel banner on attach. Defaults to false so reconnects
         /// don't reprint the banner the original spawn already drew.
         banner: bool,
@@ -365,8 +370,17 @@ pub async fn drive_repl(
         ReplTarget::Attach {
             connection_path,
             session_id,
+            attach_opts,
             banner: _,
-        } => Client::attach(connection_path, session_name.as_deref(), session_id).await?,
+        } => {
+            Client::attach(
+                connection_path,
+                session_name.as_deref(),
+                session_id,
+                attach_opts,
+            )
+            .await?
+        }
     };
     // Now that the Client exists we know our full client_id (the
     // `<name>---repl---<rand>` string the kernel will echo back as

@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use jet_core::client::{Client, make_client_id};
-use jet_core::kernel::Kernel;
+use jet_core::kernel::{AttachOptions, Kernel, KernelSpec};
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
@@ -12,6 +12,29 @@ use crate::cli::{
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::{ReplTarget, drive_repl};
+
+/// Best-effort: dig the kernelspec's `interrupt_mode` and the session-tracked
+/// kernel pid out of the session store, so `Kernel::attach` can forward `^C`
+/// correctly. Falls back to `AttachOptions::default()` (signal mode, no pid)
+/// when the connection file isn't part of a tracked session, or when the
+/// kernelspec on disk has since been removed — matching the pre-change
+/// behavior in those edge cases.
+fn recover_attach_options(conn_path: &std::path::Path) -> AttachOptions {
+    let Some(store) = SessionStore::default().ok() else {
+        return AttachOptions::default();
+    };
+    let Some(session) = store.find_by_connection_file(conn_path).ok().flatten() else {
+        return AttachOptions::default();
+    };
+    let meta = session.meta();
+    let interrupt_mode = KernelSpec::load(&meta.kernelspec_path)
+        .map(|s| s.interrupt_mode)
+        .unwrap_or_default();
+    AttachOptions {
+        interrupt_mode,
+        pid: meta.kernel_pid,
+    }
+}
 
 pub fn run_list_kernels(args: ListKernelsArgs) -> Result<()> {
     let paths: Vec<_> = jet_core::kernel_spec::KernelSpec::find_valid()
@@ -206,10 +229,12 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
         }
     };
     let render_graphics = !args.no_graphics;
+    let attach_opts = recover_attach_options(&conn_path);
     drive_repl(
         ReplTarget::Attach {
             connection_path: &conn_path,
             session_id,
+            attach_opts,
             banner: args.banner,
         },
         render_graphics,
@@ -326,8 +351,9 @@ async fn open_target_client(
                 .ok()
                 .and_then(|s| s.find_by_connection_file(&conn_path).ok().flatten())
                 .map(|s| s.meta().session_id.clone());
+            let attach_opts = recover_attach_options(&conn_path);
             let (client, info, _stream) =
-                Client::attach(&conn_path, session_name, session_id).await?;
+                Client::attach(&conn_path, session_name, session_id, attach_opts).await?;
             Ok((client, info, false))
         }
         KernelTarget::Spawn {
@@ -481,7 +507,9 @@ pub async fn run_stop(args: StopArgs) -> Result<()> {
     let mut last_err: Option<anyhow::Error> = None;
     for path in conn_paths {
         let client_id = make_client_id(args.session_name.as_deref());
-        match Kernel::attach(&path, &client_id).await {
+        // `run_stop` doesn't send `^C` — only a `shutdown_request` on control —
+        // so interrupt-mode/pid don't matter here.
+        match Kernel::attach(&path, &client_id, AttachOptions::default()).await {
             Ok(mut kernel) => {
                 if let Err(e) = kernel.shutdown().await {
                     // TODO: show session id instead of client_id
@@ -502,3 +530,4 @@ pub async fn run_stop(args: StopArgs) -> Result<()> {
         None => Ok(()),
     }
 }
+

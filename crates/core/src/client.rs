@@ -432,14 +432,17 @@ impl Client {
     }
 
     /// Attach to a running kernel and bring up a fully-handshaked client over it.
-    /// See [`Client::spawn`] for the return shape.
+    /// See [`Client::spawn`] for the return shape. `opts` carries the kernelspec-
+    /// derived interrupt mode and (when known) the kernel pid, so `^C` after
+    /// `jet attach` can be forwarded correctly instead of being silently swallowed.
     pub async fn attach(
         connection_path: &std::path::Path,
         session_name: Option<&str>,
         session_id: Option<String>,
+        opts: crate::kernel::AttachOptions,
     ) -> Result<(Self, Value, RequestStream)> {
         let client_id = make_client_id(session_name);
-        let kernel = Kernel::attach(connection_path, &client_id).await?;
+        let kernel = Kernel::attach(connection_path, &client_id, opts).await?;
         Self::bring_up(kernel, client_id, session_id).await
     }
 

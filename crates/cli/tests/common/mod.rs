@@ -46,13 +46,9 @@ pub fn ipykernel_available() -> bool {
     dev_kernel("python3").is_some()
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Kernelspec preparation
-// ─────────────────────────────────────────────────────────────────────
-
-/// Path to the repo's `kernels/` dir, populated by
-/// `scripts/install-dev-kernels.sh`. Returns `None` when the workspace
-/// layout doesn't match (e.g. tests running from a published crate).
+/// Path to the repo's `kernels/` dir — populated by
+/// `scripts/install-dev-kernels.sh`. Returns `None` if the layout doesn't
+/// match a workspace checkout (e.g. running tests from a published crate).
 fn repo_kernels_dir() -> Option<std::path::PathBuf> {
     // CARGO_MANIFEST_DIR is `<repo>/crates/cli`; go up two.
     let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -62,22 +58,25 @@ fn repo_kernels_dir() -> Option<std::path::PathBuf> {
     p.exists().then_some(p)
 }
 
-/// Look up a kernelspec provisioned by `scripts/install-dev-kernels.sh`.
-/// Returns `None` when the dev-kernel isn't present, so tests skip with
-/// an instructive message rather than failing.
+/// Locate a kernelspec provisioned by `scripts/install-dev-kernels.sh`
+/// (`kernels/<name>/kernel.json` in the repo). Returns `None` when the
+/// dev-kernel isn't present, so tests can skip with an instructive
+/// message rather than failing.
 pub fn dev_kernel(name: &str) -> Option<std::path::PathBuf> {
     let p = repo_kernels_dir()?.join(name).join("kernel.json");
     p.exists().then_some(p)
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Kernelspec preparation
+// ─────────────────────────────────────────────────────────────────────
 
 /// Path to the dev-installed python3 kernelspec. Errors (which callers
 /// convert to `skip`) when the install script hasn't been run — no
 /// fallback to user installs or ambient python3.
 pub fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
     dev_kernel("python3").ok_or_else(|| {
-        anyhow::anyhow!(
-            "python3 kernelspec missing; run scripts/install-dev-kernels.sh"
-        )
+        anyhow::anyhow!("python3 kernelspec missing; run scripts/install-dev-kernels.sh")
     })
 }
 
