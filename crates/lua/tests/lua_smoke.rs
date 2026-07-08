@@ -6,7 +6,7 @@
 //! to luajit with the right `package.cpath` and env vars.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 fn skip(reason: &str) {
     eprintln!("SKIP: {reason}");
@@ -21,36 +21,19 @@ fn which(name: &str) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
-fn ipykernel_available() -> bool {
-    Command::new("python3")
-        .args(["-c", "import ipykernel"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+/// Path to `<repo>/kernels`, populated by `scripts/install-dev-kernels.sh`.
+fn repo_kernels_dir() -> Option<PathBuf> {
+    // CARGO_MANIFEST_DIR is `<repo>/crates/lua`; go up two.
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .parent()?
+        .join("kernels");
+    p.exists().then_some(p)
 }
 
-/// Locate or generate a Python kernelspec. We can't rely on a system one
-/// in CI, so fall back to a synthesized spec in the OS tempdir.
-fn ensure_python_kernelspec() -> Option<PathBuf> {
-    let user = PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("Library/Jupyter/kernels/python3/kernel.json");
-    if user.exists() {
-        return Some(user);
-    }
-    let python = which("python3")?;
-    let dir = std::env::temp_dir().join("jet-lua-test-kernelspec");
-    std::fs::create_dir_all(&dir).ok()?;
-    let path = dir.join("kernel.json");
-    let spec = serde_json::json!({
-        "argv": [python, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
-        "display_name": "Python (jet-lua test)",
-        "language": "python",
-        "interrupt_mode": "signal",
-    });
-    std::fs::write(&path, serde_json::to_vec_pretty(&spec).ok()?).ok()?;
-    Some(path)
+fn dev_kernel(name: &str) -> Option<PathBuf> {
+    let p = repo_kernels_dir()?.join(name).join("kernel.json");
+    p.exists().then_some(p)
 }
 
 /// Path to the prebuilt `jet_lua` cdylib. `cargo test` only links the rlib
@@ -93,12 +76,9 @@ fn walkdir(root: &Path) -> Box<dyn Iterator<Item = PathBuf>> {
     }))
 }
 
-/// Locate the user's ark kernelspec, if installed. Unlike ipykernel we
-/// don't synthesize one — ark is a real binary, not a `python -m` invocation.
+/// Path to the dev-installed ark kernelspec (via `scripts/install-dev-kernels.sh`).
 fn find_ark_kernelspec() -> Option<PathBuf> {
-    let p = PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("Library/Jupyter/kernels/ark/kernel.json");
-    p.exists().then_some(p)
+    dev_kernel("ark")
 }
 
 enum TestKernel {
@@ -117,19 +97,15 @@ fn run_lua_test_with(script_name: &str, which_kernel: TestKernel) {
     };
     let kernelspec = match which_kernel {
         TestKernel::Python => {
-            if !ipykernel_available() {
-                skip("ipykernel not installed (`pip install ipykernel`)");
-                return;
-            }
-            let Some(p) = ensure_python_kernelspec() else {
-                skip("could not prepare a python kernelspec");
+            let Some(p) = dev_kernel("python3") else {
+                skip("python3 kernelspec missing; run scripts/install-dev-kernels.sh");
                 return;
             };
             p
         }
         TestKernel::Ark => {
             let Some(p) = find_ark_kernelspec() else {
-                skip("ark kernelspec not installed at ~/Library/Jupyter/kernels/ark");
+                skip("ark kernelspec missing; run scripts/install-dev-kernels.sh");
                 return;
             };
             p

@@ -17,11 +17,10 @@
 
 #![allow(dead_code)] // each test file uses a subset
 
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use anyhow::Result;
 use rand::Rng;
-use serde_json::json;
 
 // ─────────────────────────────────────────────────────────────────────
 // Skip / availability gates
@@ -40,49 +39,52 @@ pub fn skip(reason: &str) {
     eprintln!("SKIP: {reason}");
 }
 
+/// True when `scripts/install-dev-kernels.sh` has been run and the
+/// python3 kernelspec is available. Callers that need it should still
+/// call `ensure_python_kernelspec()` to actually get the path.
 pub fn ipykernel_available() -> bool {
-    Command::new("python3")
-        .args(["-c", "import ipykernel"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    dev_kernel("python3").is_some()
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // Kernelspec preparation
 // ─────────────────────────────────────────────────────────────────────
 
-pub fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
-    let user = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("Library/Jupyter/kernels/python3/kernel.json");
-    if user.exists() {
-        return Ok(user);
-    }
-    let python = which("python3").ok_or_else(|| anyhow::anyhow!("python3 not on PATH"))?;
-    let dir = std::env::temp_dir().join(format!(
-        "jet-test-kernelspec-{:x}",
-        rand::thread_rng().r#gen::<u64>()
-    ));
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join("kernel.json");
-    let spec = json!({
-        "argv": [python, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
-        "display_name": "Python (jet test)",
-        "language": "python",
-        "interrupt_mode": "signal",
-    });
-    std::fs::write(&path, serde_json::to_vec_pretty(&spec)?)?;
-    Ok(path)
+/// Path to the repo's `kernels/` dir, populated by
+/// `scripts/install-dev-kernels.sh`. Returns `None` when the workspace
+/// layout doesn't match (e.g. tests running from a published crate).
+fn repo_kernels_dir() -> Option<std::path::PathBuf> {
+    // CARGO_MANIFEST_DIR is `<repo>/crates/cli`; go up two.
+    let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .parent()?
+        .join("kernels");
+    p.exists().then_some(p)
 }
 
-/// Locate the user-installed ark R kernelspec, or `None` if it isn't
-/// present (skip the test).
+/// Look up a kernelspec provisioned by `scripts/install-dev-kernels.sh`.
+/// Returns `None` when the dev-kernel isn't present, so tests skip with
+/// an instructive message rather than failing.
+pub fn dev_kernel(name: &str) -> Option<std::path::PathBuf> {
+    let p = repo_kernels_dir()?.join(name).join("kernel.json");
+    p.exists().then_some(p)
+}
+
+/// Path to the dev-installed python3 kernelspec. Errors (which callers
+/// convert to `skip`) when the install script hasn't been run — no
+/// fallback to user installs or ambient python3.
+pub fn ensure_python_kernelspec() -> Result<std::path::PathBuf> {
+    dev_kernel("python3").ok_or_else(|| {
+        anyhow::anyhow!(
+            "python3 kernelspec missing; run scripts/install-dev-kernels.sh"
+        )
+    })
+}
+
+/// Path to the dev-installed ark kernelspec, or `None` if the install
+/// script hasn't been run (test skips).
 pub fn ark_kernelspec() -> Option<std::path::PathBuf> {
-    let p = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("Library/Jupyter/kernels/ark/kernel.json");
-    if p.exists() { Some(p) } else { None }
+    dev_kernel("ark")
 }
 
 // ─────────────────────────────────────────────────────────────────────

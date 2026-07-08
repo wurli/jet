@@ -14,7 +14,7 @@ package.path = script_dir .. "?.lua;" .. package.path
 local utils = require("utils")
 
 -- Start ark ------------------------------------------------------------------
-local kernel = utils.start_kernel(jet, "/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark/kernel.json")
+local kernel = utils.start_kernel(jet, utils.kernel_spec())
 
 -- Open LSP comm --------------------------------------------------------------
 local lsp_comm_id, lsp_comm_msgs = kernel.comm_open("lsp", { ip_address = "127.0.0.1" })

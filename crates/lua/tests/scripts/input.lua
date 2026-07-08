@@ -18,7 +18,7 @@ package.path = script_dir .. "?.lua;" .. package.path
 local utils = require("utils")
 
 -- Start kernel ---------------------------------------------------------------
-local kernel = utils.start_kernel(jet, "/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
+local kernel = utils.start_kernel(jet, utils.kernel_spec())
 
 -- Drive input_request round-trip ---------------------------------------------
 local received_input_request = false

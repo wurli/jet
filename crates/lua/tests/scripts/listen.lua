@@ -23,7 +23,7 @@ package.path = script_dir .. "?.lua;" .. package.path
 local utils = require("utils")
 
 -- Start kernel ---------------------------------------------------------------
-local kernel = utils.start_kernel(jet, "/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json")
+local kernel = utils.start_kernel(jet, utils.kernel_spec())
 assert(type(kernel.stream) == "function", "expected start response to include a `stream` poll")
 
 -- A separate filtered listen registered explicitly. --------------------------

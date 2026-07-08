@@ -1,5 +1,18 @@
 local M = {}
 
+-- Kernelspec path chosen by the Rust runner in lua_smoke.rs (which reads
+-- from the repo's `kernels/` dir populated by scripts/install-dev-kernels.sh).
+-- Fail loudly when the env var is missing so an inline hardcoded path
+-- doesn't sneak back into the test scripts.
+function M.kernel_spec()
+	local path = os.getenv("JET_TEST_KERNEL")
+	assert(
+		path and #path > 0,
+		"JET_TEST_KERNEL not set — lua smoke tests must be driven via `cargo test -p jet_lua`"
+	)
+	return path
+end
+
 function M.tbl_len(x)
 	local n_items = 0
 	for _, _ in pairs(x) do

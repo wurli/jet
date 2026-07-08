@@ -99,12 +99,10 @@ fn ctrl_c_interrupts_running_kernel_in_repl() {
     // jet prints "kernel exited". With the kernel in its own pgid, the
     // SIGINT only reaches jet, which forwards it via interrupt(); ark
     // survives.
-    let ark_kernel = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join("Library/Jupyter/kernels/ark/kernel.json");
-    if !ark_kernel.exists() {
-        skip(&format!("ark kernelspec not found at {ark_kernel:?}"));
+    let Some(ark_kernel) = ark_kernelspec() else {
+        skip("ark kernelspec missing; run scripts/install-dev-kernels.sh");
         return;
-    }
+    };
 
     let xdg = scratch_xdg_dir();
     let out = drive_jet_with_interrupt(
