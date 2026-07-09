@@ -54,7 +54,7 @@ fn repo_kernels_dir() -> Option<std::path::PathBuf> {
     let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()?
         .parent()?
-        .join("kernels");
+        .join("test-kernels");
     p.exists().then_some(p)
 }
 
@@ -142,10 +142,7 @@ pub fn spawn_jet_start(
 
 /// Spawn `jet attach --connection-file <conn>` with piped stdin and null
 /// stdout/stderr.
-pub fn spawn_jet_attach(
-    conn: &std::path::Path,
-    xdg: &std::path::Path,
-) -> std::process::Child {
+pub fn spawn_jet_attach(conn: &std::path::Path, xdg: &std::path::Path) -> std::process::Child {
     Command::new(env!("CARGO_BIN_EXE_jet"))
         .args(["attach", "--connection-file", conn.to_str().unwrap()])
         .env("XDG_DATA_HOME", xdg)
