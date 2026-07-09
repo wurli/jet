@@ -219,6 +219,15 @@ fn jet_exits_when_kernel_quits() {
     let mut child = spawn_jet_start(&kernel_json, &xdg);
 
     std::thread::sleep(Duration::from_secs(3));
+
+    // Record the kernel pid so we can verify it actually died (not just
+    // that jet exited). session.json is cleared on Close, so read it now.
+    let meta_before = read_only_session(&xdg);
+    let kernel_pid = meta_before["kernel_pid"]
+        .as_u64()
+        .expect("kernel_pid recorded in session meta before quit()")
+        as libc::pid_t;
+
     let mut stdin = child.stdin.take().expect("stdin piped");
     stdin.write_all(b"quit()\n").expect("write to jet stdin");
 
@@ -241,6 +250,14 @@ fn jet_exits_when_kernel_quits() {
         let _ = std::fs::remove_dir_all(&xdg);
         panic!("jet did not exit within 10s after the kernel quit");
     }
+
+    // The kernel process itself should be gone (not merely that jet exited).
+    // `kill(pid, 0)` returns 0 while the pid exists and -1/ESRCH otherwise.
+    let alive = unsafe { libc::kill(kernel_pid, 0) } == 0;
+    assert!(
+        !alive,
+        "kernel pid {kernel_pid} still alive after quit() — did the kernel actually shut down?"
+    );
 
     // After jet noticed the kernel exit, the session should be marked closed.
     let meta = read_only_session(&xdg);

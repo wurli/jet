@@ -141,9 +141,11 @@ impl LineSource {
                 Err(e) => LineRead::Err(e.to_string()),
             },
             LineSource::Pipe(stdin) => {
-                let mut out = std::io::stdout().lock();
-                let _ = out.write_all(prompt.indicator.as_bytes());
-                let _ = out.flush();
+                {
+                    let mut out = std::io::stdout().lock();
+                    let _ = out.write_all(prompt.indicator.as_bytes());
+                    let _ = out.flush();
+                }
                 let mut buf = String::new();
                 match stdin.read_line(&mut buf) {
                     Ok(0) => LineRead::Eof,
