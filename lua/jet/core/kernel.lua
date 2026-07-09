@@ -25,8 +25,7 @@ local STARTING_KERNEL_SENTINEL = "<pending>"
 ---@field cmd string[]
 ---@field owned boolean
 ---@field filetype? string
----TODO: should live in config like other hooks (for discoverability/consitency)
----@field on_msg_hooks table<string, fun(k: jet.kernel, msg: jet.jupyter.msg)>
+---@field execution_status? "idle" | "busy" | "starting"
 ---@field comms table<string, string> comm_name -> id
 local Kernel = {}
 Kernel.__index = Kernel
@@ -220,7 +219,7 @@ end
 function Kernel:handle_stream()
 	---@param res jet.kernel.response
 	utils.poll(self.stream, function(res)
-		for _, hook in pairs(self.on_msg_hooks) do
+		for _, hook in pairs(config.hooks.on_msg) do
 			if not res then
 				return "exit"
 			elseif res.status == "busy" then

@@ -15,13 +15,30 @@ M.defaults = {
 		on_lua_client_start = {}, ---@type fun(k: jet.kernel)[]
 		on_kernel_close = {}, ---@type fun(k: jet.kernel)[]
 		on_send_pre = {}, ---@type fun(k: jet.kernel, code: string[])[]
+		on_msg = {}, ---@type fun(k: jet.kernel, msg: jet.jupyter.msg)[]
 	},
 	send = {
-		---If `false` (the default), then when sending several complete
-		---expressions at once, all will be sent at once and results will be
-		---shown afterwards. If `true` then each expression will be sent and
-		---results shown one at a time.
-		send_by_expr = true, ---@type boolean
+		---If `true` (the default) then each expression will be sent and
+		---results shown one at a time. If `false`, then when sending several
+		---complete expressions at once, all will be sent at once and results
+		---will be shown afterwards.
+		---
+		---Some notes:
+		---* If `true` then the Jet repl is run with `--no-indent`, otherwise
+		---  when code is sent it might get double-indented. Not all kernels
+		---  provide an indent, and ones that don't are not affected by the
+		---  `--no-indent` option, but ipython notably *does* indent. So if
+		---  you use `true` you might notice that you no longer get
+		---  auto-indentation in the REPL.
+		---* If `false` then expressions are sent surrounded by 'bracketed
+		---  paste' escapes. This currently has a couple of downsides:
+		---  - If the kernel is busy when code is sent, the escapes will be
+		---    echoed in the REPL, resulting in some visual noise.
+		---  - If too much code is sent at once (more than the height of the
+		---    screen), it causes the REPL history to be truncated. This is due
+		---    to an upstream issue in reedline, which powers the Jet REPL
+		---    experience..
+		end_by_expr = true, ---@type boolean
 	},
 }
 
