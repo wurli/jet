@@ -191,34 +191,6 @@ M.get_connected = function(filters, callback)
 	end
 end
 
----@param base_filters jet.api.list_kernels.filters
----@param filters jet.api.list_kernels.filters[]
----@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
----@param callback fun(k: jet.kernel)
-local try_pick = function(base_filters, filters, init_opts, callback)
-	local options = {}
-
-	for _, f in ipairs(filters) do
-		-- Repeatedly calling list_kernels() is actually more performant, since
-		-- filters on `status` prevent classes of kernels from ever being
-		-- searched for.
-		local matches = M.list_kernels(vim.tbl_extend("force", base_filters, f), init_opts)
-		if #matches == 1 then
-			callback(matches[1])
-			return
-		end
-
-		for _, k in ipairs(matches) do
-			table.insert(options, k)
-		end
-	end
-
-	---@param k jet.kernel
-	select_kernel(options, "Open a Jupyter REPL", function(k)
-		callback(k)
-	end)
-end
-
 ---Perform some action on a kernel
 ---
 ---The kernel may be running in Neovim already, running in a Jet session
@@ -241,11 +213,31 @@ end
 ---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
 M.get_any = function(filters, init_opts, callback)
-	try_pick(filters, {
-		{ status = { "connected", "connecting" } },
-		{ status = "inactive", default = true },
-		{ status = "inactive" },
-	}, init_opts, callback)
+	local filters1 = vim.tbl_extend("keep", { status = { "connected", "connecting" } }, filters)
+	local matches1 = M.list_kernels(filters1, init_opts)
+
+	if #matches1 == 1 then
+		callback(matches1[1])
+		return
+	end
+
+	local inactive_kernels = M.list_kernels({ status = { "inactive" } }, init_opts)
+
+	local filters2 = vim.tbl_extend("keep", { status = { "inactive" }, default = 2 }, filters)
+	local matches2 = M.filter_kernels(inactive_kernels, filters2)
+
+	if #matches2 == 1 then
+		callback(matches2[1])
+		return
+	end
+
+	if #inactive_kernels == 1 then
+		callback(inactive_kernels[1])
+		return
+	end
+
+	-- If we reach this point, there are multiple kernels to choose from.
+	select_kernel(M.list_kernels({}, init_opts), "Select a kernel", callback)
 end
 
 return M
