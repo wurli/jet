@@ -182,6 +182,7 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
         render_graphics,
         args.no_indent,
         args.session_name,
+        args.external_client_style.into(),
         session.as_mut(),
     )
     .await?;
@@ -241,6 +242,7 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
         render_graphics,
         args.no_indent,
         args.session_name,
+        args.external_client_style.into(),
         None,
     )
     .await?;

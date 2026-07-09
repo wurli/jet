@@ -24,6 +24,20 @@ use tokio::sync::{Notify, mpsc};
 
 pub type SharedWriter = Arc<Mutex<dyn Write + Send>>;
 
+/// How to render output from *other* clients sharing this kernel.
+///
+/// - `Wrap`: draw a `┌─name` header + `│ ` gutter around every foreign
+///   line.
+/// - `Prompt`: skip the header and gutter; foreign `execute_input`
+///   renders as `name> code` (name colored) and foreign output prints
+///   raw with no prefix.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum ExternalClientStyle {
+    #[default]
+    Wrap,
+    Prompt,
+}
+
 /// Shared kernel-busy state visible to the REPL. The renderer flips
 /// `busy` to true on a Busy status from a *different* session and back
 /// to false on the matching Idle, notifying waiters on every transition
@@ -96,6 +110,7 @@ pub struct Renderer {
     // back foreign blocks from the *same* session keep this set, so we
     // skip redrawing the header and just extend the `│` gutter.
     active_foreign_session: Arc<Mutex<Option<String>>>,
+    external_client_style: ExternalClientStyle,
 }
 
 impl Renderer {
@@ -118,7 +133,13 @@ impl Renderer {
             external_printer: None,
             foreign_line_buf: Arc::new(Mutex::new(String::new())),
             active_foreign_session: Arc::new(Mutex::new(None)),
+            external_client_style: ExternalClientStyle::Wrap,
         }
+    }
+
+    pub fn with_external_client_style(mut self, style: ExternalClientStyle) -> Self {
+        self.external_client_style = style;
+        self
     }
 
     pub fn with_own_session_name(mut self, name: Option<String>) -> Self {
@@ -292,12 +313,25 @@ impl Renderer {
             .unwrap_or_default()
     }
 
+    /// Left-side prefix for a foreign line in the current style. In
+    /// `Wrap` mode this is the colored `│ ` gutter; in `Prompt` mode
+    /// there is no gutter — output prints raw.
+    fn foreign_gutter(&self, prefix: Option<&str>) -> String {
+        match self.external_client_style {
+            ExternalClientStyle::Wrap => Self::foreign_tag(prefix),
+            ExternalClientStyle::Prompt => String::new(),
+        }
+    }
+
     /// If we're not already inside a visual block for this foreign
     /// session, emit the top rule (`┌ name ─────…`) sized to the current
     /// terminal width and remember the session name. Same-session
     /// back-to-back blocks skip the header — the gutter alone carries
     /// attribution.
     fn ensure_block_header(&self, prefix: Option<&str>) -> Result<()> {
+        if self.external_client_style == ExternalClientStyle::Prompt {
+            return Ok(());
+        }
         let Some(name) = prefix else { return Ok(()) };
         let mut active = self.active_foreign_session.lock().unwrap();
         if active.as_deref() == Some(name) {
@@ -327,12 +361,29 @@ impl Renderer {
             w.flush()?;
         }
         self.ensure_block_header(prefix)?;
-        let tag = Self::foreign_tag(prefix);
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
-        for (i, line) in code.split('\n').enumerate() {
-            let indicator = if i == 0 { "> " } else { "+ " };
-            write!(w, "{tag}{indicator}{line}\r\n")?;
+        match self.external_client_style {
+            ExternalClientStyle::Wrap => {
+                let tag = Self::foreign_tag(prefix);
+                for (i, line) in code.split('\n').enumerate() {
+                    let indicator = if i == 0 { "> " } else { "+ " };
+                    write!(w, "{tag}{indicator}{line}\r\n")?;
+                }
+            }
+            ExternalClientStyle::Prompt => {
+                // Colored `name` glued to `> ` / `+ ` per line. Unnamed
+                // foreign clients get a bare `> ` prompt.
+                let (color, name) = match prefix {
+                    Some(p) => (ansi::session_color(p), p),
+                    None => ("", ""),
+                };
+                let reset = if color.is_empty() { "" } else { ansi::RESET };
+                for (i, line) in code.split('\n').enumerate() {
+                    let indicator = if i == 0 { ">" } else { "+" };
+                    write!(w, "{color}{name}{reset}{indicator} {line}\r\n")?;
+                }
+            }
         }
         *at_start = true;
         w.flush()?;
@@ -348,14 +399,14 @@ impl Renderer {
             return Ok(());
         }
         self.ensure_block_header(prefix)?;
-        let tag = Self::foreign_tag(prefix);
+        let tag = self.foreign_gutter(prefix);
         let mut w = self.writer.lock().unwrap();
         let mut at_start = self.at_line_start.lock().unwrap();
         // Both '\n' and '\r' end a "visual line" — '\r' is used by spinners
         // to redraw a line in place, and we want each redraw to start with
         // a fresh prefix.
         for segment in body.split_inclusive(['\n', '\r']) {
-            if *at_start {
+            if *at_start && !tag.is_empty() {
                 write!(w, "{tag}")?;
             }
             if let Some(stripped) = segment.strip_suffix('\n') {
@@ -385,7 +436,7 @@ impl Renderer {
                     Ok(()) => *at_start = true,
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
-                        let tag = Self::foreign_tag(prefix);
+                        let tag = self.foreign_gutter(prefix);
                         write!(w, "{tag}Image render failed: {e}\r\n")?;
                         *at_start = true;
                     }
@@ -526,7 +577,12 @@ impl Renderer {
             .as_ref()
             .expect("write_foreign called without printer");
         self.ensure_block_header(prefix_name)?;
-        let tag = prefix_name.map(|p| format!("{}│{} ", ansi::session_color(p), ansi::RESET));
+        let tag = match self.external_client_style {
+            ExternalClientStyle::Wrap => {
+                prefix_name.map(|p| format!("{}│{} ", ansi::session_color(p), ansi::RESET))
+            }
+            ExternalClientStyle::Prompt => None,
+        };
         let mut buf = self.foreign_line_buf.lock().unwrap();
         for segment in text.split_inclusive(['\n', '\r']) {
             if buf.is_empty()
@@ -783,6 +839,45 @@ mod tests {
         .unwrap();
         let bytes = captured.lock().unwrap();
         assert_eq!(std::str::from_utf8(&bytes).unwrap(), "a\nb");
+    }
+
+    #[test]
+    fn prompt_style_execute_input_uses_name_prompt_no_gutter() {
+        let captured: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter = captured.clone();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let r = Renderer::new(false, tx, writer)
+            .with_external_client_style(ExternalClientStyle::Prompt);
+        r.handle_event(Event {
+            parent_session: Some("beta---bg".into()),
+            data: EventData::ExecuteInput {
+                code: "print(\"y\")".into(),
+            },
+        })
+        .unwrap();
+        r.handle_event(Event {
+            parent_session: Some("beta---bg".into()),
+            data: EventData::Stream {
+                name: "stdout".into(),
+                text: "y\n".into(),
+            },
+        })
+        .unwrap();
+        let bytes = captured.lock().unwrap();
+        let s = std::str::from_utf8(&bytes).unwrap();
+        let color = ansi::session_color("beta");
+        let reset = ansi::RESET;
+        // No `┌─` block header.
+        assert!(!s.contains("┌"), "unexpected block header: {s:?}");
+        // No `│` gutter.
+        assert!(!s.contains("│"), "unexpected gutter: {s:?}");
+        // Colored `beta` glued to `> ` before the code.
+        assert!(
+            s.contains(&format!("{color}beta{reset}> print(\"y\")\r\n")),
+            "got: {s:?}"
+        );
+        // Stream output prints raw (no prefix).
+        assert!(s.ends_with("y\r\n"), "got: {s:?}");
     }
 
     #[test]

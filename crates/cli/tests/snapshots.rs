@@ -648,6 +648,61 @@ fn foreign_start_session_name_appears_as_prefix() {
     t1.shutdown();
 }
 
+/// `--external-client-style prompt` on the observer should render a
+/// foreign execute as `beta> print("y")` (colored `beta` glued to `>`)
+/// with the streamed output on its own line, no `┌─` header, no `│`
+/// gutter.
+#[test]
+fn foreign_prompt_style_renders_name_prompt_no_wrap() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("prompt-style");
+    let conn_str = conn.to_string_lossy().to_string();
+
+    // The `start` side is the writer (its `--session-name` tags the
+    // foreign block on the observer). The `attach` side is the observer;
+    // that's the one we snapshot, and where `--external-client-style
+    // prompt` needs to be set.
+    let mut t1 = start_jet(
+        &kernel_json,
+        &xdg,
+        &conn_str,
+        &["--persist", "--session-name", "beta"],
+    )
+    .expect("spawn start");
+    let t2 = Harness::spawn(
+        &[
+            "attach",
+            "--connection-file",
+            &conn_str,
+            "--external-client-style",
+            "prompt",
+        ],
+        &xdg,
+        "",
+    )
+    .expect("spawn attach");
+    t2.settle(Duration::from_millis(500), Duration::from_secs(3));
+
+    t1.send(b"print(\"y\")\n").unwrap();
+    assert!(
+        t2.wait_for_screen("beta>", Duration::from_secs(15)),
+        "t2 never saw `beta>` prompt-style header"
+    );
+    t2.settle(Duration::from_millis(700), Duration::from_secs(5));
+
+    let screen = t2.snapshot_screen();
+    assert!(
+        !screen.contains('┌') && !screen.contains('│'),
+        "prompt style should not emit box drawing: {screen:?}"
+    );
+    insta::assert_snapshot!("foreign_prompt_style_renders_name_prompt_no_wrap", screen);
+    t2.shutdown();
+    t1.shutdown();
+}
+
 /// Foreign multi-line cell: t2 submits a `def f():` block (continuation
 /// prompt territory). The kernel echoes `ExecuteInput` once with the
 /// embedded `\n`, so the observer should see the first line tagged with

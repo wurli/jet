@@ -89,6 +89,29 @@ impl Command {
     }
 }
 
+/// How to render output from *other* clients sharing this kernel.
+///
+/// - `Wrap` (default): draw a `┌─name` header and prefix every foreign
+///   line with a colored `│ ` gutter, visually boxing the block.
+/// - `Prompt`: omit the box entirely. Foreign `execute_input` renders
+///   as `name> code` (name colored), and foreign output prints raw
+///   with no prefix.
+#[derive(Copy, Clone, Debug, ValueEnum, Default, PartialEq, Eq)]
+pub enum ExternalClientStyle {
+    #[default]
+    Wrap,
+    Prompt,
+}
+
+impl From<ExternalClientStyle> for crate::render::ExternalClientStyle {
+    fn from(s: ExternalClientStyle) -> Self {
+        match s {
+            ExternalClientStyle::Wrap => Self::Wrap,
+            ExternalClientStyle::Prompt => Self::Prompt,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum StatusFilter {
     Open,
@@ -188,6 +211,13 @@ pub struct StartArgs {
     #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
 
+    /// How to render output from other clients sharing this kernel.
+    /// `wrap` (default) draws a boxed block with a `│` gutter;
+    /// `prompt` prints `name>` before the input line and leaves the
+    /// output unprefixed.
+    #[arg(long, value_enum, default_value_t = ExternalClientStyle::default())]
+    pub external_client_style: ExternalClientStyle,
+
     #[command(flatten)]
     pub global: GlobalArgs,
 }
@@ -229,6 +259,13 @@ pub struct AttachArgs {
     /// A name used to identify the client.
     #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
+
+    /// How to render output from other clients sharing this kernel.
+    /// `wrap` (default) draws a boxed block with a `│` gutter;
+    /// `prompt` prints `name>` before the input line and leaves the
+    /// output unprefixed.
+    #[arg(long, value_enum, default_value_t = ExternalClientStyle::default())]
+    pub external_client_style: ExternalClientStyle,
 
     #[command(flatten)]
     pub global: GlobalArgs,

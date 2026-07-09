@@ -48,7 +48,7 @@ fn exit_cleanly(code: i32) -> ! {
 }
 
 use crate::completer::JetCompleter;
-use crate::render::{Renderer, SharedWriter, ansi, warn_if_passthrough_off};
+use crate::render::{ExternalClientStyle, Renderer, SharedWriter, ansi, warn_if_passthrough_off};
 
 /// Reedline prompt with a swappable left-indicator string — we set it
 /// to `> ` for the first line of a cell, then to the kernel-suggested
@@ -328,6 +328,7 @@ pub async fn drive_repl(
     render_graphics: bool,
     no_indent: bool,
     session_name: Option<String>,
+    external_client_style: ExternalClientStyle,
     session_store_entry: Option<&mut Session>,
 ) -> Result<Client> {
     if render_graphics {
@@ -350,6 +351,7 @@ pub async fn drive_repl(
         .with_is_complete_tx(is_complete_tx)
         .with_execute_reply_tx(execute_reply_tx)
         .with_own_session_name(session_name.clone())
+        .with_external_client_style(external_client_style)
         .with_external_printer(external_printer.clone());
     let busy_state = renderer.busy_state.clone();
 

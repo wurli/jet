@@ -1,0 +1,7 @@
+---
+source: crates/cli/tests/snapshots.rs
+expression: screen
+---
+beta> print("y")
+y
+>
