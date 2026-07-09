@@ -9,7 +9,6 @@ local STARTING_KERNEL_SENTINEL = "<pending>"
 ---@class jet.term
 ---@field job_id integer
 ---@field buf integer
----@field win? integer
 
 ---@alias jet.kernel.paritalspec { display_name: string, language: string }
 ---@alias jet.kernel.execution_state "busy" | "idle" | "starting"
@@ -97,21 +96,27 @@ function Kernel:open_term(callback, win_config)
 	local open = function()
 		assert(self.term, "kernel.term is nil")
 
-		self.term.win = vim.api.nvim_open_win(
-			self.term.buf,
-			false,
-			vim.tbl_extend("force", {
+		local term_win = vim.tbl_filter(function(w)
+			return vim.api.nvim_win_get_buf(w) == self.term.buf
+		end, vim.api.nvim_tabpage_list_wins(0))[1]
+
+		if term_win then
+			vim.api.nvim_set_current_win(term_win)
+		else
+			local opts = vim.tbl_extend("keep", win_config or config.repl_win_opts or {}, {
 				split = "right",
 				style = "minimal",
-			}, win_config or config.repl_win_opts or {})
-		)
+			})
 
-		-- When the cursor is at the bottom of the REPL you get aut-scroll when
-		-- new lines appear. This is a good state to start in.
-		vim.api.nvim_win_set_cursor(self.term.win, { vim.api.nvim_buf_line_count(self.term.buf), 0 })
+			term_win = vim.api.nvim_open_win(self.term.buf, false, opts)
 
-		vim.wo[self.term.win].number = false
-		vim.wo[self.term.win].relativenumber = false
+			-- When the cursor is at the bottom of the REPL you get aut-scroll when
+			-- new lines appear. This is a good state to start in.
+			vim.api.nvim_win_set_cursor(term_win, { vim.api.nvim_buf_line_count(self.term.buf), 0 })
+		end
+
+		vim.wo[term_win].number = false
+		vim.wo[term_win].relativenumber = false
 
 		if callback then
 			callback(self)
@@ -235,8 +240,8 @@ function Kernel:handle_stream()
 
 		if self.term and self.term.buf and vim.api.nvim_buf_is_valid(self.term.buf) then
 			local jet_b = vim.b[self.term.buf].jet or {}
-			jet_b.execution_state = new_state
-			jet_b.curr_execution_start_time = new_state
+			jet_b.execution_state = self.execution_state
+			jet_b.curr_execution_start_time = self.curr_execution_start_time
 			vim.b[self.term.buf].jet = jet_b
 			vim.api.nvim__redraw({ statusline = true, buf = self.term.buf })
 		end
