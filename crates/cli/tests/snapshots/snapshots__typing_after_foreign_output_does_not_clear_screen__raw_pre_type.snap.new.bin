@@ -17,10 +17,7 @@ Type 'demo()' for some demos, 'help()' for on-line help, or
 'help.start()' for an HTML browser interface to help.
 Type 'q()' to quit R.
 
-[?2004h[6n[6n[0m[?25l[20;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[34m┌─jet[0m
-[34m│[0m   2026-07-09T21:52:29.002999Z ERROR  Received subscription message, but no `subscription_tx` is available to confirm on. Have we already received a subscription message once before?
-[34m│[0m     at crates/amalthea/src/socket/iopub.rs:291
-[34m│[0m 
-[?2004l[?2004h[6n[6n[0m[?25l[24;1H[24;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[2K[34m│[0m > cat("HELLO_FROM_FOREIGN\n")
+[?2004h[6n[6n[0m[?25l[20;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[?2004l[?2004h[6n[6n[0m[?25l[20;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[2K[34m┌─jet[0m
+[34m│[0m > cat("HELLO_FROM_FOREIGN\n")
 [34m│[0m HELLO_FROM_FOREIGN
-[?2004l[?2004h[6n[6n[0m[?25l[24;1H[24;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h
+[?2004l[?2004h[6n[6n[0m[?25l[23;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h

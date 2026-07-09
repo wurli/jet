@@ -1,0 +1,7 @@
+---
+source: crates/cli/tests/snapshots.rs
+assertion_line: 905
+expression: pre_type_bytes
+extension: bin
+snapshot_kind: binary
+---

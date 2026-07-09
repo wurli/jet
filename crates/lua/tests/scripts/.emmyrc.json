@@ -9,6 +9,7 @@
 	"workspace": {
 		"library": [
 			"$VIMRUNTIME",
+			".",
 			"../../../../lua"
 		],
 		"ignoreDir": [

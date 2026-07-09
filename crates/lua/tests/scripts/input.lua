@@ -25,7 +25,6 @@ for res in kernel:execute("v = input('ASK> '); print('GOT:' + v)", 5) do
 	if res.status == "busy" then
 		if msg.header.msg_type == "input_request" then
 			received_input_request = true
-			print("here")
 			kernel:provide_stdin("", "bananas")
 		elseif msg.header.msg_type == "stream" and msg.content and msg.content.text then
 			received_value = received_value .. msg.content.text

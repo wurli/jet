@@ -23,12 +23,13 @@ lsp_comm_msgs()
 
 -- Check open comms -----------------------------------------------------------
 local found_lsp = false
-for res in kernel:comm_info("lsp", 5) do
+for res in kernel:comm_info("lsp", 10) do
 	local msg = res.msg
 	if msg.header.msg_type == "comm_info_reply" and msg.content and msg.content.comms then
 		for _, info in pairs(msg.content.comms) do
 			if info.target_name == "lsp" then
 				found_lsp = true
+				break
 			end
 		end
 	end
