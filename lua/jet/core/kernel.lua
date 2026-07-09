@@ -102,6 +102,7 @@ function Kernel:open_term(callback, win_config)
 
 		if term_win then
 			vim.api.nvim_set_current_win(term_win)
+			vim.cmd.startinsert()
 		else
 			local opts = vim.tbl_extend("keep", win_config or config.repl_win_opts or {}, {
 				split = "right",
