@@ -94,18 +94,6 @@ pub struct Renderer {
     // because kernel streams arrive in arbitrary chunks — a partial line
     // followed by more text must NOT get a second prefix.
     at_line_start: Arc<Mutex<bool>>,
-    // Reedline holds the tty in raw mode during `read_line`, so writing
-    // foreign-session output via `writer` (a plain stdout) leaves the
-    // cursor in the prompt's column on each `\n` (no ONLCR) — producing
-    // a staircase. Routing those writes through reedline's external
-    // printer instead lets reedline clear the prompt line, print at
-    // column 0, and redraw the prompt below.
-    //
-    // The printer is line-oriented: a chunk that arrives without a
-    // trailing newline gets buffered in `foreign_line_buf` and emitted
-    // when a complete line finally arrives.
-    external_printer: Option<reedline::ExternalPrinter<String>>,
-    foreign_line_buf: Arc<Mutex<String>>,
     // `block_key()` of the style whose "block" we're currently drawing
     // (typically the foreign session's name). Set when we emit the top
     // rule; cleared when an own-session ExecuteInput arrives (observer
@@ -132,8 +120,6 @@ impl Renderer {
             own_session_name: None,
             own_client_id: None,
             at_line_start: Arc::new(Mutex::new(true)),
-            external_printer: None,
-            foreign_line_buf: Arc::new(Mutex::new(String::new())),
             active_block_key: Arc::new(Mutex::new(None)),
             external_client_style: ExternalClientStyle::Wrap,
         }
@@ -151,11 +137,6 @@ impl Renderer {
 
     pub fn with_own_client_id(mut self, id: String) -> Self {
         self.own_client_id = Some(id);
-        self
-    }
-
-    pub fn with_external_printer(mut self, printer: reedline::ExternalPrinter<String>) -> Self {
-        self.external_printer = Some(printer);
         self
     }
 
@@ -360,105 +341,48 @@ impl Renderer {
     }
 
     /// Write styled bytes (already carrying any headers, gutters, and
-    /// `\n` line breaks) to the appropriate channel. Updates
-    /// `at_line_start` based on the emitted bytes' last char.
+    /// `\n` line breaks) to the shared writer. Updates `at_line_start`
+    /// based on the emitted bytes' last char.
     ///
-    /// - Own style → plain writer; cooked mode handles `\n`.
-    /// - Foreign style + active `read_line` → reedline's `ExternalPrinter`,
-    ///   splitting on `\n`/`\r` (a partial trailing line is buffered).
-    /// - Foreign style + no active `read_line` → plain writer, but
-    ///   translate `\n` to `\r\n` since reedline may still be in raw
-    ///   mode after `ExternalBreak`.
+    /// Foreign styles get `\n`→`\r\n` translation, since reedline holds
+    /// the tty in raw mode during `read_line` and a bare `\n` would
+    /// leave the cursor in the prompt's column (staircase).
     fn write_styled(&self, style: &dyn SessionStyle, bytes: &str) -> Result<()> {
         if bytes.is_empty() {
             return Ok(());
         }
         let new_at_line_start = bytes.ends_with(['\n', '\r']);
-        if style.uses_external_printer()
-            && self.external_printer.is_some()
-            && self.busy_state.read_line_active.load(Ordering::SeqCst)
-        {
-            self.write_via_printer(bytes);
-        } else {
-            let mut w = self.writer.lock().unwrap();
-            if style.uses_external_printer() {
-                // Direct writer but under raw mode — translate LF to CRLF.
-                for segment in bytes.split_inclusive('\n') {
-                    if let Some(stripped) = segment.strip_suffix('\n') {
-                        write!(w, "{stripped}\r\n")?;
-                    } else {
-                        write!(w, "{segment}")?;
-                    }
+        let mut w = self.writer.lock().unwrap();
+        if style.needs_crlf() {
+            for segment in bytes.split_inclusive('\n') {
+                if let Some(stripped) = segment.strip_suffix('\n') {
+                    write!(w, "{stripped}\r\n")?;
+                } else {
+                    write!(w, "{segment}")?;
                 }
-            } else {
-                write!(w, "{bytes}")?;
             }
-            w.flush()?;
+        } else {
+            write!(w, "{bytes}")?;
         }
+        w.flush()?;
         *self.at_line_start.lock().unwrap() = new_at_line_start;
         Ok(())
     }
 
-    /// Buffer `bytes` line-at-a-time through reedline's external
-    /// printer. The printer is line-oriented, so we split on `\n` and
-    /// strip the terminator (printer adds its own). A partial trailing
-    /// line stays in `foreign_line_buf` until the next chunk (or an
-    /// Idle-triggered flush) completes it. `\r` is treated as a line
-    /// terminator too so spinner redraws land as separate printer lines.
-    fn write_via_printer(&self, bytes: &str) {
-        let Some(printer) = self.external_printer.as_ref() else {
-            return;
-        };
-        let mut buf = self.foreign_line_buf.lock().unwrap();
-        for segment in bytes.split_inclusive(['\n', '\r']) {
-            let terminates = segment.ends_with(['\n', '\r']);
-            if terminates {
-                buf.push_str(segment.trim_end_matches(['\n', '\r']));
-                let line = std::mem::take(&mut *buf);
-                let _ = printer.sender().send(line);
-            } else {
-                buf.push_str(segment);
-            }
-        }
-    }
-
     /// If the previous write left the cursor mid-line, emit a newline.
-    /// Uses the style's terminator preference (`\r\n` under raw mode,
-    /// plain `\n` otherwise) and flushes any partial line held by the
-    /// external printer.
     fn ensure_newline(&self, style: &dyn SessionStyle) -> Result<()> {
         if *self.at_line_start.lock().unwrap() {
             return Ok(());
         }
-        if style.uses_external_printer()
-            && self.external_printer.is_some()
-            && self.busy_state.read_line_active.load(Ordering::SeqCst)
-        {
-            self.flush_partial_line();
+        let mut w = self.writer.lock().unwrap();
+        if style.needs_crlf() {
+            write!(w, "\r\n")?;
         } else {
-            let mut w = self.writer.lock().unwrap();
-            if style.uses_external_printer() {
-                write!(w, "\r\n")?;
-            } else {
-                writeln!(w)?;
-            }
-            w.flush()?;
+            writeln!(w)?;
         }
+        w.flush()?;
         *self.at_line_start.lock().unwrap() = true;
         Ok(())
-    }
-
-    /// Flush any partial buffered line to reedline's printer. Called
-    /// via `ensure_newline` when a foreign block finishes mid-line.
-    fn flush_partial_line(&self) {
-        let Some(printer) = self.external_printer.as_ref() else {
-            return;
-        };
-        let mut buf = self.foreign_line_buf.lock().unwrap();
-        if !buf.is_empty() {
-            let line = std::mem::take(&mut *buf);
-            let _ = printer.sender().send(line);
-        }
     }
 
     /// Render `DisplayData`: inline kitty PNGs when graphics are on,

@@ -43,10 +43,12 @@ pub trait SessionStyle: Send + Sync {
         None
     }
 
-    /// Whether this style needs the reedline external-printer path when
-    /// its output arrives during an in-flight `read_line`. Only true
-    /// for foreign styles — own output writes directly.
-    fn uses_external_printer(&self) -> bool {
+    /// Whether emitted bytes need `\n`→`\r\n` translation. True for
+    /// foreign styles, since reedline holds the tty in raw mode during
+    /// `read_line` and a bare `\n` would leave the cursor in the
+    /// prompt's column. Own output writes through cooked-mode stdout
+    /// where `ONLCR` handles it.
+    fn needs_crlf(&self) -> bool {
         false
     }
 
@@ -106,7 +108,7 @@ impl SessionStyle for WrappedStyle {
         self.name.as_deref()
     }
 
-    fn uses_external_printer(&self) -> bool {
+    fn needs_crlf(&self) -> bool {
         true
     }
 
@@ -152,7 +154,7 @@ impl PromptStyle {
 }
 
 impl SessionStyle for PromptStyle {
-    fn uses_external_printer(&self) -> bool {
+    fn needs_crlf(&self) -> bool {
         true
     }
 
@@ -193,7 +195,7 @@ mod tests {
         let reset = ansi::RESET;
         assert_eq!(s.header(), format!("{color}┌─alice{reset}\n"));
         assert_eq!(s.block_key(), Some("alice"));
-        assert!(s.uses_external_printer());
+        assert!(s.needs_crlf());
 
         assert_eq!(
             s.execute_input("a\nb"),
@@ -240,7 +242,7 @@ mod tests {
         let reset = ansi::RESET;
         assert_eq!(s.header(), "");
         assert_eq!(s.block_key(), None);
-        assert!(s.uses_external_printer());
+        assert!(s.needs_crlf());
 
         assert_eq!(
             s.execute_input("print(\"y\")"),

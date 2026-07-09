@@ -341,18 +341,16 @@ pub async fn drive_repl(
         tokio::sync::mpsc::unbounded_channel::<IsCompleteReplyMsg>();
     let (execute_reply_tx, mut execute_reply_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let writer: SharedWriter = Arc::new(Mutex::new(std::io::stdout()));
-    // The external printer is the channel reedline uses to interleave
-    // foreign-session output with the active prompt. Wire it into both
-    // the renderer (so foreign writes go through it) and the editor
-    // builder below (so reedline polls and flushes it).
+    // Reedline needs an ExternalPrinter to build its editor even though
+    // we don't route any output through it — foreign writes go directly
+    // to the shared writer (with \n→\r\n translation for raw mode).
     let external_printer: ExternalPrinter<String> = ExternalPrinter::default();
     let renderer = Renderer::new(render_graphics, idle_tx, writer)
         .with_input_tx(input_tx)
         .with_is_complete_tx(is_complete_tx)
         .with_execute_reply_tx(execute_reply_tx)
         .with_own_session_name(session_name.clone())
-        .with_external_client_style(external_client_style)
-        .with_external_printer(external_printer.clone());
+        .with_external_client_style(external_client_style);
     let busy_state = renderer.busy_state.clone();
 
     // Client::spawn/attach perform the kernel_info handshake before returning,
