@@ -831,19 +831,55 @@ fn foreign_execute_preserves_observer_unsent_buffer_once() {
 /// Regression: commits 85e96ae / d8d46f2 broke this — after foreign
 /// output landed on the observer, typing any character caused the
 /// screen to clear and the prompt to jump to row 0.
+///
+/// Uses ark (R) instead of ipykernel: IPython's banner includes a random
+/// "Tip: …" line which drowns the raw-byte snapshot in noise. Ark's
+/// startup output is deterministic.
 #[test]
 fn typing_after_foreign_output_does_not_clear_screen() {
-    let Some(kernel_json) = python_kernelspec_or_skip() else {
+    let Some(kernel_json) = ark_kernelspec() else {
+        skip("ark kernelspec missing; run scripts/install-dev-kernels.sh");
         return;
     };
     let xdg = scratch_xdg_dir();
     let conn = temp_conn_file("typing-after-foreign");
     let conn_str = conn.to_string_lossy().to_string();
-    let (mut t1, mut t2) =
-        start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
 
-    // Foreign execute: observer sees the block.
-    t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
+    // Spawn the pair by hand — start_pair waits for the Python banner.
+    let mut t1 = {
+        let kernel_arg = kernel_json.to_str().unwrap().to_string();
+        let args: Vec<&str> = vec![
+            "start",
+            "--persist",
+            "--connection-file",
+            &conn_str,
+            &kernel_arg,
+        ];
+        let h = Harness::spawn(&args, &xdg, &conn_str).expect("spawn t1");
+        assert!(
+            h.wait_for("> ", Duration::from_secs(20)),
+            "ark prompt never landed on t1"
+        );
+        h.settle(Duration::from_millis(500), Duration::from_secs(3));
+        h
+    };
+    let mut t2 = Harness::spawn(
+        &[
+            "attach",
+            "--connection-file",
+            &conn_str,
+            "--session-name",
+            "jet",
+        ],
+        &xdg,
+        "",
+    )
+    .expect("spawn t2");
+    t2.settle(Duration::from_millis(500), Duration::from_secs(3));
+
+    // Foreign execute: observer sees the block. R's `cat` writes bare
+    // stdout — no `[1]` framing — so the marker lands verbatim.
+    t2.send(b"cat(\"HELLO_FROM_FOREIGN\\n\")\n").unwrap();
     assert!(
         t1.wait_for("HELLO_FROM_FOREIGN", Duration::from_secs(10)),
         "t1 never received foreign output"

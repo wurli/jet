@@ -116,7 +116,9 @@ cat >"$ark_dir/kernel.json" <<JSON
     "--connection_file",
     "{connection_file}",
     "--session-mode",
-    "notebook"
+    "notebook",
+    "--log",
+    "$ark_dir/ark.log"
   ],
   "display_name": "Ark R Kernel",
   "language": "R",

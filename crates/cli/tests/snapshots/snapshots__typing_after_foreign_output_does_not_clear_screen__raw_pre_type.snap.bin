@@ -1,8 +1,23 @@
-Python 3.11.11 (main, Jan 14 2025, 23:36:41) [Clang 19.1.6 ]
-Type 'copyright', 'credits' or 'license' for more information
-IPython 9.15.0 -- An enhanced Interactive Python. Type '?' for help.
-Tip: `?` alone on a line will brings up IPython's help
-[?2004h[6n[6n[0m[?25l[5;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[?2004l[?2004h[6n[6n[0m[?25l[5;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[2K[34m┌─jet[0m
-[34m│[0m > print("HELLO_FROM_FOREIGN")
+
+R version 4.5.0 (2025-04-11) -- "How About a Twenty-Six"
+Copyright (C) 2025 The R Foundation for Statistical Computing
+Platform: aarch64-apple-darwin20
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+[?2004h[6n[6n[0m[?25l[20;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[?2004l[?2004h[6n[6n[0m[?25l[20;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[2K[34m┌─jet[0m
+[34m│[0m > cat("HELLO_FROM_FOREIGN\n")
 [34m│[0m HELLO_FROM_FOREIGN
-[?2004l[?2004h[6n[6n[0m[?25l[8;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h
+[?2004l[?2004h[6n[6n[0m[?25l[23;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h
