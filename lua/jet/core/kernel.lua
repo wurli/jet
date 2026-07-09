@@ -164,6 +164,10 @@ function Kernel:create_term(callback)
 			self.term = { job_id = term_job_id, buf = term_buf }
 		end)
 
+		-- It seems that jobstart() also sets the buf name, so this has to be
+		-- done afterwards.
+		vim.api.nvim_buf_set_name(term_buf, self.spec.display_name)
+
 		-- On TermEnter, record this kernel as the last used
 		-- TODO: configure whether or not this should automatically happen
 		if config.auto_set_primary and self.term then
