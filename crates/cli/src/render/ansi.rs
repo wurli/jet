@@ -42,16 +42,6 @@ pub fn session_color(name: &str) -> &'static str {
     PALETTE[idx % PALETTE.len()]
 }
 
-/// Dim text on / off. Use the explicit `UNDIM` (`22m`) rather than
-/// `RESET` so surrounding color attributes survive.
-pub const DIM: &str = "\x1b[2m";
-pub const UNDIM: &str = "\x1b[22m";
-
-/// Wrap `text` in dim-on/dim-off so it renders faint.
-pub fn dim(text: &str) -> String {
-    format!("{DIM}{text}{UNDIM}")
-}
-
 /// Wrap `text` in `RED…RESET`. For one-line warnings/errors only —
 /// `RESET` clobbers any surrounding SGR state.
 pub fn red(text: &str) -> String {

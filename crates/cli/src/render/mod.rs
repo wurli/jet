@@ -7,9 +7,11 @@
 
 pub mod ansi;
 mod kitty;
+mod style;
 mod tmux;
 
 pub use kitty::emit_png;
+use style::{OwnStyle, PromptStyle, SessionStyle, WrappedStyle};
 pub use tmux::warn_if_passthrough_off;
 
 use std::io::Write;
@@ -104,12 +106,12 @@ pub struct Renderer {
     // when a complete line finally arrives.
     external_printer: Option<reedline::ExternalPrinter<String>>,
     foreign_line_buf: Arc<Mutex<String>>,
-    // Name of the foreign session whose "block" we're currently drawing.
-    // Set when we emit the top rule; cleared when an own-session
-    // ExecuteInput arrives (observer took the terminal back). Back-to-
-    // back foreign blocks from the *same* session keep this set, so we
-    // skip redrawing the header and just extend the `│` gutter.
-    active_foreign_session: Arc<Mutex<Option<String>>>,
+    // `block_key()` of the style whose "block" we're currently drawing
+    // (typically the foreign session's name). Set when we emit the top
+    // rule; cleared when an own-session ExecuteInput arrives (observer
+    // took the terminal back). Back-to-back blocks with the same key
+    // skip redrawing the header — the gutter alone carries attribution.
+    active_block_key: Arc<Mutex<Option<String>>>,
     external_client_style: ExternalClientStyle,
 }
 
@@ -132,7 +134,7 @@ impl Renderer {
             at_line_start: Arc::new(Mutex::new(true)),
             external_printer: None,
             foreign_line_buf: Arc::new(Mutex::new(String::new())),
-            active_foreign_session: Arc::new(Mutex::new(None)),
+            active_block_key: Arc::new(Mutex::new(None)),
             external_client_style: ExternalClientStyle::Wrap,
         }
     }
@@ -200,45 +202,52 @@ impl Renderer {
             if name.is_empty() { None } else { Some(name) }
         };
 
-        let is_foreign = !is_own_session;
+        let style = self.select_style(is_own_session, prefix.as_deref());
         match event.data {
             // --- content events ---
             EventData::ExecuteInput { code } => {
-                if is_foreign {
-                    self.render_foreign_execute_input(&code, prefix.as_deref())?;
-                } else {
+                if is_own_session {
                     // Observer just submitted a cell — any prior foreign
                     // visual block is now closed; the next foreign event
-                    // should redraw its own header.
-                    *self.active_foreign_session.lock().unwrap() = None;
+                    // should redraw its own header. Also, reedline already
+                    // drew the code on the prompt line, so we emit nothing.
+                    *self.active_block_key.lock().unwrap() = None;
+                } else {
+                    // Erase the current line first: reedline's ExternalBreak
+                    // leaves its own `> ` prompt on screen, and we want the
+                    // foreign block to overwrite it rather than sit below an
+                    // empty prompt row.
+                    {
+                        let mut w = self.writer.lock().unwrap();
+                        write!(w, "\r\x1b[2K")?;
+                        w.flush()?;
+                    }
+                    self.ensure_block_header(&*style)?;
+                    let bytes = style.execute_input(&code);
+                    self.write_styled(&*style, &bytes)?;
                 }
-                // Own-session ExecuteInput is intentionally not rendered:
-                // reedline already drew the input on the prompt line.
             }
             EventData::Stream { name: _, text } => {
-                if is_foreign {
-                    self.render_foreign_chunk(&text, prefix.as_deref())?;
-                } else {
-                    self.write(&text, prefix.as_deref(), is_foreign)?;
-                }
+                self.ensure_block_header(&*style)?;
+                self.emit_stream(&*style, &text)?;
             }
             EventData::Error { traceback } => {
-                if is_foreign {
-                    self.render_foreign_chunk(&traceback, prefix.as_deref())?;
-                    self.foreign_ensure_newline()?;
-                } else {
-                    self.write(&traceback, prefix.as_deref(), is_foreign)?;
-                    self.ensure_newline()?;
-                }
+                self.ensure_block_header(&*style)?;
+                self.emit_stream(&*style, &traceback)?;
+                self.ensure_newline(&*style)?;
             }
             EventData::DisplayData { data } => {
-                if is_foreign {
-                    self.render_foreign_data(&data, prefix.as_deref())?;
-                } else {
-                    self.render_data(&data, prefix.as_deref(), is_foreign)?;
+                self.render_display_data(&*style, &data)?;
+            }
+            EventData::Banner { text } => {
+                // Banner always renders as own-style regardless of who
+                // sent it (kernel_info_reply after our own request).
+                let own = OwnStyle;
+                self.emit_stream(&own, &text)?;
+                if !text.ends_with('\n') {
+                    self.ensure_newline(&own)?;
                 }
             }
-            EventData::Banner { text } => self.write_line(&text, None, false)?,
 
             // --- lifecycle events ---
             EventData::Busy { .. } => {
@@ -258,7 +267,7 @@ impl Renderer {
                     // emit one now so reedline's resume `read_line` anchors
                     // its prompt on a fresh row below the foreign content
                     // rather than overwriting it.
-                    self.foreign_ensure_newline()?;
+                    self.ensure_newline(&*style)?;
                     // Release the prompt-gate.
                     self.busy_state.busy.store(false, Ordering::SeqCst);
                     *self.busy_state.holder.lock().unwrap() = None;
@@ -304,295 +313,106 @@ impl Renderer {
         Ok(())
     }
 
-    /// Left-gutter marker prefixed to every foreign-output line
-    /// (`│ ` in the session's deterministic color). Empty when the
-    /// caller didn't supply a prefix.
-    fn foreign_tag(prefix: Option<&str>) -> String {
-        prefix
-            .map(|p| format!("{}│{} ", ansi::session_color(p), ansi::RESET))
-            .unwrap_or_default()
-    }
-
-    /// Left-side prefix for a foreign line in the current style. In
-    /// `Wrap` mode this is the colored `│ ` gutter; in `Prompt` mode
-    /// there is no gutter — output prints raw.
-    fn foreign_gutter(&self, prefix: Option<&str>) -> String {
+    /// Pick the [`SessionStyle`] for an incoming event based on whether
+    /// it came from us or another client, and — for foreign events —
+    /// the user's `--external-client-style` choice.
+    fn select_style(&self, is_own: bool, name: Option<&str>) -> Box<dyn SessionStyle> {
+        if is_own {
+            return Box::new(OwnStyle);
+        }
+        let name = name.map(str::to_string);
         match self.external_client_style {
-            ExternalClientStyle::Wrap => Self::foreign_tag(prefix),
-            ExternalClientStyle::Prompt => String::new(),
+            ExternalClientStyle::Wrap => Box::new(WrappedStyle::new(name)),
+            ExternalClientStyle::Prompt => Box::new(PromptStyle::new(name)),
         }
     }
 
-    /// If we're not already inside a visual block for this foreign
-    /// session, emit the top rule (`┌ name ─────…`) sized to the current
-    /// terminal width and remember the session name. Same-session
-    /// back-to-back blocks skip the header — the gutter alone carries
-    /// attribution.
-    fn ensure_block_header(&self, prefix: Option<&str>) -> Result<()> {
-        if self.external_client_style == ExternalClientStyle::Prompt {
+    /// If the style has a `block_key` that differs from the currently
+    /// active one, close the old block (implicit) and emit the new
+    /// style's header. Consecutive events sharing a key skip re-emission
+    /// so gutters stay contiguous.
+    fn ensure_block_header(&self, style: &dyn SessionStyle) -> Result<()> {
+        let Some(key) = style.block_key() else {
+            return Ok(());
+        };
+        let mut active = self.active_block_key.lock().unwrap();
+        if active.as_deref() == Some(key) {
             return Ok(());
         }
-        let Some(name) = prefix else { return Ok(()) };
-        let mut active = self.active_foreign_session.lock().unwrap();
-        if active.as_deref() == Some(name) {
-            return Ok(());
-        }
-        *active = Some(name.to_string());
+        *active = Some(key.to_string());
         drop(active);
-        let color = ansi::session_color(name);
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        write!(w, "{color}┌─{name}{reset}\r\n", reset = ansi::RESET)?;
-        *at_start = true;
-        w.flush()?;
-        Ok(())
-    }
-
-    /// Foreign `ExecuteInput`: emit the block header if this is a new
-    /// session block, then write each code line as `│ > line` (first) or
-    /// `│ + line` (continuation).
-    fn render_foreign_execute_input(&self, code: &str, prefix: Option<&str>) -> Result<()> {
-        // Erase the current line first: reedline's ExternalBreak leaves
-        // its own `> ` prompt on screen, and we want the foreign block
-        // to overwrite it rather than sit below an empty prompt row.
-        {
-            let mut w = self.writer.lock().unwrap();
-            write!(w, "\r\x1b[2K")?;
-            w.flush()?;
-        }
-        self.ensure_block_header(prefix)?;
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        match self.external_client_style {
-            ExternalClientStyle::Wrap => {
-                let tag = Self::foreign_tag(prefix);
-                for (i, line) in code.split('\n').enumerate() {
-                    let indicator = if i == 0 { "> " } else { "+ " };
-                    write!(w, "{tag}{indicator}{line}\r\n")?;
-                }
-            }
-            ExternalClientStyle::Prompt => {
-                // Colored `name` glued to `> ` / `+ ` per line. Unnamed
-                // foreign clients get a bare `> ` prompt.
-                let (color, name) = match prefix {
-                    Some(p) => (ansi::session_color(p), p),
-                    None => ("", ""),
-                };
-                let reset = if color.is_empty() { "" } else { ansi::RESET };
-                for (i, line) in code.split('\n').enumerate() {
-                    let indicator = if i == 0 { ">" } else { "+" };
-                    write!(w, "{color}{name}{reset}{indicator} {line}\r\n")?;
-                }
-            }
-        }
-        *at_start = true;
-        w.flush()?;
-        Ok(())
-    }
-
-    /// Foreign streaming text (Stream, Error, plain-text DisplayData).
-    /// Prefixes every fresh line with the session tag, translates `\n` to
-    /// `\r\n` so we don't staircase under reedline's raw mode, and tracks
-    /// `at_line_start` so partial chunks don't get a mid-line prefix.
-    fn render_foreign_chunk(&self, body: &str, prefix: Option<&str>) -> Result<()> {
-        if body.is_empty() {
+        let header = style.header();
+        if header.is_empty() {
             return Ok(());
         }
-        self.ensure_block_header(prefix)?;
-        let tag = self.foreign_gutter(prefix);
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        // Both '\n' and '\r' end a "visual line" — '\r' is used by spinners
-        // to redraw a line in place, and we want each redraw to start with
-        // a fresh prefix.
-        for segment in body.split_inclusive(['\n', '\r']) {
-            if *at_start && !tag.is_empty() {
-                write!(w, "{tag}")?;
-            }
-            if let Some(stripped) = segment.strip_suffix('\n') {
-                write!(w, "{stripped}\r\n")?;
-            } else {
-                write!(w, "{segment}")?;
-            }
-            *at_start = segment.ends_with(['\n', '\r']);
-        }
-        w.flush()?;
+        // Header is a full line — same write path as any other bytes.
+        self.write_styled(style, &header)?;
         Ok(())
     }
 
-    /// Foreign `DisplayData`. Inline kitty PNGs when graphics are enabled;
-    /// otherwise tag a `[image/png N bytes]` placeholder. Falls back to
-    /// `text/plain` like the own-session path.
-    fn render_foreign_data(&self, data: &Value, prefix: Option<&str>) -> Result<()> {
-        if !data.is_object() {
-            return Ok(());
-        }
-        if let Some(image_data) = data.get("image/png").and_then(|s| s.as_str()) {
-            self.ensure_block_header(prefix)?;
-            if self.render_graphics {
-                let mut w = self.writer.lock().unwrap();
-                let mut at_start = self.at_line_start.lock().unwrap();
-                match emit_png(&mut *w, image_data) {
-                    Ok(()) => *at_start = true,
-                    Err(e) => {
-                        log::warn!("kitty render failed: {e}");
-                        let tag = self.foreign_gutter(prefix);
-                        write!(w, "{tag}Image render failed: {e}\r\n")?;
-                        *at_start = true;
-                    }
-                }
-                w.flush()?;
-            } else {
-                let len = base64::engine::general_purpose::STANDARD
-                    .decode(image_data)
-                    .map(|b| b.len())
-                    .unwrap_or(0);
-                let placeholder = format!("[image/png {len} bytes]");
-                self.render_foreign_chunk(&placeholder, prefix)?;
-                self.foreign_ensure_newline()?;
-            }
-            return Ok(());
-        }
-        if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
-            self.render_foreign_chunk(t, prefix)?;
-            self.foreign_ensure_newline()?;
-        }
-        Ok(())
+    /// Ask the style to render a streaming chunk, write the result,
+    /// and update `at_line_start`. Callers of stream/error/text-plain
+    /// paths use this so they don't have to manage the bit themselves.
+    fn emit_stream(&self, style: &dyn SessionStyle, body: &str) -> Result<()> {
+        let at_start = *self.at_line_start.lock().unwrap();
+        let bytes = style.stream_chunk(body, at_start);
+        self.write_styled(style, &bytes)
     }
 
-    /// Like `ensure_newline` but uses `\r\n` (safe in raw mode too). For
-    /// the foreign path, where reedline may still be in raw mode when we
-    /// write.
-    fn foreign_ensure_newline(&self) -> Result<()> {
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        if !*at_start {
-            write!(w, "\r\n")?;
-            *at_start = true;
-            w.flush()?;
-        }
-        Ok(())
-    }
-
-    /// Write a chunk to the terminal, optionally inserting `[prefix] ` at
-    /// the start of every new line. Honours streaming boundaries: if the
-    /// previous write ended without a newline, the next call continues
-    /// the same line (no extra prefix); a chunk that ends with `\n`
-    /// leaves the next call expecting to start a new line.
-    fn write(&self, text: &str, prefix: Option<&str>, is_foreign: bool) -> Result<()> {
-        if text.is_empty() {
+    /// Write styled bytes (already carrying any headers, gutters, and
+    /// `\n` line breaks) to the appropriate channel. Updates
+    /// `at_line_start` based on the emitted bytes' last char.
+    ///
+    /// - Own style → plain writer; cooked mode handles `\n`.
+    /// - Foreign style + active `read_line` → reedline's `ExternalPrinter`,
+    ///   splitting on `\n`/`\r` (a partial trailing line is buffered).
+    /// - Foreign style + no active `read_line` → plain writer, but
+    ///   translate `\n` to `\r\n` since reedline may still be in raw
+    ///   mode after `ExternalBreak`.
+    fn write_styled(&self, style: &dyn SessionStyle, bytes: &str) -> Result<()> {
+        if bytes.is_empty() {
             return Ok(());
         }
-        // Foreign-session output goes through reedline's external printer
-        // ONLY while reedline is actively running `read_line` (and thus
-        // owns the screen + raw mode). When reedline has been suspended via
-        // the break signal, we write directly to stdout below — no raw
-        // mode is held, so `\n` works normally and we avoid reedline's
-        // buggy `print_external_message` accounting.
-        if is_foreign
+        let new_at_line_start = bytes.ends_with(['\n', '\r']);
+        if style.uses_external_printer()
             && self.external_printer.is_some()
             && self.busy_state.read_line_active.load(Ordering::SeqCst)
         {
-            return self.write_foreign(text, prefix);
-        }
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        match prefix {
-            None => {
-                write!(w, "{text}")?;
-            }
-            Some(p) => {
-                // Dim the `[session]` tag so it stays visually
-                // subordinate to kernel output.
-                let tag = format!("{} ", ansi::dim(&format!("[{p}]")));
-                let mut first = true;
-                // Use split_inclusive so we can tell whether the final
-                // segment ended in a line break (full line) or not (partial).
-                // Both '\n' and '\r' count: '\r' is used by spinners /
-                // progress bars to redraw a line in place, and we want each
-                // redraw to start with a fresh prefix.
-                for segment in text.split_inclusive(['\n', '\r']) {
-                    if first {
-                        if *at_start {
-                            write!(w, "{tag}")?;
-                        }
-                        first = false;
+            self.write_via_printer(bytes);
+        } else {
+            let mut w = self.writer.lock().unwrap();
+            if style.uses_external_printer() {
+                // Direct writer but under raw mode — translate LF to CRLF.
+                for segment in bytes.split_inclusive('\n') {
+                    if let Some(stripped) = segment.strip_suffix('\n') {
+                        write!(w, "{stripped}\r\n")?;
                     } else {
-                        write!(w, "{tag}")?;
+                        write!(w, "{segment}")?;
                     }
-                    write!(w, "{segment}")?;
                 }
-            }
-        }
-        *at_start = text.ends_with(['\n', '\r']);
-        w.flush()?;
-        Ok(())
-    }
-
-    /// Write a complete line (appends a newline if missing), optionally
-    /// prefixed. Resets the streaming state to "at line start" so
-    /// subsequent stream output is re-prefixed.
-    fn write_line(&self, text: &str, prefix: Option<&str>, is_foreign: bool) -> Result<()> {
-        if text.is_empty() {
-            return Ok(());
-        }
-        let needs_newline = !text.ends_with('\n');
-        self.write(text, prefix, is_foreign)?;
-        if needs_newline {
-            if is_foreign
-                && self.external_printer.is_some()
-                && self.busy_state.read_line_active.load(Ordering::SeqCst)
-            {
-                self.flush_foreign_partial()?;
             } else {
-                let mut w = self.writer.lock().unwrap();
-                let mut at_start = self.at_line_start.lock().unwrap();
-                writeln!(w)?;
-                *at_start = true;
-                w.flush()?;
+                write!(w, "{bytes}")?;
             }
-        }
-        Ok(())
-    }
-
-    fn ensure_newline(&self) -> Result<()> {
-        let mut w = self.writer.lock().unwrap();
-        let mut at_start = self.at_line_start.lock().unwrap();
-        if !*at_start {
-            writeln!(w)?;
-            *at_start = true;
             w.flush()?;
         }
+        *self.at_line_start.lock().unwrap() = new_at_line_start;
         Ok(())
     }
 
-    /// Buffer foreign-session text by line and ship complete lines to
-    /// reedline's external printer. A partial trailing line stays in the
-    /// buffer until the next chunk (or the session's idle event) flushes
-    /// it. `\r` is treated as a line terminator too so spinners redraw
-    /// cleanly as separate lines under the printer.
-    fn write_foreign(&self, text: &str, prefix_name: Option<&str>) -> Result<()> {
-        let printer = self
-            .external_printer
-            .as_ref()
-            .expect("write_foreign called without printer");
-        self.ensure_block_header(prefix_name)?;
-        let tag = match self.external_client_style {
-            ExternalClientStyle::Wrap => {
-                prefix_name.map(|p| format!("{}│{} ", ansi::session_color(p), ansi::RESET))
-            }
-            ExternalClientStyle::Prompt => None,
+    /// Buffer `bytes` line-at-a-time through reedline's external
+    /// printer. The printer is line-oriented, so we split on `\n` and
+    /// strip the terminator (printer adds its own). A partial trailing
+    /// line stays in `foreign_line_buf` until the next chunk (or an
+    /// Idle-triggered flush) completes it. `\r` is treated as a line
+    /// terminator too so spinner redraws land as separate printer lines.
+    fn write_via_printer(&self, bytes: &str) {
+        let Some(printer) = self.external_printer.as_ref() else {
+            return;
         };
         let mut buf = self.foreign_line_buf.lock().unwrap();
-        for segment in text.split_inclusive(['\n', '\r']) {
-            if buf.is_empty()
-                && let Some(t) = &tag
-            {
-                buf.push_str(t);
-            }
+        for segment in bytes.split_inclusive(['\n', '\r']) {
             let terminates = segment.ends_with(['\n', '\r']);
             if terminates {
-                // Strip the trailing newline — the printer adds its own.
                 buf.push_str(segment.trim_end_matches(['\n', '\r']));
                 let line = std::mem::take(&mut *buf);
                 let _ = printer.sender().send(line);
@@ -600,66 +420,94 @@ impl Renderer {
                 buf.push_str(segment);
             }
         }
+    }
+
+    /// If the previous write left the cursor mid-line, emit a newline.
+    /// Uses the style's terminator preference (`\r\n` under raw mode,
+    /// plain `\n` otherwise) and flushes any partial line held by the
+    /// external printer.
+    fn ensure_newline(&self, style: &dyn SessionStyle) -> Result<()> {
+        if *self.at_line_start.lock().unwrap() {
+            return Ok(());
+        }
+        if style.uses_external_printer()
+            && self.external_printer.is_some()
+            && self.busy_state.read_line_active.load(Ordering::SeqCst)
+        {
+            self.flush_partial_line();
+        } else {
+            let mut w = self.writer.lock().unwrap();
+            if style.uses_external_printer() {
+                write!(w, "\r\n")?;
+            } else {
+                writeln!(w)?;
+            }
+            w.flush()?;
+        }
+        *self.at_line_start.lock().unwrap() = true;
         Ok(())
     }
 
-    /// Flush any partially-buffered foreign line. Called when an Idle
-    /// event arrives so the trailing text shows up before the prompt is
-    /// redrawn.
-    fn flush_foreign_partial(&self) -> Result<()> {
+    /// Flush any partial buffered line to reedline's printer. Called
+    /// via `ensure_newline` when a foreign block finishes mid-line.
+    fn flush_partial_line(&self) {
         let Some(printer) = self.external_printer.as_ref() else {
-            return Ok(());
+            return;
         };
         let mut buf = self.foreign_line_buf.lock().unwrap();
         if !buf.is_empty() {
             let line = std::mem::take(&mut *buf);
             let _ = printer.sender().send(line);
         }
-        Ok(())
     }
 
-    fn render_data(&self, data: &Value, prefix: Option<&str>, is_foreign: bool) -> Result<()> {
+    /// Render `DisplayData`: inline kitty PNGs when graphics are on,
+    /// otherwise a `[image/png N bytes]` placeholder. Falls back to
+    /// `text/plain`.
+    fn render_display_data(&self, style: &dyn SessionStyle, data: &Value) -> Result<()> {
         if !data.is_object() {
             return Ok(());
         }
-
         if let Some(image_data) = data.get("image/png").and_then(|s| s.as_str()) {
+            self.ensure_block_header(style)?;
             if self.render_graphics {
-                let mut w = self.writer.lock().unwrap();
-                let mut at_start = self.at_line_start.lock().unwrap();
-                match emit_png(&mut *w, image_data) {
-                    Ok(()) => {
-                        *at_start = true;
-                        return Ok(());
-                    }
+                // PNGs bypass the styler — kitty escape sequences are
+                // control bytes, not text to be gutter-prefixed. On failure
+                // we render the error message through the style so it
+                // still gets attributed.
+                let result = {
+                    let mut w = self.writer.lock().unwrap();
+                    let r = emit_png(&mut *w, image_data);
+                    w.flush()?;
+                    r
+                };
+                match result {
+                    Ok(()) => *self.at_line_start.lock().unwrap() = true,
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
-                        eprintln!("{}", ansi::yellow(&format!("Image render failed: {e}")));
-                        return Ok(());
+                        self.emit_stream(style, &format!("Image render failed: {e}\n"))?;
                     }
                 }
-            } else {
-                let len = base64::engine::general_purpose::STANDARD
-                    .decode(image_data)
-                    .map(|b| b.len())
-                    .unwrap_or(0);
-                self.write_line(&format!("[image/png {len} bytes]"), None, is_foreign)?;
                 return Ok(());
             }
-        };
-
+            let len = base64::engine::general_purpose::STANDARD
+                .decode(image_data)
+                .map(|b| b.len())
+                .unwrap_or(0);
+            self.emit_stream(style, &format!("[image/png {len} bytes]"))?;
+            self.ensure_newline(style)?;
+            return Ok(());
+        }
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {
             // execute_result/display_data carry a complete value, not a
             // streaming chunk: ark's `Sys.getenv("X")` sends `[1] "123"`
             // with no trailing newline, and ipykernel does the same for
-            // bare expressions. Use write_line so the next prompt lands
-            // on a fresh line instead of clobbering the value via the
-            // bracketed-paste sequence rustyline emits.
-            self.write_line(t, prefix, is_foreign)?;
-            return Ok(());
+            // bare expressions. Force a trailing newline so the next
+            // prompt doesn't clobber the value.
+            self.ensure_block_header(style)?;
+            self.emit_stream(style, t)?;
+            self.ensure_newline(style)?;
         }
-
-        // Should we really return Ok here?
         Ok(())
     }
 }
