@@ -850,10 +850,30 @@ fn typing_after_foreign_output_does_not_clear_screen() {
     );
     t1.settle(Duration::from_millis(500), Duration::from_secs(3));
 
+    let pre_type_bytes = t1.output.lock().unwrap().as_bytes().to_vec();
+
     // Now the observer types some characters (does not submit).
     t1.send(b"abc").unwrap();
     t1.settle(Duration::from_millis(500), Duration::from_secs(3));
 
+    let post_type_bytes = t1.output.lock().unwrap().as_bytes().to_vec();
+    let type_response = post_type_bytes[pre_type_bytes.len()..].to_vec();
+
+    // Three snapshots. The raw byte streams (as .bin sidecars — untouched
+    // bytes, no escaping) capture what jet emitted in response to each
+    // stage; sequences like `\x1b[1;1H` (cursor-home) are invisible in the
+    // final screen state but are exactly the smoking gun of a wrong
+    // repaint. The screen-text snapshot captures the final observable
+    // state a user would see. All three must be stable for the bug to
+    // stay fixed.
+    insta::assert_binary_snapshot!(
+        "typing_after_foreign_output_does_not_clear_screen__raw_pre_type.bin",
+        pre_type_bytes
+    );
+    insta::assert_binary_snapshot!(
+        "typing_after_foreign_output_does_not_clear_screen__raw_type_response.bin",
+        type_response
+    );
     insta::assert_snapshot!(
         "typing_after_foreign_output_does_not_clear_screen",
         t1.snapshot_screen()

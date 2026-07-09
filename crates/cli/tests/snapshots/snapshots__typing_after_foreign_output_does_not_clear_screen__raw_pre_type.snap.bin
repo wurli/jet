@@ -1,0 +1,8 @@
+Python 3.11.11 (main, Jan 14 2025, 23:36:41) [Clang 19.1.6 ]
+Type 'copyright', 'credits' or 'license' for more information
+IPython 9.15.0 -- An enhanced Interactive Python. Type '?' for help.
+Tip: `?` alone on a line will brings up IPython's help
+[?2004h[6n[6n[0m[?25l[5;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[?2004l[?2004h[6n[6n[0m[?25l[5;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h[2K[34m┌─jet[0m
+[34m│[0m > print("HELLO_FROM_FOREIGN")
+[34m│[0m HELLO_FROM_FOREIGN
+[?2004l[?2004h[6n[6n[0m[?25l[8;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m7[37m[0m8[?25h
