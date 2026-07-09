@@ -25,7 +25,7 @@ local STARTING_KERNEL_SENTINEL = "<pending>"
 ---@field cmd string[]
 ---@field owned boolean
 ---@field filetype? string
----@field execution_status? "idle" | "busy" | "starting"
+---@field execution_state? "idle" | "busy" | "starting"
 ---@field comms table<string, string> comm_name -> id
 local Kernel = {}
 Kernel.__index = Kernel
@@ -217,17 +217,38 @@ function Kernel:has_lua_client()
 end
 
 function Kernel:handle_stream()
+	---@param msg jet.jupyter.msg
+	local update_execution_state = function(msg)
+		local state = msg.content and msg.content.execution_state
+		if not state then
+			return
+		end
+		if not vim.tbl_contains({ "idle", "busy", "starting" }, state) then
+			utils.log_warn("Kernel '%s' sent unknown execution state: %s", self.spec.display_name, state)
+			return
+		end
+
+		self.execution_state = state
+
+		if self.term and self.term.buf and vim.api.nvim_buf_is_valid(self.term.buf) then
+			local jet_b = vim.b[self.term.buf].jet or {}
+			jet_b.execution_state = state
+			vim.b[self.term.buf].jet = jet_b
+		end
+	end
+
 	---@param res jet.kernel.response
 	utils.poll(self.stream, function(res)
-		for _, hook in pairs(config.hooks.on_msg) do
-			if not res then
-				return "exit"
-			elseif res.status == "busy" then
+		if not res then
+			return "exit"
+		elseif res.status == "busy" then
+			update_execution_state(res.msg)
+			for _, hook in pairs(config.hooks.on_msg) do
 				hook(self, res.msg)
-				return "continue"
-			else
-				return "wait"
 			end
+			return "continue"
+		else
+			return "wait"
 		end
 	end)
 end
