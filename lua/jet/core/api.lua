@@ -189,30 +189,30 @@ M.get_connected = function(filters, callback)
 	end
 end
 
----@param kernels jet.kernel[]
+---@param base_filters jet.api.list_kernels.filters
 ---@param filters jet.api.list_kernels.filters[]
+---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
-local try_pick = function(kernels, filters, callback)
-	if #kernels == 0 then
-		vim.notify("Could not find any matching kernels on the system", vim.log.levels.WARN)
-		return
-	end
+local try_pick = function(base_filters, filters, init_opts, callback)
+	local options = {}
 
 	for _, f in ipairs(filters) do
-		local matches = M.filter_kernels(kernels, f)
+		-- Repeatedly calling list_kernels() is actually more performant, since
+		-- filters on `status` prevent classes of kernels from ever being
+		-- searched for.
+		local matches = M.list_kernels(vim.tbl_extend("force", base_filters, f), init_opts)
 		if #matches == 1 then
 			callback(matches[1])
 			return
-		elseif #matches > 1 then
-			select_kernel(kernels, "Open a Jupyter REPL", function(k)
-				callback(k)
-			end)
-			return
+		end
+
+		for _, k in ipairs(matches) do
+			table.insert(options, k)
 		end
 	end
 
 	---@param k jet.kernel
-	select_kernel(kernels, "Open a Jupyter REPL", function(k)
+	select_kernel(options, "Open a Jupyter REPL", function(k)
 		callback(k)
 	end)
 end
@@ -239,10 +239,10 @@ end
 ---@param init_opts {} | jet.kernel.init_owned.opts | jet.kernel.init_external.opts
 ---@param callback fun(k: jet.kernel)
 M.get_any = function(filters, init_opts, callback)
-	try_pick(M.list_kernels(filters or {}, init_opts), {
+	try_pick(filters, {
 		{ status = { "connected", "connecting" } },
 		{ status = { "inactive" }, default = true },
-	}, callback)
+	}, init_opts, callback)
 end
 
 return M
