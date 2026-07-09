@@ -12,6 +12,7 @@ local STARTING_KERNEL_SENTINEL = "<pending>"
 ---@field win? integer
 
 ---@alias jet.kernel.paritalspec { display_name: string, language: string }
+---@alias jet.kernel.execution_state "busy" | "idle" | "starting"
 
 ---@class jet.kernel
 ---@field session_name string
@@ -25,7 +26,8 @@ local STARTING_KERNEL_SENTINEL = "<pending>"
 ---@field cmd string[]
 ---@field owned boolean
 ---@field filetype? string
----@field execution_state? "idle" | "busy" | "starting"
+---@field execution_state? jet.kernel.execution_state
+---@field curr_execution_start_time? integer
 ---@field comms table<string, string> comm_name -> id
 local Kernel = {}
 Kernel.__index = Kernel
@@ -219,21 +221,28 @@ end
 function Kernel:handle_stream()
 	---@param msg jet.jupyter.msg
 	local update_execution_state = function(msg)
-		local state = msg.content and msg.content.execution_state
-		if not state then
+		local new_state = msg.content and msg.content.execution_state
+		if not new_state then
 			return
 		end
-		if not vim.tbl_contains({ "idle", "busy", "starting" }, state) then
-			utils.log_warn("Kernel '%s' sent unknown execution state: %s", self.spec.display_name, state)
+		if not vim.tbl_contains({ "idle", "busy", "starting" }, new_state) then
+			utils.log_warn("Kernel '%s' sent unknown execution state: %s", self.spec.display_name, new_state)
 			return
 		end
 
-		self.execution_state = state
+		self.execution_state = new_state
+		self.curr_execution_start_time = new_state == "busy" and os.time() or nil
 
 		if self.term and self.term.buf and vim.api.nvim_buf_is_valid(self.term.buf) then
 			local jet_b = vim.b[self.term.buf].jet or {}
-			jet_b.execution_state = state
+			jet_b.execution_state = new_state
+			jet_b.curr_execution_start_time = new_state
 			vim.b[self.term.buf].jet = jet_b
+			vim.api.nvim__redraw({ statusline = true, buf = self.term.buf })
+		end
+
+		for _, hook in pairs(config.hooks.on_execution_state) do
+			hook(self, new_state)
 		end
 	end
 
@@ -243,7 +252,7 @@ function Kernel:handle_stream()
 			return "exit"
 		elseif res.status == "busy" then
 			update_execution_state(res.msg)
-			for _, hook in pairs(config.hooks.on_msg) do
+			for _, hook in pairs(config.hooks.on_message) do
 				hook(self, res.msg)
 			end
 			return "continue"

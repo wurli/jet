@@ -15,7 +15,8 @@ M.defaults = {
 		on_lua_client_start = {}, ---@type fun(k: jet.kernel)[]
 		on_kernel_close = {}, ---@type fun(k: jet.kernel)[]
 		on_send_pre = {}, ---@type fun(k: jet.kernel, code: string[])[]
-		on_msg = {}, ---@type fun(k: jet.kernel, msg: jet.jupyter.msg)[]
+		on_message = {}, ---@type fun(k: jet.kernel, msg: jet.jupyter.msg)[]
+		on_execution_state = {}, ---@type fun(k: jet.kernel, state: jet.kernel.execution_state)[]
 	},
 	send = {
 		---If `true` (the default) then each expression will be sent and
@@ -38,7 +39,7 @@ M.defaults = {
 		---    screen), it causes the REPL history to be truncated. This is due
 		---    to an upstream issue in reedline, which powers the Jet REPL
 		---    experience..
-		end_by_expr = true, ---@type boolean
+		send_by_expr = true, ---@type boolean
 	},
 }
 
