@@ -90,15 +90,35 @@ function Kernel.init_external(opts)
 	return out
 end
 
+---@private
+---@return integer?
+function Kernel:get_win()
+	if not self.term or not self.term.buf then
+		return nil
+	end
+
+	return vim.tbl_filter(function(w)
+		return vim.api.nvim_win_get_buf(w) == self.term.buf
+	end, vim.api.nvim_tabpage_list_wins(0))[1]
+end
+
+function Kernel:toggle_term()
+	local term_win = self:get_win()
+
+	if term_win then
+		vim.api.nvim_win_close(term_win, true)
+	else
+		self:open_term()
+	end
+end
+
 ---@param callback? fun(k: jet.kernel)
 ---@param win_config? vim.api.keyset.win_config
 function Kernel:open_term(callback, win_config)
 	local open = function()
 		assert(self.term, "kernel.term is nil")
 
-		local term_win = vim.tbl_filter(function(w)
-			return vim.api.nvim_win_get_buf(w) == self.term.buf
-		end, vim.api.nvim_tabpage_list_wins(0))[1]
+		local term_win = self:get_win()
 
 		if term_win then
 			vim.api.nvim_set_current_win(term_win)
