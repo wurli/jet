@@ -21,7 +21,7 @@ M.defaults = {
 		---expressions at once, all will be sent at once and results will be
 		---shown afterwards. If `true` then each expression will be sent and
 		---results shown one at a time.
-		send_by_expr = false, ---@type boolean
+		send_by_expr = true, ---@type boolean
 	},
 }
 

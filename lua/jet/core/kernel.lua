@@ -150,6 +150,7 @@ function Kernel:create_term(callback)
 				"--banner",
 				"--session-name",
 				"nvim",
+				config.send.send_by_expr and "--no-indent" or nil,
 			}, {
 				term = true,
 				on_exit = function()

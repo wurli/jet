@@ -179,6 +179,11 @@ pub struct StartArgs {
     #[arg(long)]
     pub no_graphics: bool,
 
+    /// Disable automatic indentation in the REPL. This can be useful when pasting code which is
+    /// already indented.
+    #[arg(long)]
+    pub no_indent: bool,
+
     /// A name used to identify the client.
     #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
@@ -215,6 +220,11 @@ pub struct AttachArgs {
     /// so reconnects don't reprint what the original spawn already drew.
     #[arg(long)]
     pub banner: bool,
+
+    /// Disable automatic indentation in the REPL. This can be useful when pasting code which is
+    /// already indented.
+    #[arg(long)]
+    pub no_indent: bool,
 
     /// A name used to identify the client.
     #[arg(long, env = "JET_SESSION_NAME")]

@@ -326,6 +326,7 @@ pub enum ReplTarget<'a> {
 pub async fn drive_repl(
     target: ReplTarget<'_>,
     render_graphics: bool,
+    no_indent: bool,
     session_name: Option<String>,
     session_store_entry: Option<&mut Session>,
 ) -> Result<Client> {
@@ -651,7 +652,7 @@ pub async fn drive_repl(
                         p.push(' ');
                     }
                     next_indent = Some(p);
-                    next_initial = if ws.is_empty() {
+                    next_initial = if ws.is_empty() | no_indent {
                         None
                     } else {
                         Some(ws.to_string())

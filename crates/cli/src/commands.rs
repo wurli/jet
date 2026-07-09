@@ -180,6 +180,7 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
             session_id,
         },
         render_graphics,
+        args.no_indent,
         args.session_name,
         session.as_mut(),
     )
@@ -238,6 +239,7 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
             banner: args.banner,
         },
         render_graphics,
+        args.no_indent,
         args.session_name,
         None,
     )
@@ -530,4 +532,3 @@ pub async fn run_stop(args: StopArgs) -> Result<()> {
         None => Ok(()),
     }
 }
-
