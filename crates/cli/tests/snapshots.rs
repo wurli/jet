@@ -822,6 +822,46 @@ fn foreign_execute_preserves_observer_unsent_buffer_once() {
     t1.shutdown();
 }
 
+/// After a foreign session executes code and the observer sees the
+/// foreign block appear, the observer starts typing characters. The
+/// typed characters should appear on the `> ` prompt below the foreign
+/// block, WITHOUT the screen clearing or the prompt jumping to the top
+/// of the screen.
+///
+/// Regression: commits 85e96ae / d8d46f2 broke this — after foreign
+/// output landed on the observer, typing any character caused the
+/// screen to clear and the prompt to jump to row 0.
+#[test]
+fn typing_after_foreign_output_does_not_clear_screen() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("typing-after-foreign");
+    let conn_str = conn.to_string_lossy().to_string();
+    let (mut t1, mut t2) =
+        start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
+
+    // Foreign execute: observer sees the block.
+    t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
+    assert!(
+        t1.wait_for("HELLO_FROM_FOREIGN", Duration::from_secs(10)),
+        "t1 never received foreign output"
+    );
+    t1.settle(Duration::from_millis(500), Duration::from_secs(3));
+
+    // Now the observer types some characters (does not submit).
+    t1.send(b"abc").unwrap();
+    t1.settle(Duration::from_millis(500), Duration::from_secs(3));
+
+    insta::assert_snapshot!(
+        "typing_after_foreign_output_does_not_clear_screen",
+        t1.snapshot_screen()
+    );
+    t2.shutdown();
+    t1.shutdown();
+}
+
 /// Foreign error: t2 raises `ValueError`. The observer should see the
 /// `ExecuteInput` tagged with `[jet] > ` and each line of the traceback
 /// tagged with `[jet] ` too — no untagged kernel output should leak past
