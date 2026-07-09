@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/snapshots.rs
+expression: type_response
+extension: bin
+snapshot_kind: binary
+---

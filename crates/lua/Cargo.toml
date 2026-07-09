@@ -1,0 +1,25 @@
+[package]
+name = "jet_lua"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+# `cdylib` is what Neovim/LuaJIT loads via `require('jet')`.
+# `rlib` lets `cargo test` link the integration test binary against the
+# same compilation, so we don't rebuild dependencies twice per test run.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jet_core.workspace = true
+
+anyhow.workspace = true
+log.workspace = true
+mlua.workspace = true
+once_cell.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "jet_core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+env_logger.workspace = true
+hex = "0.4"
+jupyter-protocol = { path = "../../../runtimed/crates/jupyter-protocol" }
+jupyter-zmq-client = { path = "../../../runtimed/crates/jupyter-zmq-client", default-features = false, features = ["tokio-runtime", "ring"] }
+libc.workspace = true
+log.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serial_test.workspace = true
+tempfile = "3"

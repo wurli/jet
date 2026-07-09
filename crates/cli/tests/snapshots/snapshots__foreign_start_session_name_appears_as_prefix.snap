@@ -1,0 +1,8 @@
+---
+source: crates/cli/tests/snapshots.rs
+expression: t2.snapshot_screen()
+---
+┌─beta
+│ > print("y")
+│ y
+>

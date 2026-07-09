@@ -1,0 +1,82 @@
+---@type jet.getcode
+local M = {}
+
+-- ---@param node TSNode
+-- ---@param target_type string
+-- ---@return TSNode?
+-- local ascend_tree_until = function(node, target_type)
+-- 	while node do
+-- 		if node:type() == target_type then
+-- 			return node
+-- 		end
+-- 		---@diagnostic disable-next-line: cast-local-type
+-- 		node = node:parent()
+-- 	end
+-- end
+--
+-- ---@param node TSNode
+-- ---@param ... string
+-- ---@return TSNode?
+-- local descend_tree_until = function(node, ...)
+-- 	local get_child_by_type1 = function(n, t)
+-- 		for child in n:iter_children() do
+-- 			if child:type() == t then
+-- 				return child
+-- 			end
+-- 		end
+-- 	end
+--
+-- 	for _, t in ipairs({ ... }) do
+-- 		node = get_child_by_type1(node, t)
+-- 		if not node then
+-- 			return
+-- 		end
+-- 	end
+-- 	return node
+-- end
+--
+-- ---@return jet.send.Code?
+-- M.get_chunk = function()
+-- 	local bufnr = vim.api.nvim_get_current_buf()
+-- 	local cursor_row = vim.fn.line(".")
+-- 	local cursor_col = vim.fn.col(".")
+--
+-- 	if not vim.treesitter.get_parser(bufnr, nil, { error = false }) then
+-- 		return nil
+-- 	end
+--
+-- 	local cursor_node = vim.treesitter.get_node({
+-- 		bufnr = bufnr,
+-- 		pos = { cursor_row - 1, cursor_col - 1 },
+-- 		ignore_injections = true,
+-- 	})
+--
+-- 	if not cursor_node then
+-- 		return nil
+-- 	end
+--
+-- 	local chunk_node = ascend_tree_until(cursor_node, "fenced_code_block")
+--
+-- 	if not chunk_node then
+-- 		return nil
+-- 	end
+--
+-- 	local code_node = descend_tree_until(chunk_node, "code_fence_content")
+--
+-- 	if not code_node then
+-- 		return nil
+-- 	end
+--
+-- 	local code_range = { code_node:range() }
+--
+-- 	return {
+-- 		bufnr = bufnr,
+-- 		winnr = vim.api.nvim_get_current_win(),
+-- 		start_row = code_range[1],
+-- 		end_row = code_range[3],
+-- 		filetype = require("jet.core.send.utils").local_lang_info(bufnr, { code_range[1], 0 }).filetype,
+-- 		code = vim.api.nvim_buf_get_lines(bufnr, code_range[1], code_range[3], false),
+-- 	}
+-- end
+
+return M

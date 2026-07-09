@@ -1,0 +1,16 @@
+---
+source: crates/cli/tests/snapshots.rs
+expression: t1.snapshot_screen()
+---
+Python <version>
+Type 'copyright', 'credits' or 'license' for more information
+IPython <version>
+┌─jet
+│ > raise ValueError("oh no")
+│ ---------------------------------------------------------------------------
+│ ValueError                                Traceback (most recent call last)
+│ Cell In[1], line 1
+│ ----> 1 raise ValueError("oh no")
+│
+│ ValueError: oh no
+>
