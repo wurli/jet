@@ -51,8 +51,10 @@ M.filter_kernels = function(kernels, opts)
 
 			if opts.default then
 				local spec_path = require("jet.config").options.default_kernels[opts.filetype]
-				spec_path = type(spec_path) == "function" and spec_path() or spec_path
-				if not utils.path_eq(k.spec_path, spec_path) then
+				if type(spec_path) == "function" then
+					spec_path = spec_path()
+				end
+				if not spec_path or not utils.path_eq(k.spec_path, spec_path) then
 					return false
 				end
 			end
@@ -241,7 +243,8 @@ end
 M.get_any = function(filters, init_opts, callback)
 	try_pick(filters, {
 		{ status = { "connected", "connecting" } },
-		{ status = { "inactive" }, default = true },
+		{ status = "inactive", default = true },
+		{ status = "inactive" },
 	}, init_opts, callback)
 end
 
