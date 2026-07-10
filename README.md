@@ -24,4 +24,10 @@ control. For now the main consumer is the Neovim plugin `jet.nvim`.
 Currently `jet.nvim` is bundled into this project - this will likely eventually
 be broken into its own repo.
 
+### Installation
 
+Prebuilt binaries for macOS (arm64) and Linux (x86_64, arm64) are available
+on the [releases page](https://github.com/wurli/jet/releases/latest).
+Download the tarball for your platform, extract, and put `jet` on your `PATH`.
+
+Jet is not yet supported on Windows. Contributions are welcome!
