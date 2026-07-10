@@ -26,6 +26,13 @@ RUN curl -fsSL https://rig.r-pkg.org/deb/rig.gpg -o /etc/apt/trusted.gpg.d/rig.g
     && rig add 4.5.0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Ark dlopens libR.so and R's bundled packages (utils.so, etc.), which are
+# themselves linked against libR.so. The `R` shell wrapper sources
+# `$R_HOME/etc/ldpaths` to set LD_LIBRARY_PATH, but jet launches ark
+# directly and bypasses that — the loader can't find libR.so and ark
+# panics on startup. Bake it into the image so every shell inherits it.
+ENV LD_LIBRARY_PATH=/opt/R/4.5.0/lib/R/lib
+
 # Rust (stable). Cargo/rustc land under /root/.cargo.
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
       | sh -s -- -y --default-toolchain stable --profile minimal

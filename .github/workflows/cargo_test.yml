@@ -45,6 +45,16 @@ jobs:
       - name: Install dev kernels
         run: ./scripts/install-dev-kernels.sh
 
+      # Ark dlopens R's `libR.so` and its bundled packages (utils.so, etc.),
+      # which are themselves linked against libR.so. The `R` shell wrapper
+      # sources `$R_HOME/etc/ldpaths` to set LD_LIBRARY_PATH, but launching
+      # ark directly bypasses that — on Linux the loader can't find libR.so
+      # and ark panics on startup. Export it once, from R itself, so every
+      # subsequent step sees it.
+      - name: Export LD_LIBRARY_PATH for ark (Linux)
+        if: runner.os == 'Linux'
+        run: echo "LD_LIBRARY_PATH=$(R RHOME)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
