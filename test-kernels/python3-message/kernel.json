@@ -4,7 +4,8 @@
     "-m",
     "ipykernel_launcher",
     "-f",
-    "{connection_file}"
+    "{connection_file}",
+    "--InteractiveShell.enable_tip=False"
   ],
   "display_name": "Python 3 (python3-message)",
   "language": "python",

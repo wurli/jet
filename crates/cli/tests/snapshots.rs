@@ -298,17 +298,14 @@ impl Harness {
     /// Render the current visible screen as plain text (trailing spaces
     /// stripped per row, no ANSI codes). One row per line. Version-strings
     /// from the Python/IPython banner are normalised so snapshots survive
-    /// kernel/python upgrades. IPython's random "Tip: ..." line is dropped
-    /// entirely so it doesn't diff between runs.
+    /// kernel/python upgrades. IPython's "Tip: …" line is deterministic
+    /// because the Makefile pins `SOURCE_DATE_EPOCH`.
     fn snapshot_screen(&self) -> String {
         let parser = self.parser.lock().unwrap();
         let contents = parser.screen().contents();
         let mut out = String::new();
         for line in contents.lines() {
             let line = line.trim_end_matches(' ');
-            if line.starts_with("Tip: ") {
-                continue;
-            }
             out.push_str(&normalise_banner(line));
             out.push('\n');
         }

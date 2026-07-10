@@ -111,6 +111,11 @@ write_python_kernelspec() {
   # verify (a) spec env reaches the kernel, and (b) spec wins on conflict
   # with the parent env — without having to build a bespoke kernelspec at
   # test time (which pulls in whatever python3 happens to be on PATH).
+  # --InteractiveShell.enable_tip=False suppresses IPython's random
+  # "Tip: …" banner line, which would otherwise churn snapshots between
+  # test runs. SOURCE_DATE_EPOCH also disables it, but only when the
+  # banner is the *default* IPython banner — ipykernel customises the
+  # banner so that path doesn't apply.
   cat >"$dir/kernel.json" <<JSON
 {
   "argv": [
@@ -118,7 +123,8 @@ write_python_kernelspec() {
     "-m",
     "ipykernel_launcher",
     "-f",
-    "{connection_file}"
+    "{connection_file}",
+    "--InteractiveShell.enable_tip=False"
   ],
   "display_name": "Python 3 ($name)",
   "language": "python",
