@@ -44,4 +44,20 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run cargo test
+        id: cargo_test
         run: make test-cargo
+
+      # Kernel-startup failures show up in tests as "kernel not reachable"
+      # or "timed out waiting for kernel_info_reply" with no upstream
+      # detail. Dump the ark log (path set in test-kernels/ark/kernel.json)
+      # so CI failures have something to grep.
+      - name: Dump ark log
+        if: failure() && steps.cargo_test.conclusion == 'failure'
+        run: |
+          log=test-kernels/ark/ark.log
+          if [[ -f "$log" ]]; then
+            echo "==== $log ===="
+            cat "$log"
+          else
+            echo "no ark log at $log"
+          fi
