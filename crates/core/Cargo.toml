@@ -11,8 +11,8 @@ anyhow.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 env_logger.workspace = true
 hex = "0.4"
-jupyter-protocol = { path = "../../../runtimed/crates/jupyter-protocol" }
-jupyter-zmq-client = { path = "../../../runtimed/crates/jupyter-zmq-client", default-features = false, features = ["tokio-runtime", "ring"] }
+jupyter-protocol = "2.0"
+jupyter-zmq-client = { version = "1.0", default-features = false, features = ["tokio-runtime", "ring"] }
 libc.workspace = true
 log.workspace = true
 rand.workspace = true

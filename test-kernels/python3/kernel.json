@@ -4,9 +4,15 @@
     "-m",
     "ipykernel_launcher",
     "-f",
-    "{connection_file}"
+    "{connection_file}",
+    "--InteractiveShell.enable_tip=False",
+    "--InteractiveShell.banner1=Python test banner",
+    "--InteractiveShell.banner2="
   ],
   "display_name": "Python 3 (python3)",
   "language": "python",
-  "interrupt_mode": "signal"
+  "interrupt_mode": "signal",
+  "env": {
+    "JET_TEST_SPEC_VAR": "from-spec"
+  }
 }

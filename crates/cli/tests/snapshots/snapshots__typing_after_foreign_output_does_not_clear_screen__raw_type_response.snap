@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/snapshots.rs
-expression: type_response
-extension: bin
-snapshot_kind: binary
+expression: "String::from_utf8_lossy(&type_response)"
 ---
+[6n[0m[?25l[4;1H[J[38;5;10m> [38;5;14m[38;5;5m[0m[0m[37mabc[0m78[?25h

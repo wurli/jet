@@ -37,24 +37,6 @@ use rand::Rng;
 mod common;
 use common::*;
 
-/// Collapse the volatile parts of the IPython/Python banner so snapshots
-/// survive python/ipykernel/clang version bumps. Matches anything that
-/// starts with `Python ` or `IPython ` and replaces the line with a
-/// stable placeholder; leaves all other lines untouched.
-fn normalise_banner(line: &str) -> String {
-    if line.starts_with("Python ") {
-        "Python <version>".to_string()
-    } else if line.starts_with("IPython ") {
-        "IPython <version>".to_string()
-    } else if line.starts_with("Type 'copyright', 'credits' or 'license'") {
-        // ipykernel's middle banner line — collapse for stability across
-        // CPython builds.
-        "Type 'copyright', 'credits' or 'license' for more information".to_string()
-    } else {
-        line.to_string()
-    }
-}
-
 /// Prep the python kernelspec, or log SKIP and return `None` if the
 /// dev-kernel install script hasn't been run.
 fn python_kernelspec_or_skip() -> Option<std::path::PathBuf> {
@@ -88,10 +70,7 @@ fn start_jet(
     args.extend_from_slice(extra_args);
     args.push(&kernel_arg);
     let h = Harness::spawn(&args, xdg, conn_str)?;
-    assert!(
-        h.wait_for("Python", Duration::from_secs(20)),
-        "kernel banner never landed"
-    );
+    h.expect("Python", Duration::from_secs(20));
     h.settle(Duration::from_millis(300), Duration::from_secs(2));
     Ok(h)
 }
@@ -243,6 +222,37 @@ impl Harness {
         false
     }
 
+    /// Like [`Harness::wait_for_screen`], but panics on timeout with the
+    /// current rendered screen included in the message. Use in tests
+    /// instead of `assert!(t.wait_for_screen(...), "...")` — one call,
+    /// and CI failures come with the actual screen state as evidence.
+    #[track_caller]
+    fn expect_screen(&self, needle: &str, timeout: Duration) {
+        if !self.wait_for_screen(needle, timeout) {
+            panic!(
+                "never saw `{needle}` on screen within {:?}; screen was:\n{}",
+                timeout,
+                self.snapshot_screen(),
+            );
+        }
+    }
+
+    /// Like [`Harness::wait_for`], but panics on timeout with a tail of
+    /// the raw output stream included. Use for markers unlikely to be
+    /// split by ANSI escapes.
+    #[track_caller]
+    fn expect(&self, needle: &str, timeout: Duration) {
+        if !self.wait_for(needle, timeout) {
+            let raw = self.output.lock().unwrap();
+            let tail_start = raw.len().saturating_sub(2000);
+            panic!(
+                "never saw `{needle}` in raw output within {:?}; last 2000 bytes:\n{}",
+                timeout,
+                &raw[tail_start..],
+            );
+        }
+    }
+
     /// Send bytes as if the user typed them.
     fn send(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         self.writer.write_all(bytes)?;
@@ -268,20 +278,14 @@ impl Harness {
     }
 
     /// Render the current visible screen as plain text (trailing spaces
-    /// stripped per row, no ANSI codes). One row per line. Version-strings
-    /// from the Python/IPython banner are normalised so snapshots survive
-    /// kernel/python upgrades. IPython's random "Tip: ..." line is dropped
-    /// entirely so it doesn't diff between runs.
+    /// stripped per row, no ANSI codes). One row per line.
     fn snapshot_screen(&self) -> String {
         let parser = self.parser.lock().unwrap();
         let contents = parser.screen().contents();
         let mut out = String::new();
         for line in contents.lines() {
             let line = line.trim_end_matches(' ');
-            if line.starts_with("Tip: ") {
-                continue;
-            }
-            out.push_str(&normalise_banner(line));
+            out.push_str(line);
             out.push('\n');
         }
         while out.ends_with("\n\n") {
@@ -383,10 +387,7 @@ fn single_client_executes_print() {
 
     let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
     h.send(b"print(\"hello, jet\")\n").unwrap();
-    assert!(
-        h.wait_for("hello, jet", Duration::from_secs(10)),
-        "print output never landed"
-    );
+    h.expect("hello, jet", Duration::from_secs(10));
     h.settle(Duration::from_millis(300), Duration::from_secs(2));
 
     insta::assert_snapshot!("single_client_executes_print", h.snapshot_screen());
@@ -396,7 +397,7 @@ fn single_client_executes_print() {
 
 /// Two clients sharing a kernel. `start` is the observer; `attach` runs
 /// `print("HELLO_FROM_FOREIGN")`. Snapshot the observer's screen to
-/// confirm the foreign output appears tagged `[jet]` and that the local
+/// confirm the foreign output appears tagged `jet` and that the local
 /// prompt is preserved.
 #[test]
 fn two_clients_foreign_print_is_tagged_and_visible() {
@@ -411,10 +412,7 @@ fn two_clients_foreign_print_is_tagged_and_visible() {
         start_pair(&kernel_json, &xdg, &conn_str, None, Some("jet")).expect("spawn pair");
 
     t2.send(b"print(\"HELLO_FROM_FOREIGN\")\n").unwrap();
-    assert!(
-        t1.wait_for("HELLO_FROM_FOREIGN", Duration::from_secs(10)),
-        "t1 never received foreign output"
-    );
+    t1.expect("HELLO_FROM_FOREIGN", Duration::from_secs(10));
     t1.settle(Duration::from_millis(500), Duration::from_secs(3));
 
     insta::assert_snapshot!(
@@ -469,10 +467,7 @@ fn complete_one_liner_executes() {
     // `Out[1]:` echo. snapshot captures the value directly under the
     // typed line with no `+ ` continuation in between.
     h.send(b"print(1+1)\n").unwrap();
-    assert!(
-        h.wait_for_screen("\n2\n", Duration::from_secs(15)),
-        "did not see '2' result"
-    );
+    h.expect_screen("\n2\n", Duration::from_secs(15));
     h.settle(Duration::from_millis(300), Duration::from_secs(2));
     insta::assert_snapshot!("complete_one_liner_executes", h.snapshot_screen());
     h.shutdown();
@@ -500,10 +495,7 @@ fn multi_line_function_definition_executes() {
     h.send(b"\n").unwrap();
     h.settle(Duration::from_millis(200), Duration::from_secs(2));
     h.send(b"print(f())\n").unwrap();
-    assert!(
-        h.wait_for_screen("42", Duration::from_secs(15)),
-        "did not see '42' from f()"
-    );
+    h.expect_screen("42", Duration::from_secs(15));
     h.settle(Duration::from_millis(400), Duration::from_secs(2));
     insta::assert_snapshot!(
         "multi_line_function_definition_executes",
@@ -542,10 +534,7 @@ fn backspace_merges_continuation_back_into_editor() {
     let marker = "merged-backspace-9f31";
     h.send(b"print(chr(109) + \"erged-backspace-9f31\")\n")
         .unwrap();
-    assert!(
-        h.wait_for(marker, Duration::from_secs(10)),
-        "marker {marker:?} never appeared — merge-back regressed"
-    );
+    h.expect(marker, Duration::from_secs(10));
     h.settle(Duration::from_millis(300), Duration::from_secs(2));
     insta::assert_snapshot!(
         "backspace_merges_continuation_back_into_editor",
@@ -568,16 +557,10 @@ fn input_request_displays_and_accepts_value() {
     let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
     // Raw mode: \r is the Enter keycode (\n becomes a literal char).
     h.send(b"v = input('ASK> '); print('GOT:' + v)\r").unwrap();
-    assert!(
-        h.wait_for("ASK> ", Duration::from_secs(15)),
-        "input prompt 'ASK> ' never appeared"
-    );
+    h.expect("ASK> ", Duration::from_secs(15));
     h.settle(Duration::from_millis(300), Duration::from_secs(2));
     h.send(b"hello-input\r").unwrap();
-    assert!(
-        h.wait_for("GOT:hello-input", Duration::from_secs(10)),
-        "kernel did not echo input value back"
-    );
+    h.expect("GOT:hello-input", Duration::from_secs(10));
     h.settle(Duration::from_millis(300), Duration::from_secs(2));
     insta::assert_snapshot!(
         "input_request_displays_and_accepts_value",
@@ -586,10 +569,8 @@ fn input_request_displays_and_accepts_value() {
     h.shutdown();
 }
 
-/// When `jet attach --session-name alpha` runs code, the observer's
-/// foreign-output prefix should be `[alpha]` rather than the default
-/// `[jet]`. Captures the prefix end-to-end from CLI flag to terminal
-/// rendering.
+/// When `jet attach --session-name alpha` runs code, the observer's foreign-output should be
+/// marked as such. Test is end-to-end from CLI flag to terminal rendering.
 #[test]
 fn foreign_attach_session_name_appears_as_prefix() {
     let Some(kernel_json) = python_kernelspec_or_skip() else {
@@ -602,10 +583,7 @@ fn foreign_attach_session_name_appears_as_prefix() {
         start_pair(&kernel_json, &xdg, &conn_str, None, Some("alpha")).expect("spawn pair");
 
     t2.send(b"print(\"x\")\n").unwrap();
-    assert!(
-        t1.wait_for_screen("┌─alpha", Duration::from_secs(15)),
-        "t1 never saw `alpha` block header"
-    );
+    t1.expect_screen("┌─alpha", Duration::from_secs(15));
     t1.settle(Duration::from_millis(700), Duration::from_secs(5));
 
     insta::assert_snapshot!(
@@ -617,7 +595,7 @@ fn foreign_attach_session_name_appears_as_prefix() {
 }
 
 /// And the reverse direction: when `jet start --session-name beta` runs
-/// code, the attached observer's prefix should be `[beta]`.
+/// code, the attached observer's prefix should include `beta`.
 #[test]
 fn foreign_start_session_name_appears_as_prefix() {
     let Some(kernel_json) = python_kernelspec_or_skip() else {
@@ -634,10 +612,8 @@ fn foreign_start_session_name_appears_as_prefix() {
     t2.settle(Duration::from_millis(500), Duration::from_secs(3));
 
     t1.send(b"print(\"y\")\n").unwrap();
-    assert!(
-        t2.wait_for_screen("┌─beta", Duration::from_secs(15)),
-        "t2 never saw `beta` block header"
-    );
+    // Wait until we actually see the output
+    t2.expect_screen("│ y", Duration::from_secs(15));
     t2.settle(Duration::from_millis(700), Duration::from_secs(5));
 
     insta::assert_snapshot!(
@@ -687,10 +663,7 @@ fn foreign_prompt_style_renders_name_prompt_no_wrap() {
     t2.settle(Duration::from_millis(500), Duration::from_secs(3));
 
     t1.send(b"print(\"y\")\n").unwrap();
-    assert!(
-        t2.wait_for_screen("beta>", Duration::from_secs(15)),
-        "t2 never saw `beta>` prompt-style header"
-    );
+    t2.expect_screen("beta>", Duration::from_secs(30));
     t2.settle(Duration::from_millis(700), Duration::from_secs(5));
 
     let screen = t2.snapshot_screen();
@@ -730,10 +703,7 @@ fn foreign_multi_line_cell_renders_with_continuation_prefix() {
     t2.send(b"\n").unwrap();
     t2.settle(Duration::from_millis(400), Duration::from_secs(2));
     t2.send(b"print(f())\n").unwrap();
-    assert!(
-        t1.wait_for_screen("99", Duration::from_secs(15)),
-        "t1 never saw foreign `print(f())` output"
-    );
+    t1.expect_screen("99", Duration::from_secs(15));
     t1.settle(Duration::from_millis(700), Duration::from_secs(3));
 
     insta::assert_snapshot!(
@@ -759,16 +729,10 @@ fn back_to_back_foreign_executes_share_one_header() {
         start_pair(&kernel_json, &xdg, &conn_str, None, Some("gamma")).expect("spawn pair");
 
     t2.send(b"print(\"one\")\n").unwrap();
-    assert!(
-        t1.wait_for_screen("│ one", Duration::from_secs(15)),
-        "t1 never saw first foreign output"
-    );
+    t1.expect_screen("│ one", Duration::from_secs(15));
     t1.settle(Duration::from_millis(400), Duration::from_secs(3));
     t2.send(b"print(\"two\")\n").unwrap();
-    assert!(
-        t1.wait_for_screen("│ two", Duration::from_secs(15)),
-        "t1 never saw second foreign output"
-    );
+    t1.expect_screen("│ two", Duration::from_secs(15));
     t1.settle(Duration::from_millis(700), Duration::from_secs(5));
 
     let screen = t1.snapshot_screen();
@@ -805,10 +769,7 @@ fn foreign_execute_preserves_observer_unsent_buffer_once() {
     // t2 executes something so t1 sees foreign output land while its
     // read_line is in flight.
     t2.send(b"print(\"x\")\n").unwrap();
-    assert!(
-        t1.wait_for_screen("│ x", Duration::from_secs(15)),
-        "t1 never saw foreign output"
-    );
+    t1.expect_screen("│ x", Duration::from_secs(15));
     t1.settle(Duration::from_millis(700), Duration::from_secs(5));
 
     let screen = t1.snapshot_screen();
@@ -856,10 +817,7 @@ fn typing_after_foreign_output_does_not_clear_screen() {
             &kernel_arg,
         ];
         let h = Harness::spawn(&args, &xdg, &conn_str).expect("spawn t1");
-        assert!(
-            h.wait_for("> ", Duration::from_secs(20)),
-            "ark prompt never landed on t1"
-        );
+        h.expect("> ", Duration::from_secs(20));
         h.settle(Duration::from_millis(500), Duration::from_secs(3));
         h
     };
@@ -880,10 +838,7 @@ fn typing_after_foreign_output_does_not_clear_screen() {
     // Foreign execute: observer sees the block. R's `cat` writes bare
     // stdout — no `[1]` framing — so the marker lands verbatim.
     t2.send(b"cat(\"HELLO_FROM_FOREIGN\\n\")\n").unwrap();
-    assert!(
-        t1.wait_for("HELLO_FROM_FOREIGN", Duration::from_secs(10)),
-        "t1 never received foreign output"
-    );
+    t1.expect("HELLO_FROM_FOREIGN", Duration::from_secs(10));
     t1.settle(Duration::from_millis(500), Duration::from_secs(3));
 
     let pre_type_bytes = t1.output.lock().unwrap().as_bytes().to_vec();
@@ -895,20 +850,19 @@ fn typing_after_foreign_output_does_not_clear_screen() {
     let post_type_bytes = t1.output.lock().unwrap().as_bytes().to_vec();
     let type_response = post_type_bytes[pre_type_bytes.len()..].to_vec();
 
-    // Three snapshots. The raw byte streams (as .bin sidecars — untouched
-    // bytes, no escaping) capture what jet emitted in response to each
-    // stage; sequences like `\x1b[1;1H` (cursor-home) are invisible in the
-    // final screen state but are exactly the smoking gun of a wrong
-    // repaint. The screen-text snapshot captures the final observable
-    // state a user would see. All three must be stable for the bug to
-    // stay fixed.
-    insta::assert_binary_snapshot!(
-        "typing_after_foreign_output_does_not_clear_screen__raw_pre_type.bin",
-        pre_type_bytes
+    // Three snapshots. The raw byte streams capture what jet emitted in
+    // response to each stage; sequences like `\x1b[1;1H` (cursor-home) are
+    // invisible in the final screen state but are exactly the smoking gun
+    // of a wrong repaint. The screen-text snapshot captures the final
+    // observable state a user would see. All three must be stable for the
+    // bug to stay fixed.
+    insta::assert_snapshot!(
+        "typing_after_foreign_output_does_not_clear_screen__raw_pre_type",
+        String::from_utf8_lossy(&pre_type_bytes)
     );
-    insta::assert_binary_snapshot!(
-        "typing_after_foreign_output_does_not_clear_screen__raw_type_response.bin",
-        type_response
+    insta::assert_snapshot!(
+        "typing_after_foreign_output_does_not_clear_screen__raw_type_response",
+        String::from_utf8_lossy(&type_response)
     );
     insta::assert_snapshot!(
         "typing_after_foreign_output_does_not_clear_screen",
@@ -918,10 +872,27 @@ fn typing_after_foreign_output_does_not_clear_screen() {
     t1.shutdown();
 }
 
-/// Foreign error: t2 raises `ValueError`. The observer should see the
-/// `ExecuteInput` tagged with `[jet] > ` and each line of the traceback
-/// tagged with `[jet] ` too — no untagged kernel output should leak past
-/// the prefix logic.
+/// Foreign error: t2 raises `ValueError`. The observer should see the `ExecuteInput` tagged with
+/// `jet` and each line of the traceback tagged with `jet` too — no untagged kernel output should
+/// leak past the prefix logic.
+///
+/// KNOWN-FLAKY on CI: intermittently fails with a stray `> ` prompt on the first traceback line
+/// (`> │ ----...` instead of `│ ----...`). Two plausible causes, both rooted in the
+/// reedline-vs-renderer race that fires when a foreign Busy arrives while the observer is in
+/// `read_line`:
+///
+/// (A) Reedline reuses its pre-suspension prompt row on resume. `PainterSuspendedState` records
+/// `previous_prompt_rows_range` at suspension; on the next `read_line`,
+/// `select_prompt_row` in reedline reuses the old `start_row` when the current cursor
+/// row still falls inside that range. If the renderer's foreign writes leave the cursor
+/// inside the old range, reedline repaints `> ` at the *old* prompt row — now sitting
+/// mid-traceback — and the next Error byte lands at whatever column reedline left the
+/// cursor. That produces exactly one `> ` prefix on one traceback line, matching the diff.
+///
+/// (B) Idle races Error. If the renderer processes Idle before Error somehow (event reordering
+/// on iopub, or an unlucky interleave), Idle clears `busy` and wakes the park-gate, the
+/// REPL loop calls `read_line`, reedline paints `> `, then Error fires and writes `│ ---`
+/// after it — same visual outcome. Less likely on a serialized iopub SUB, but not ruled out.
 #[test]
 fn foreign_traceback_lines_are_tagged() {
     let Some(kernel_json) = python_kernelspec_or_skip() else {
@@ -937,10 +908,7 @@ fn foreign_traceback_lines_are_tagged() {
     t2.send(b"raise ValueError(\"oh no\")\n").unwrap();
     // Wait for the error to land in the rendered screen — the
     // traceback's final line will contain `ValueError`.
-    assert!(
-        t1.wait_for_screen("ValueError", Duration::from_secs(10)),
-        "t1 never saw foreign ValueError traceback"
-    );
+    t1.expect_screen("ValueError", Duration::from_secs(10));
     t1.settle(Duration::from_millis(700), Duration::from_secs(3));
 
     insta::assert_snapshot!("foreign_traceback_lines_are_tagged", t1.snapshot_screen());
@@ -987,4 +955,3 @@ fn quit_does_not_leave_trailing_prompt() {
     );
     h.shutdown();
 }
-

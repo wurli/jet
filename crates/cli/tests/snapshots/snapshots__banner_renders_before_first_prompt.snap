@@ -2,7 +2,5 @@
 source: crates/cli/tests/snapshots.rs
 expression: h.snapshot_screen()
 ---
-Python <version>
-Type 'copyright', 'credits' or 'license' for more information
-IPython <version>
+Python test banner
 >

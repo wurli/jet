@@ -12,6 +12,10 @@ env:
 jobs:
   cargo_test:
     strategy:
+      # Don't abort the mac leg because linux failed (or vice versa) —
+      # a failure on one OS is often specific to that OS and we want to
+      # see both.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
 
@@ -25,10 +29,31 @@ jobs:
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
         with:
-          r-version: "4.5.2"
+          r-version: "4.5.0"
+
+      # Cache the ark binary (~40MB download) and the ipykernel venv
+      # (~a few seconds to reinstall). Keyed on the install script so any
+      # version bump invalidates the cache automatically.
+      - name: Cache dev kernels
+        uses: actions/cache@v4
+        with:
+          path: |
+            test-kernels/ark
+            .jet-dev/venv
+          key: ${{ runner.os }}-dev-kernels-${{ hashFiles('scripts/install-dev-kernels.sh') }}
 
       - name: Install dev kernels
         run: ./scripts/install-dev-kernels.sh
+
+      # Ark dlopens R's `libR.so` and its bundled packages (utils.so, etc.),
+      # which are themselves linked against libR.so. The `R` shell wrapper
+      # sources `$R_HOME/etc/ldpaths` to set LD_LIBRARY_PATH, but launching
+      # ark directly bypasses that — on Linux the loader can't find libR.so
+      # and ark panics on startup. Export it once, from R itself, so every
+      # subsequent step sees it.
+      - name: Export LD_LIBRARY_PATH for ark (Linux)
+        if: runner.os == 'Linux'
+        run: echo "LD_LIBRARY_PATH=$(R RHOME)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -44,4 +69,20 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run cargo test
+        id: cargo_test
         run: make test-cargo
+
+      # Kernel-startup failures show up in tests as "kernel not reachable"
+      # or "timed out waiting for kernel_info_reply" with no upstream
+      # detail. Dump the ark log (path set in test-kernels/ark/kernel.json)
+      # so CI failures have something to grep.
+      - name: Dump ark log
+        if: ${{ always() && steps.cargo_test.outcome != 'success' }}
+        run: |
+          log=test-kernels/ark/ark.log
+          if [[ -f "$log" ]]; then
+            echo "==== $log ===="
+            cat "$log"
+          else
+            echo "no ark log at $log"
+          fi

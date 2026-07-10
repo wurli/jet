@@ -20,14 +20,40 @@ set -euo pipefail
 
 # ─── config ────────────────────────────────────────────────────────────
 ARK_VERSION="${ARK_VERSION:-0.1.252}"
-# Pin ipykernel so contributors see the same banner shape. The "Tip: ..."
-# line ipython prints on startup is still randomised per-run — we mask
-# it in tests/snapshots.rs — but everything else is now deterministic.
+# Pin ipykernel AND ipython so contributors see the same banner shape.
+# ipykernel doesn't pin its ipython dep tightly, so leaving it floating
+# means CI can end up on a newer ipython than local. The "Tip: ..." line
+# ipython prints on startup is still randomised per-run — we mask it in
+# tests/snapshots.rs — but everything else is now deterministic.
 IPYKERNEL_VERSION="${IPYKERNEL_VERSION:-7.3.0}"
+IPYTHON_VERSION="${IPYTHON_VERSION:-9.15.0}"
+# The R version the ark kernel drives. Pinned so snapshots that capture
+# the R startup banner survive local-vs-CI mismatches. CI's
+# r-lib/actions/setup-r should use the same version; locally, install
+# this version out-of-band (e.g. via rig or a matching brew formula).
+R_VERSION="${R_VERSION:-4.5.0}"
 UV_VERSION="${UV_VERSION:-0.9.7}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-KERNELS_DIR="$REPO_ROOT/kernels"
+KERNELS_DIR="$REPO_ROOT/test-kernels"
+
+# ─── R version check ───────────────────────────────────────────────────
+# Tests capture ark's R startup banner in snapshots, so the R version
+# has to match across local and CI. Fail fast with a clear message if
+# it doesn't. We only warn if R is missing entirely — ark tests skip
+# cleanly in that case.
+if command -v R >/dev/null 2>&1; then
+  actual_r=$(R --version 2>&1 | head -n1 | awk '{print $3}')
+  if [[ "$actual_r" != "$R_VERSION" ]]; then
+    echo "ERROR: R version mismatch — expected $R_VERSION, found $actual_r" >&2
+    echo "  Install R $R_VERSION (e.g. via rig: 'rig add $R_VERSION')," >&2
+    echo "  or override the pin with R_VERSION=$actual_r if you know what you're doing." >&2
+    exit 1
+  fi
+  echo "==> R $actual_r matches pin"
+else
+  echo "==> R not on PATH; ark tests will skip"
+fi
 
 # ─── platform detection ────────────────────────────────────────────────
 uname_s=$(uname -s)
@@ -55,14 +81,23 @@ uv --version
 # `.jet-dev/venv` and reference its interpreter directly from each
 # kernelspec's `argv[0]`. Fully isolated from the user's environment.
 VENV_DIR="$REPO_ROOT/.jet-dev/venv"
-echo "==> creating ipykernel venv at $VENV_DIR"
-uv venv --clear "$VENV_DIR"
-if [[ -n "$IPYKERNEL_VERSION" ]]; then
-  uv pip install --python "$VENV_DIR/bin/python" "ipykernel==$IPYKERNEL_VERSION"
-else
-  uv pip install --python "$VENV_DIR/bin/python" ipykernel
-fi
 VENV_PY="$VENV_DIR/bin/python"
+# Skip rebuild if the venv already has both pinned versions installed —
+# lets CI restore the venv from cache without re-downloading wheels.
+if [[ -x "$VENV_PY" ]] \
+  && "$VENV_PY" -c "
+import sys, ipykernel, IPython
+sys.exit(0 if ipykernel.__version__ == '$IPYKERNEL_VERSION'
+             and IPython.__version__ == '$IPYTHON_VERSION' else 1)
+" 2>/dev/null; then
+  echo "==> ipykernel ${IPYKERNEL_VERSION} + ipython ${IPYTHON_VERSION} already installed at $VENV_DIR"
+else
+  echo "==> creating ipykernel venv at $VENV_DIR"
+  uv venv --clear "$VENV_DIR"
+  uv pip install --python "$VENV_PY" \
+    "ipykernel==$IPYKERNEL_VERSION" \
+    "ipython==$IPYTHON_VERSION"
+fi
 
 mkdir -p "$KERNELS_DIR"
 
@@ -71,6 +106,16 @@ write_python_kernelspec() {
   local mode=$2
   local dir="$KERNELS_DIR/$name"
   mkdir -p "$dir"
+  # JET_TEST_SPEC_VAR is baked into the spec so
+  # `connect_inherits_parent_env_with_spec_winning_on_conflict` can
+  # verify (a) spec env reaches the kernel, and (b) spec wins on conflict
+  # with the parent env — without having to build a bespoke kernelspec at
+  # test time (which pulls in whatever python3 happens to be on PATH).
+  # --InteractiveShell.enable_tip=False suppresses IPython's random
+  # "Tip: …" banner line, which would otherwise churn snapshots between
+  # test runs. SOURCE_DATE_EPOCH also disables it, but only when the
+  # banner is the *default* IPython banner — ipykernel customises the
+  # banner so that path doesn't apply.
   cat >"$dir/kernel.json" <<JSON
 {
   "argv": [
@@ -78,11 +123,17 @@ write_python_kernelspec() {
     "-m",
     "ipykernel_launcher",
     "-f",
-    "{connection_file}"
+    "{connection_file}",
+    "--InteractiveShell.enable_tip=False",
+    "--InteractiveShell.banner1=Python test banner",
+    "--InteractiveShell.banner2="
   ],
   "display_name": "Python 3 ($name)",
   "language": "python",
-  "interrupt_mode": "$mode"
+  "interrupt_mode": "$mode",
+  "env": {
+    "JET_TEST_SPEC_VAR": "from-spec"
+  }
 }
 JSON
   echo "==> wrote $dir/kernel.json (interrupt_mode=$mode)"
@@ -118,7 +169,9 @@ cat >"$ark_dir/kernel.json" <<JSON
     "--session-mode",
     "notebook",
     "--log",
-    "$ark_dir/ark.log"
+    "$ark_dir/ark.log",
+    "--",
+    "--quiet"
   ],
   "display_name": "Ark R Kernel",
   "language": "R",
