@@ -27,7 +27,7 @@ IPYKERNEL_VERSION="${IPYKERNEL_VERSION:-7.3.0}"
 UV_VERSION="${UV_VERSION:-0.9.7}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-KERNELS_DIR="$REPO_ROOT/kernels"
+KERNELS_DIR="$REPO_ROOT/test-kernels"
 
 # ─── platform detection ────────────────────────────────────────────────
 uname_s=$(uname -s)
