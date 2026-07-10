@@ -27,6 +27,17 @@ jobs:
         with:
           r-version: "4.5.2"
 
+      # Cache the ark binary (~40MB download) and the ipykernel venv
+      # (~a few seconds to reinstall). Keyed on the install script so any
+      # version bump invalidates the cache automatically.
+      - name: Cache dev kernels
+        uses: actions/cache@v4
+        with:
+          path: |
+            test-kernels/ark
+            .jet-dev/venv
+          key: ${{ runner.os }}-dev-kernels-${{ hashFiles('scripts/install-dev-kernels.sh') }}
+
       - name: Install dev kernels
         run: ./scripts/install-dev-kernels.sh
 

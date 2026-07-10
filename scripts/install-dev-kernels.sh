@@ -55,14 +55,22 @@ uv --version
 # `.jet-dev/venv` and reference its interpreter directly from each
 # kernelspec's `argv[0]`. Fully isolated from the user's environment.
 VENV_DIR="$REPO_ROOT/.jet-dev/venv"
-echo "==> creating ipykernel venv at $VENV_DIR"
-uv venv --clear "$VENV_DIR"
-if [[ -n "$IPYKERNEL_VERSION" ]]; then
-  uv pip install --python "$VENV_DIR/bin/python" "ipykernel==$IPYKERNEL_VERSION"
-else
-  uv pip install --python "$VENV_DIR/bin/python" ipykernel
-fi
 VENV_PY="$VENV_DIR/bin/python"
+# Skip rebuild if the venv already has the pinned ipykernel installed —
+# lets CI restore the venv from cache without re-downloading wheels.
+if [[ -x "$VENV_PY" ]] \
+  && [[ -n "$IPYKERNEL_VERSION" ]] \
+  && "$VENV_PY" -c "import ipykernel; import sys; sys.exit(0 if ipykernel.__version__ == '$IPYKERNEL_VERSION' else 1)" 2>/dev/null; then
+  echo "==> ipykernel ${IPYKERNEL_VERSION} already installed at $VENV_DIR"
+else
+  echo "==> creating ipykernel venv at $VENV_DIR"
+  uv venv --clear "$VENV_DIR"
+  if [[ -n "$IPYKERNEL_VERSION" ]]; then
+    uv pip install --python "$VENV_PY" "ipykernel==$IPYKERNEL_VERSION"
+  else
+    uv pip install --python "$VENV_PY" ipykernel
+  fi
+fi
 
 mkdir -p "$KERNELS_DIR"
 
