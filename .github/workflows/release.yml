@@ -1,0 +1,134 @@
+run-name: "Release ${{ github.ref_name }}"
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.1.0). Must already exist."
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: jet
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.resolve.outputs.tag }}
+
+      # Guardrail: the tag must match the workspace version in Cargo.toml.
+      # Prevents "I tagged v0.2.0 but forgot to bump" from silently
+      # shipping a binary whose --version disagrees with the release.
+      - name: Verify Cargo.toml version matches tag
+        run: |
+          tag="${{ steps.resolve.outputs.tag }}"
+          tag_version="${tag#v}"
+          cargo_version=$(
+            awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version *=/{gsub(/[" ]/,"",$3); print $3; exit}' Cargo.toml
+          )
+          if [[ "$tag_version" != "$cargo_version" ]]; then
+            echo "::error::tag $tag implies version $tag_version but Cargo.toml is $cargo_version"
+            exit 1
+          fi
+          echo "ok: $tag matches Cargo.toml $cargo_version"
+
+      # Create as draft so you can review artifacts before publishing.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${{ steps.resolve.outputs.tag }}" >/dev/null 2>&1; then
+            gh release create "${{ steps.resolve.outputs.tag }}" \
+              --draft \
+              --title "${{ steps.resolve.outputs.tag }}" \
+              --generate-notes
+          fi
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+          # ubuntu-22.04 pins glibc 2.35 — binaries run on older distros
+          # than ubuntu-latest (24.04, glibc 2.39) would produce.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.create-release.outputs.tag }}
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Builds jet_cli, tars up the `jet` binary + README + LICENSE,
+      # writes a .sha256, and uploads to the release. Skips the lua
+      # cdylib — it's a Neovim plugin artifact, not a user download.
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p jet_cli -p jet_lua
+
+      # Package `jet` and the `jet_lua` cdylib as separate tarballs so
+      # users can grab whichever they need. Rename `libjet_lua.*` to
+      # `jet_lua.*` so `require("jet_lua")` resolves it on Lua's cpath.
+      - name: Package and upload artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.create-release.outputs.tag }}"
+          target="${{ matrix.target }}"
+          out="target/$target/release"
+
+          case "$target" in
+            *-apple-darwin) lib_src=libjet_lua.dylib; lib_dst=jet_lua.dylib ;;
+            *-linux-*)      lib_src=libjet_lua.so;    lib_dst=jet_lua.so    ;;
+          esac
+
+          package() {
+            local name=$1 file_src=$2 file_dst=$3
+            local stage="$name-$tag-$target"
+            mkdir "$stage"
+            cp "$out/$file_src" "$stage/$file_dst"
+            [[ -f README.md ]] && cp README.md "$stage/"
+            [[ -f LICENSE ]] && cp LICENSE "$stage/"
+            tar czf "$stage.tar.gz" "$stage"
+            shasum -a 256 "$stage.tar.gz" > "$stage.tar.gz.sha256"
+            gh release upload "$tag" "$stage.tar.gz" "$stage.tar.gz.sha256" --clobber
+          }
+
+          package "${{ env.BIN_NAME }}" "${{ env.BIN_NAME }}" "${{ env.BIN_NAME }}"
+          package "jet_lua" "$lib_src" "$lib_dst"
