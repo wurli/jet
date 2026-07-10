@@ -2,25 +2,6 @@
 source: crates/cli/tests/snapshots.rs
 expression: t1.snapshot_screen()
 ---
-
-R version 4.5.0 (2025-04-11) -- "How About a Twenty-Six"
-Copyright (C) 2025 The R Foundation for Statistical Computing
-Platform: aarch64-apple-darwin20
-
-R is free software and comes with ABSOLUTELY NO WARRANTY.
-You are welcome to redistribute it under certain conditions.
-Type 'license()' or 'licence()' for distribution details.
-
-  Natural language support but running in an English locale
-
-R is a collaborative project with many contributors.
-Type 'contributors()' for more information and
-'citation()' on how to cite R or R packages in publications.
-
-Type 'demo()' for some demos, 'help()' for on-line help, or
-'help.start()' for an HTML browser interface to help.
-Type 'q()' to quit R.
-
 ┌─jet
 │ > cat("HELLO_FROM_FOREIGN\n")
 │ HELLO_FROM_FOREIGN

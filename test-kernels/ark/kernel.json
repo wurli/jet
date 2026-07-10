@@ -6,7 +6,9 @@
     "--session-mode",
     "notebook",
     "--log",
-    "/Users/JACOB.SCOTT1/Repos/jet/test-kernels/ark/ark.log"
+    "/Users/JACOB.SCOTT1/Repos/jet/test-kernels/ark/ark.log",
+    "--",
+    "--quiet"
   ],
   "display_name": "Ark R Kernel",
   "language": "R",
