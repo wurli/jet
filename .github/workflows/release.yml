@@ -71,12 +71,12 @@ jobs:
         include:
           - os: macos-14
             target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
           # ubuntu-22.04 pins glibc 2.35 — binaries run on older distros
           # than ubuntu-latest (24.04, glibc 2.39) would produce.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
 
     runs-on: ${{ matrix.os }}
 
