@@ -8,9 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # CI runners can be significantly slower than dev machines; ipykernel
-  # boot has been observed to exceed the default 10s.
-  JET_KERNEL_INFO_TIMEOUT_SECS: "30"
 
 jobs:
   cargo_test:

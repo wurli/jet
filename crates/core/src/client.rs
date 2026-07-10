@@ -943,11 +943,7 @@ async fn handshake(
             }
         }
     };
-    let timeout_secs = std::env::var("JET_KERNEL_INFO_TIMEOUT_SECS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(10);
-    tokio::time::timeout(Duration::from_secs(timeout_secs), wait)
+    tokio::time::timeout(Duration::from_secs(10), wait)
         .await
         .map_err(|_| anyhow!("timed out waiting for kernel_info_reply"))?
 }
