@@ -124,7 +124,9 @@ write_python_kernelspec() {
     "ipykernel_launcher",
     "-f",
     "{connection_file}",
-    "--InteractiveShell.enable_tip=False"
+    "--InteractiveShell.enable_tip=False",
+    "--InteractiveShell.banner1=",
+    "--InteractiveShell.banner2="
   ],
   "display_name": "Python 3 ($name)",
   "language": "python",
