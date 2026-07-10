@@ -44,31 +44,78 @@ fn write_python_kernelspec_with_env(env: &[(&str, &str)]) -> Result<std::path::P
     Ok(path)
 }
 
+/// Best-effort read of a file, returning "<empty>" or "<missing: ...>"
+/// rather than propagating errors. Used to enrich CI failure messages.
+fn read_or_placeholder(path: &std::path::Path) -> String {
+    match std::fs::read_to_string(path) {
+        Ok(s) if s.trim().is_empty() => "<empty>".to_string(),
+        Ok(s) => s,
+        Err(e) => format!("<missing: {e}>"),
+    }
+}
+
+/// Snapshot of everything worth showing when a persist-then-execute test
+/// fails: jet's captured stderr from both invocations, the connection
+/// file, and any kernel-side log jet may have written.
+struct PersistedContext {
+    persist_stderr: std::path::PathBuf,
+    kernel_log: Option<std::path::PathBuf>,
+}
+
+impl PersistedContext {
+    fn dump(&self, label: &str) -> String {
+        let mut out = format!("=== {label} ===\n");
+        out.push_str(&format!(
+            "--- jet start --persist stderr ({}) ---\n{}\n",
+            self.persist_stderr.display(),
+            read_or_placeholder(&self.persist_stderr),
+        ));
+        if let Some(p) = &self.kernel_log {
+            out.push_str(&format!(
+                "--- kernel log ({}) ---\n{}\n",
+                p.display(),
+                read_or_placeholder(p),
+            ));
+        }
+        out
+    }
+}
+
 /// Spawn `jet start --persist` with extra args and a parent env, then
-/// EOF stdin to exit. Returns the connection file path on success.
+/// EOF stdin to exit. Returns the connection file path plus a diagnostic
+/// context callers can dump on failure.
 fn spawn_persisted_with_env(
     kernel_json: &std::path::Path,
     xdg: &std::path::Path,
     parent_env: &[(&str, &str)],
-) -> std::path::PathBuf {
+) -> (std::path::PathBuf, PersistedContext) {
     let bin = env!("CARGO_BIN_EXE_jet");
     let conn = std::env::temp_dir().join(format!(
         "jet-env-test-{:x}.json",
         rand::thread_rng().r#gen::<u64>()
     ));
     let conn_str = conn.to_string_lossy().to_string();
+    let stderr_path = std::env::temp_dir().join(format!(
+        "jet-env-test-persist-stderr-{:x}.log",
+        rand::thread_rng().r#gen::<u64>()
+    ));
+    let stderr_file = std::fs::File::create(&stderr_path).expect("open persist stderr file");
 
     let mut cmd = Command::new(bin);
     cmd.args(["start", "--connection-file", &conn_str, "--persist"]);
     cmd.arg(kernel_json);
     cmd.env("XDG_DATA_HOME", xdg);
+    // Turn on jet's debug logging so the captured stderr actually tells
+    // us something on CI (default is warn-and-above, which is silent for
+    // a normal graceful path).
+    cmd.env("RUST_LOG", "debug");
     for (k, v) in parent_env {
         cmd.env(k, v);
     }
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .expect("spawn jet (persist)");
     // Wait for jet to write the connection file — proof it reached the
@@ -84,19 +131,44 @@ fn spawn_persisted_with_env(
     std::thread::sleep(Duration::from_secs(2));
     drop(child.stdin.take());
     let _ = child.wait();
-    assert!(conn.exists(), "connection file not written");
+
+    // Jet writes a kernel-side log next to the connection file as
+    // `<conn>.log`. Include it in the diagnostic if it exists.
+    let kernel_log = {
+        let mut p = conn.clone();
+        let ext = format!(
+            "{}.log",
+            p.extension().and_then(|e| e.to_str()).unwrap_or("")
+        );
+        p.set_extension(ext);
+        if p.exists() { Some(p) } else { None }
+    };
+    let ctx = PersistedContext {
+        persist_stderr: stderr_path,
+        kernel_log,
+    };
+
+    assert!(
+        conn.exists(),
+        "connection file not written\n{}",
+        ctx.dump("spawn_persisted_with_env"),
+    );
     // The kernel should still be listening after jet detached. Poll the
     // shell port until it accepts a TCP start, so `jet execute` doesn't
     // race the kernel's post-detach settling.
-    wait_for_kernel_reachable(&conn, Duration::from_secs(10));
-    conn
+    wait_for_kernel_reachable(&conn, Duration::from_secs(10), &ctx);
+    (conn, ctx)
 }
 
 /// Read the shell port out of `conn` and poll TCP-start against it until
 /// the kernel accepts or `timeout` elapses. Panics with a useful message
 /// on timeout — the alternative is `run_execute` failing later with the
 /// opaque "kernel not reachable" error.
-fn wait_for_kernel_reachable(conn: &std::path::Path, timeout: Duration) {
+fn wait_for_kernel_reachable(
+    conn: &std::path::Path,
+    timeout: Duration,
+    ctx: &PersistedContext,
+) {
     let info: serde_json::Value =
         serde_json::from_slice(&std::fs::read(conn).expect("read connection file"))
             .expect("parse connection file");
@@ -112,12 +184,21 @@ fn wait_for_kernel_reachable(conn: &std::path::Path, timeout: Duration) {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    panic!("kernel never became reachable at {addr}: {last_err}");
+    panic!(
+        "kernel never became reachable at {addr}: {last_err}\n{}",
+        ctx.dump("wait_for_kernel_reachable"),
+    );
 }
 
 /// Run `jet execute` against an existing connection file and return the
 /// stdout output as a UTF-8 string. Fails the test if execute exits non-zero.
-fn run_execute(conn: &std::path::Path, xdg: &std::path::Path, code: &str) -> String {
+/// `ctx` is dumped on failure to enrich the diagnostic with jet's own logs.
+fn run_execute(
+    conn: &std::path::Path,
+    xdg: &std::path::Path,
+    code: &str,
+    ctx: &PersistedContext,
+) -> String {
     let bin = env!("CARGO_BIN_EXE_jet");
     let out = Command::new(bin)
         .args([
@@ -128,14 +209,16 @@ fn run_execute(conn: &std::path::Path, xdg: &std::path::Path, code: &str) -> Str
             code,
         ])
         .env("XDG_DATA_HOME", xdg)
+        .env("RUST_LOG", "debug")
         .stdin(Stdio::null())
         .output()
         .expect("run jet execute");
     assert!(
         out.status.success(),
-        "jet execute failed: stdout={} stderr={}",
+        "jet execute failed: stdout={} stderr={}\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
+        ctx.dump("run_execute"),
     );
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
@@ -220,12 +303,12 @@ fn connect_inherits_parent_env_with_spec_winning_on_conflict() {
         ("JET_TEST_PARENT_ONLY", "from-parent"),
         ("JET_TEST_OVERRIDE", "from-parent"),
     ];
-    let conn = spawn_persisted_with_env(&kernel_json, &xdg, &parent_env);
+    let (conn, ctx) = spawn_persisted_with_env(&kernel_json, &xdg, &parent_env);
 
     let code = "import os; print('SPEC_ONLY=' + os.environ.get('JET_TEST_SPEC_ONLY','<unset>')); \
                 print('PARENT_ONLY=' + os.environ.get('JET_TEST_PARENT_ONLY','<unset>')); \
                 print('OVERRIDE=' + os.environ.get('JET_TEST_OVERRIDE','<unset>'))";
-    let out = run_execute(&conn, &xdg, code);
+    let out = run_execute(&conn, &xdg, code, &ctx);
 
     let _ = std::process::Command::new("pkill")
         .args(["-9", "-f", conn.to_str().unwrap()])
