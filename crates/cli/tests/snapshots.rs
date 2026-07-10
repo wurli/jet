@@ -418,7 +418,7 @@ fn single_client_executes_print() {
 
 /// Two clients sharing a kernel. `start` is the observer; `attach` runs
 /// `print("HELLO_FROM_FOREIGN")`. Snapshot the observer's screen to
-/// confirm the foreign output appears tagged `[jet]` and that the local
+/// confirm the foreign output appears tagged `jet` and that the local
 /// prompt is preserved.
 #[test]
 fn two_clients_foreign_print_is_tagged_and_visible() {
@@ -590,10 +590,8 @@ fn input_request_displays_and_accepts_value() {
     h.shutdown();
 }
 
-/// When `jet attach --session-name alpha` runs code, the observer's
-/// foreign-output prefix should be `[alpha]` rather than the default
-/// `[jet]`. Captures the prefix end-to-end from CLI flag to terminal
-/// rendering.
+/// When `jet attach --session-name alpha` runs code, the observer's foreign-output should be
+/// marked as such. Test is end-to-end from CLI flag to terminal rendering.
 #[test]
 fn foreign_attach_session_name_appears_as_prefix() {
     let Some(kernel_json) = python_kernelspec_or_skip() else {
@@ -618,7 +616,7 @@ fn foreign_attach_session_name_appears_as_prefix() {
 }
 
 /// And the reverse direction: when `jet start --session-name beta` runs
-/// code, the attached observer's prefix should be `[beta]`.
+/// code, the attached observer's prefix should include `beta`.
 #[test]
 fn foreign_start_session_name_appears_as_prefix() {
     let Some(kernel_json) = python_kernelspec_or_skip() else {
@@ -895,10 +893,27 @@ fn typing_after_foreign_output_does_not_clear_screen() {
     t1.shutdown();
 }
 
-/// Foreign error: t2 raises `ValueError`. The observer should see the
-/// `ExecuteInput` tagged with `[jet] > ` and each line of the traceback
-/// tagged with `[jet] ` too — no untagged kernel output should leak past
-/// the prefix logic.
+/// Foreign error: t2 raises `ValueError`. The observer should see the `ExecuteInput` tagged with
+/// `jet` and each line of the traceback tagged with `jet` too — no untagged kernel output should
+/// leak past the prefix logic.
+///
+/// KNOWN-FLAKY on CI: intermittently fails with a stray `> ` prompt on the first traceback line
+/// (`> │ ----...` instead of `│ ----...`). Two plausible causes, both rooted in the
+/// reedline-vs-renderer race that fires when a foreign Busy arrives while the observer is in
+/// `read_line`:
+///
+/// (A) Reedline reuses its pre-suspension prompt row on resume. `PainterSuspendedState` records
+/// `previous_prompt_rows_range` at suspension; on the next `read_line`,
+/// `select_prompt_row` in reedline reuses the old `start_row` when the current cursor
+/// row still falls inside that range. If the renderer's foreign writes leave the cursor
+/// inside the old range, reedline repaints `> ` at the *old* prompt row — now sitting
+/// mid-traceback — and the next Error byte lands at whatever column reedline left the
+/// cursor. That produces exactly one `> ` prefix on one traceback line, matching the diff.
+///
+/// (B) Idle races Error. If the renderer processes Idle before Error somehow (event reordering
+/// on iopub, or an unlucky interleave), Idle clears `busy` and wakes the park-gate, the
+/// REPL loop calls `read_line`, reedline paints `> `, then Error fires and writes `│ ---`
+/// after it — same visual outcome. Less likely on a serialized iopub SUB, but not ruled out.
 #[test]
 fn foreign_traceback_lines_are_tagged() {
     let Some(kernel_json) = python_kernelspec_or_skip() else {
