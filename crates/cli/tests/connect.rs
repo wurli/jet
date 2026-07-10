@@ -2,8 +2,9 @@
 
 #![allow(clippy::zombie_processes)]
 
+use std::net::TcpStream;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use rand::Rng;
@@ -70,11 +71,48 @@ fn spawn_persisted_with_env(
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn jet (persist)");
-    std::thread::sleep(Duration::from_secs(3));
+    // Wait for jet to write the connection file — proof it reached the
+    // point of picking ports and generating the file. On a slow runner
+    // this can take several seconds after spawn.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !conn.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // A brief additional wait so the REPL has landed on the readline
+    // prompt (i.e. finished the kernel_info round-trip) before we EOF
+    // its stdin. Closing stdin mid-startup can race the detach path.
+    std::thread::sleep(Duration::from_secs(2));
     drop(child.stdin.take());
     let _ = child.wait();
     assert!(conn.exists(), "connection file not written");
+    // The kernel should still be listening after jet detached. Poll the
+    // shell port until it accepts a TCP start, so `jet execute` doesn't
+    // race the kernel's post-detach settling.
+    wait_for_kernel_reachable(&conn, Duration::from_secs(10));
     conn
+}
+
+/// Read the shell port out of `conn` and poll TCP-start against it until
+/// the kernel accepts or `timeout` elapses. Panics with a useful message
+/// on timeout — the alternative is `run_execute` failing later with the
+/// opaque "kernel not reachable" error.
+fn wait_for_kernel_reachable(conn: &std::path::Path, timeout: Duration) {
+    let info: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(conn).expect("read connection file"))
+            .expect("parse connection file");
+    let ip = info["ip"].as_str().unwrap_or("127.0.0.1");
+    let port = info["shell_port"].as_u64().expect("shell_port");
+    let addr = format!("{ip}:{port}");
+    let deadline = Instant::now() + timeout;
+    let mut last_err = String::from("never attempted");
+    while Instant::now() < deadline {
+        match TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(200)) {
+            Ok(_) => return,
+            Err(e) => last_err = e.to_string(),
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("kernel never became reachable at {addr}: {last_err}");
 }
 
 /// Run `jet execute` against an existing connection file and return the
