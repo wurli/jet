@@ -125,7 +125,7 @@ write_python_kernelspec() {
     "-f",
     "{connection_file}",
     "--InteractiveShell.enable_tip=False",
-    "--InteractiveShell.banner1=",
+    "--InteractiveShell.banner1=Python test banner",
     "--InteractiveShell.banner2="
   ],
   "display_name": "Python 3 ($name)",

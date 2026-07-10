@@ -2,9 +2,7 @@
 source: crates/cli/tests/snapshots.rs
 expression: h.snapshot_screen()
 ---
-Python <version>
-Type 'copyright', 'credits' or 'license' for more information
-IPython <version>
+Python test banner
 > print(chr(109) + "erged-backspace-9f31")
 merged-backspace-9f31
 >

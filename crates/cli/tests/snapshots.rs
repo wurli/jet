@@ -37,24 +37,6 @@ use rand::Rng;
 mod common;
 use common::*;
 
-/// Collapse the volatile parts of the IPython/Python banner so snapshots
-/// survive python/ipykernel/clang version bumps. Matches anything that
-/// starts with `Python ` or `IPython ` and replaces the line with a
-/// stable placeholder; leaves all other lines untouched.
-fn normalise_banner(line: &str) -> String {
-    if line.starts_with("Python ") {
-        "Python <version>".to_string()
-    } else if line.starts_with("IPython ") {
-        "IPython <version>".to_string()
-    } else if line.starts_with("Type 'copyright', 'credits' or 'license'") {
-        // ipykernel's middle banner line — collapse for stability across
-        // CPython builds.
-        "Type 'copyright', 'credits' or 'license' for more information".to_string()
-    } else {
-        line.to_string()
-    }
-}
-
 /// Prep the python kernelspec, or log SKIP and return `None` if the
 /// dev-kernel install script hasn't been run.
 fn python_kernelspec_or_skip() -> Option<std::path::PathBuf> {
@@ -296,17 +278,14 @@ impl Harness {
     }
 
     /// Render the current visible screen as plain text (trailing spaces
-    /// stripped per row, no ANSI codes). One row per line. Version-strings
-    /// from the Python/IPython banner are normalised so snapshots survive
-    /// kernel/python upgrades. IPython's "Tip: …" line is deterministic
-    /// because the Makefile pins `SOURCE_DATE_EPOCH`.
+    /// stripped per row, no ANSI codes). One row per line.
     fn snapshot_screen(&self) -> String {
         let parser = self.parser.lock().unwrap();
         let contents = parser.screen().contents();
         let mut out = String::new();
         for line in contents.lines() {
             let line = line.trim_end_matches(' ');
-            out.push_str(&normalise_banner(line));
+            out.push_str(line);
             out.push('\n');
         }
         while out.ends_with("\n\n") {
