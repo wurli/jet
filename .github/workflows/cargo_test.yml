@@ -55,6 +55,13 @@ jobs:
         if: runner.os == 'Linux'
         run: echo "LD_LIBRARY_PATH=$(R RHOME)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
+      - name: Verify LD_LIBRARY_PATH
+        if: runner.os == 'Linux'
+        run: |
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+          ls -la "$LD_LIBRARY_PATH/libR.so" || echo "libR.so not found"
+          ldd $(which R) || true
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
