@@ -1,0 +1,10 @@
+target/
+.jet-dev/
+deps/
+kernels/
+test-kernels/
+debug/
+lua/
+notes/
+Untitled
+tmp.*
