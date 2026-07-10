@@ -8,5 +8,8 @@
   ],
   "display_name": "Python 3 (python3)",
   "language": "python",
-  "interrupt_mode": "signal"
+  "interrupt_mode": "signal",
+  "env": {
+    "JET_TEST_SPEC_VAR": "from-spec"
+  }
 }

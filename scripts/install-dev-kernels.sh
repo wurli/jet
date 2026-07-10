@@ -106,6 +106,11 @@ write_python_kernelspec() {
   local mode=$2
   local dir="$KERNELS_DIR/$name"
   mkdir -p "$dir"
+  # JET_TEST_SPEC_VAR is baked into the spec so
+  # `connect_inherits_parent_env_with_spec_winning_on_conflict` can
+  # verify (a) spec env reaches the kernel, and (b) spec wins on conflict
+  # with the parent env — without having to build a bespoke kernelspec at
+  # test time (which pulls in whatever python3 happens to be on PATH).
   cat >"$dir/kernel.json" <<JSON
 {
   "argv": [
@@ -117,7 +122,10 @@ write_python_kernelspec() {
   ],
   "display_name": "Python 3 ($name)",
   "language": "python",
-  "interrupt_mode": "$mode"
+  "interrupt_mode": "$mode",
+  "env": {
+    "JET_TEST_SPEC_VAR": "from-spec"
+  }
 }
 JSON
   echo "==> wrote $dir/kernel.json (interrupt_mode=$mode)"
