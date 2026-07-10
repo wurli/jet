@@ -25,7 +25,7 @@ jobs:
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
         with:
-          r-version: "4.5.2"
+          r-version: "4.5.0"
 
       # Cache the ark binary (~40MB download) and the ipykernel venv
       # (~a few seconds to reinstall). Keyed on the install script so any
@@ -63,7 +63,7 @@ jobs:
       # detail. Dump the ark log (path set in test-kernels/ark/kernel.json)
       # so CI failures have something to grep.
       - name: Dump ark log
-        if: failure() && steps.cargo_test.conclusion == 'failure'
+        if: ${{ always() && steps.cargo_test.outcome != 'success' }}
         run: |
           log=test-kernels/ark/ark.log
           if [[ -f "$log" ]]; then
