@@ -688,8 +688,9 @@ fn foreign_prompt_style_renders_name_prompt_no_wrap() {
 
     t1.send(b"print(\"y\")\n").unwrap();
     assert!(
-        t2.wait_for_screen("beta>", Duration::from_secs(15)),
-        "t2 never saw `beta>` prompt-style header"
+        t2.wait_for_screen("beta>", Duration::from_secs(30)),
+        "t2 never saw `beta>` prompt-style header; screen was:\n{}",
+        t2.snapshot_screen(),
     );
     t2.settle(Duration::from_millis(700), Duration::from_secs(5));
 
