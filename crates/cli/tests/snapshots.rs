@@ -638,7 +638,8 @@ fn foreign_start_session_name_appears_as_prefix() {
     t2.settle(Duration::from_millis(500), Duration::from_secs(3));
 
     t1.send(b"print(\"y\")\n").unwrap();
-    t2.expect_screen("┌─beta", Duration::from_secs(15));
+    // Wait until we actually see the output
+    t2.expect_screen("│ y", Duration::from_secs(15));
     t2.settle(Duration::from_millis(700), Duration::from_secs(5));
 
     insta::assert_snapshot!(
@@ -963,4 +964,3 @@ fn quit_does_not_leave_trailing_prompt() {
     );
     h.shutdown();
 }
-
