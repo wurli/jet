@@ -1,29 +1,35 @@
 local function get_lib_extension()
-	if jit.os:lower() == "mac" or jit.os:lower() == "osx" then
+	local sysname = vim.uv.os_uname().sysname:lower()
+
+	if sysname:match("darwin") or sysname:match("linux") then
 		return ".dylib"
 	end
-	if jit.os:lower() == "windows" then
+
+	if sysname:match("windows") then
 		return ".dll"
 	end
+
 	return ".so"
 end
 
--- local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/')
-local base_path = debug.getinfo(1).source:match("@?(.*/)") .. "../../../target/debug/"
-vim.notify("WARNING: using debug build")
-local lib_name = "jet_lua"
-local entry_symbol = "luaopen_jet"
-local lib_extension = get_lib_extension()
+local get_jet_loader = function(dir)
+	local lib_name = "jet_lua"
+	local entry_symbol = "luaopen_jet"
+	local lib_extension = get_lib_extension()
 
--- Try loading with lib prefix first (Unix-style)
-local lib_path = base_path .. "lib" .. lib_name .. lib_extension
-local loader = package.loadlib(lib_path, entry_symbol)
+	-- Try loading with lib prefix first (Unix-style)
+	local loader = package.loadlib(dir .. "lib" .. lib_name .. lib_extension, entry_symbol)
 
--- If that fails, try without lib prefix (Windows-style)
-if not loader then
-	lib_path = base_path .. lib_name .. lib_extension
-	loader = package.loadlib(lib_path, entry_symbol)
+	-- If that fails, try without lib prefix (Windows-style)
+	if not loader then
+		loader = package.loadlib(dir .. lib_name .. lib_extension, entry_symbol)
+	end
+
+	return loader
 end
+
+vim.notify("WARNING: using debug build")
+local loader = get_jet_loader(debug.getinfo(1).source:match("@?(.*/)") .. "../../../target/debug/")
 
 if not loader then
 	error("Failed to load native module from: " .. lib_path)
@@ -153,6 +159,7 @@ end
 ---@field listen fun(client_id: string, opts?: jet.listen.opts): fun(): jet.kernel.response?
 ---@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string)
 ---@field make_session_id fun(lang: string): string
+---@field version fun(): string -- Get the current version of Jet
 local out = loader()
 
 return out
