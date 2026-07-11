@@ -9,7 +9,7 @@ edition = "2024"
 [workspace.dependencies]
 anyhow = "1"
 base64 = "0.22"
-clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+clap = { version = "4", features = ["cargo", "derive", "env", "wrap_help"] }
 crossbeam-channel = "0.5"
 env_logger = "0.11"
 futures-util = "0.3"
