@@ -1,5 +1,5 @@
 [package]
-name = "jet_cli"
+name = "jet"
 version.workspace = true
 edition.workspace = true
 repository = "https://github.com/wurli/jet"
