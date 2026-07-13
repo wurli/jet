@@ -2,7 +2,8 @@ local M = {}
 
 ---@class jet.config
 M.defaults = {
-	jet_binary = "jet",
+	jet_binary_path = nil, ---@type string?
+	jet_library_path = nil, ---@type string?
 	stop_on_buf_wipeout = true,
 	stop_on_nvim_quit = true,
 	auto_set_primary = true, ---@type boolean
@@ -45,6 +46,9 @@ M.defaults = {
 
 ---@class jet.data
 M.data = {
+	jet_min_version = "0.0.1",
+	jet_binary_path = nil, ---@type string?
+	jet_library_path = nil, ---@type string?
 	jet_nvim_data_dir = vim.fn.stdpath("data") .. "/jet",
 }
 
@@ -59,7 +63,14 @@ function M.set(options)
 		options.jet_binary = bin
 	end
 
+	local download = require("jet.core.utils.download")
+
 	M.options = vim.tbl_deep_extend("force", M.defaults, options or {})
+
+	require("jet.core.utils.download").maybe_download_jet(function(res)
+		M.data.jet_binary_path = res.bin_path
+		M.data.jet_library_path = res.lib_path
+	end)
 end
 
 return M

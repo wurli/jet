@@ -1,5 +1,57 @@
 local M = {}
 
+local on_key_ns = vim.api.nvim_create_namespace("jet_prompt_yn")
+---@param msg string
+---@param opts string[]
+---@param callback fun(key: string)
+M.input_key = function(msg, opts, callback)
+	vim.schedule(function()
+		local message = { { msg, "Conceal" } }
+		table.insert(message, { " (enter " .. table.concat(opts, "/") .. "): " })
+		vim.api.nvim_echo(message, false, {})
+		vim.on_key(function(key)
+			if vim.trim(key) == "" then
+				return
+			end
+			vim.on_key(nil, on_key_ns)
+			if vim.tbl_contains(opts, key) then
+				vim.api.nvim_echo({ { key, "OkMsg" } }, false, {})
+			else
+				vim.api.nvim_echo({ { "" } }, false, {})
+			end
+			callback(key)
+			return ""
+		end, on_key_ns)
+	end)
+end
+
+---Returns `true` if version `a` is smaller than `b`, otherwise `false`.
+---
+---Version numbers are expected to be in the format
+---`v?<major>.<minor>.<patch>`, e.g. `v1.2.3` or `1.2.3`.
+---
+---@param a string
+---@param b string
+---@return boolean
+M.version_compare = function(a, b)
+	local a_major, a_minor, a_patch = a:match("^v?(%d+)%.(%d+)%.(%d+)$")
+	local b_major, b_minor, b_patch = b:match("^v?(%d+)%.(%d+)%.(%d+)$")
+
+	local va = { maj = tonumber(a_major), min = tonumber(a_minor), patch = tonumber(a_patch) }
+	local vb = { maj = tonumber(b_major), min = tonumber(b_minor), patch = tonumber(b_patch) }
+
+	assert(va.maj and va.min and va.patch, "Invalid version number format: " .. a)
+	assert(vb.maj and vb.min and vb.patch, "Invalid version number format: " .. b)
+
+	if va.maj ~= vb.maj then
+		return va.maj < vb.maj
+	elseif va.min ~= vb.min then
+		return va.min < vb.min
+	else
+		return va.patch < vb.patch
+	end
+end
+
 ---Repeatedly run a callback until a particular result is returned
 ---
 ---Opts:

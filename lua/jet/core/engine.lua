@@ -1,39 +1,7 @@
-local function get_lib_extension()
-	local sysname = vim.uv.os_uname().sysname:lower()
+local lib_path = require("jet.config").data.jet_library_path
+assert(lib_path, "Could not resolve path to the Jet library")
 
-	if sysname:match("darwin") or sysname:match("linux") then
-		return ".dylib"
-	end
-
-	if sysname:match("windows") then
-		return ".dll"
-	end
-
-	return ".so"
-end
-
-local get_jet_loader = function(dir)
-	local lib_name = "jet_lua"
-	local entry_symbol = "luaopen_jet"
-	local lib_extension = get_lib_extension()
-
-	-- Try loading with lib prefix first (Unix-style)
-	local loader = package.loadlib(dir .. "lib" .. lib_name .. lib_extension, entry_symbol)
-
-	-- If that fails, try without lib prefix (Windows-style)
-	if not loader then
-		loader = package.loadlib(dir .. lib_name .. lib_extension, entry_symbol)
-	end
-
-	return loader
-end
-
-vim.notify("WARNING: using debug build")
-local loader = get_jet_loader(debug.getinfo(1).source:match("@?(.*/)") .. "../../../target/debug/")
-
-if not loader then
-	error("Failed to load native module from: " .. lib_path)
-end
+local loader = package.loadlib(lib_path, "luaopen_jet")
 
 ---@class jet.kernel.languageinfo
 ---@field name string

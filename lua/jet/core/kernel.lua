@@ -1,5 +1,5 @@
 local manager = require("jet.core.manager")
-local config = require("jet.config").options
+local config = require("jet.config")
 local utils = require("jet.core.utils")
 
 local augroup = vim.api.nvim_create_augroup("jet.stop.term", { clear = true })
@@ -54,7 +54,7 @@ function Kernel.init_owned(opts)
 	local out = setmetatable(obj, Kernel)
 	Kernel.try_resolve_filetype(out)
 
-	for _, hook in ipairs(config.hooks.on_kernel_init) do
+	for _, hook in ipairs(config.options.hooks.on_kernel_init) do
 		hook(out)
 	end
 
@@ -83,7 +83,7 @@ function Kernel.init_external(opts)
 
 	Kernel.try_resolve_filetype(out)
 
-	for _, hook in ipairs(config.hooks.on_kernel_init) do
+	for _, hook in ipairs(config.options.hooks.on_kernel_init) do
 		hook(out)
 	end
 
@@ -124,7 +124,7 @@ function Kernel:open_term(callback, win_config)
 			vim.api.nvim_set_current_win(term_win)
 			vim.cmd.startinsert()
 		else
-			local opts = vim.tbl_extend("keep", win_config or config.repl_win_opts or {}, {
+			local opts = vim.tbl_extend("keep", win_config or config.options.repl_win_opts or {}, {
 				split = "right",
 				style = "minimal",
 			})
@@ -171,13 +171,13 @@ function Kernel:create_term(callback)
 		vim.api.nvim_buf_call(term_buf, function()
 			assert(self.session_id, "Kernel has no session id")
 			local term_job_id = vim.fn.jobstart({
-				config.jet_binary,
+				config.data.jet_binary_path,
 				"attach",
 				self.session_id,
 				"--banner",
 				"--session-name",
 				"nvim",
-				config.send.send_by_expr and "--no-indent" or nil,
+				config.options.send.send_by_expr and "--no-indent" or nil,
 			}, {
 				term = true,
 				on_exit = function()
@@ -197,7 +197,7 @@ function Kernel:create_term(callback)
 
 		-- On TermEnter, record this kernel as the last used
 		-- TODO: configure whether or not this should automatically happen
-		if config.auto_set_primary and self.term then
+		if config.options.auto_set_primary and self.term then
 			vim.api.nvim_create_autocmd("TermEnter", {
 				buffer = self.term.buf,
 				group = augroup,
@@ -267,7 +267,7 @@ function Kernel:handle_stream()
 			vim.api.nvim__redraw({ statusline = true, buf = self.term.buf })
 		end
 
-		for _, hook in pairs(config.hooks.on_execution_state) do
+		for _, hook in pairs(config.options.hooks.on_execution_state) do
 			hook(self, new_state)
 		end
 	end
@@ -278,7 +278,7 @@ function Kernel:handle_stream()
 			return "exit"
 		elseif res.status == "busy" then
 			update_execution_state(res.msg)
-			for _, hook in pairs(config.hooks.on_message) do
+			for _, hook in pairs(config.options.hooks.on_message) do
 				hook(self, res.msg)
 			end
 			return "continue"
@@ -338,7 +338,7 @@ function Kernel:start_lua_client(callback)
 				self:set_as_filetype_primary()
 			end
 
-			for _, hook in ipairs(config.hooks.on_lua_client_start) do
+			for _, hook in ipairs(config.options.hooks.on_lua_client_start) do
 				hook(self)
 			end
 
@@ -364,7 +364,7 @@ function Kernel:try_resolve_filetype()
 		return
 	end
 	local shorten = require("jet.core.utils").path_shorten
-	for ft, default_spec in pairs(config.default_kernels) do
+	for ft, default_spec in pairs(config.options.default_kernels) do
 		local s = type(default_spec) == "string" and default_spec or default_spec()
 		if s and shorten(s) == shorten(self.spec_path) then
 			self.filetype = ft
@@ -412,7 +412,7 @@ function Kernel:close()
 
 	self:delete_term_buffer()
 
-	if self.owned and config.stop_on_buf_wipeout then
+	if self.owned and config.options.stop_on_buf_wipeout then
 		local ok, err = pcall(require("jet.core.engine").stop, self.session_id)
 		if ok then
 			utils.log_info("Stopped kernel '%s'", self.spec.display_name)
@@ -421,7 +421,7 @@ function Kernel:close()
 		end
 	end
 
-	for _, hook in ipairs(config.hooks.on_kernel_close) do
+	for _, hook in ipairs(config.options.hooks.on_kernel_close) do
 		hook(self)
 	end
 end
@@ -507,7 +507,7 @@ function Kernel:send_repl(code)
 	-- at the end of statements which end on an indented line in order to be
 	-- actually sent to the kernel (otherwise you get the continuation prompt
 	-- '+ ...').
-	for _, hook in ipairs(config.hooks.on_send_pre) do
+	for _, hook in ipairs(config.options.hooks.on_send_pre) do
 		hook(self, code)
 	end
 
@@ -521,7 +521,7 @@ function Kernel:send_repl(code)
 
 	-- We use bracketed paste so the Jet REPL knows not to evaluate the code
 	-- until the end of the paste. This matches behaviour of Positron.
-	if not config.send.send_by_expr then
+	if not config.options.send.send_by_expr then
 		-- https://en.wikipedia.org/wiki/Bracketed-paste#Description_of_bracketed-paste
 		local bracketed_paste_start = "\x1b[200~"
 		local bracketed_paste_end = "\x1b[201~"
