@@ -26,8 +26,14 @@ be broken into its own repo.
 
 ### Installation
 
-Prebuilt binaries for macOS (arm64) and Linux (x86_64, arm64) are available
-on the [releases page](https://github.com/wurli/jet/releases/latest).
-Download the tarball for your platform, extract, and put `jet` on your `PATH`.
+Mac/Linux:
+
+```
+curl -LsSf https://github.com/wurli/jet/releases/latest/download/jet-installer.sh | sh
+```
+
+This will download the Jet CLI binary for your system and add it to the
+`$PATH`, but you should read the script first anyway! The first time you
+install Jet you'll need to restart your terminal for this to take effect.
 
 Jet is not yet supported on Windows. Contributions are welcome!
