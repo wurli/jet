@@ -1,0 +1,33 @@
+[workspace]
+members = [
+  "cargo:crates/cli",
+  "cargo:crates/lua",
+]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell"]
+# Which kinds of built libraries to include in the final archives
+package-libraries = "cdylib"
+# Which kinds of packaged libraries to install
+install-libraries = "cdylib"
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
+# The archive format to use for non-windows builds (defaults .tar.xz)
+unix-archive = ".tar.gz"
+
+[dist.github-custom-runners]
+# Use an `ubuntu-latest` runner for all "global" steps of the release process,
+# rather than cargo-dist's default of using the oldest possible Linux runner.
+# This includes `plan`, `build-global-artifacts`, `host`, and `announce`, none
+# of which actually rely on the specific Linux version.
+global = "ubuntu-latest"
