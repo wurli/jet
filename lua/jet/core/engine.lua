@@ -1,33 +1,7 @@
-local function get_lib_extension()
-	if jit.os:lower() == "mac" or jit.os:lower() == "osx" then
-		return ".dylib"
-	end
-	if jit.os:lower() == "windows" then
-		return ".dll"
-	end
-	return ".so"
-end
+local lib_path = require("jet.config").data.jet_library_path
+assert(lib_path, "Could not resolve path to the Jet library")
 
--- local base_path = vim.fn.simplify(debug.getinfo(1).source:match('@?(.*/)') .. '../../../target/release/')
-local base_path = debug.getinfo(1).source:match("@?(.*/)") .. "../../../target/debug/"
-vim.notify("WARNING: using debug build")
-local lib_name = "jet_lua"
-local entry_symbol = "luaopen_jet"
-local lib_extension = get_lib_extension()
-
--- Try loading with lib prefix first (Unix-style)
-local lib_path = base_path .. "lib" .. lib_name .. lib_extension
-local loader = package.loadlib(lib_path, entry_symbol)
-
--- If that fails, try without lib prefix (Windows-style)
-if not loader then
-	lib_path = base_path .. lib_name .. lib_extension
-	loader = package.loadlib(lib_path, entry_symbol)
-end
-
-if not loader then
-	error("Failed to load native module from: " .. lib_path)
-end
+local loader = package.loadlib(lib_path, "luaopen_jet")
 
 ---@class jet.kernel.languageinfo
 ---@field name string
@@ -153,6 +127,7 @@ end
 ---@field listen fun(client_id: string, opts?: jet.listen.opts): fun(): jet.kernel.response?
 ---@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string)
 ---@field make_session_id fun(lang: string): string
+---@field version fun(): string -- Get the current version of Jet
 local out = loader()
 
 return out

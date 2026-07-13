@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::builder::styling::{AnsiColor, Styles};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum, crate_version};
 
 pub const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Green.on_default().bold())
@@ -24,7 +24,12 @@ pub fn conflict_exit(subcommand: &str, msg: impl Into<String>) -> ! {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "jet", about = "A Jupyter Kernel REPL Driver", styles = STYLES)]
+#[command(
+    name = "jet",
+    about = "A Jupyter Kernel REPL Driver",
+    styles = STYLES,
+    version = crate_version!(),
+)]
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,

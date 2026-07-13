@@ -2,6 +2,7 @@
 name = "jet_lua"
 version.workspace = true
 edition.workspace = true
+repository = "https://github.com/wurli/jet"
 
 [lib]
 # `cdylib` is what Neovim/LuaJIT loads via `require('jet')`.
@@ -9,10 +10,15 @@ edition.workspace = true
 # same compilation, so we don't rebuild dependencies twice per test run.
 crate-type = ["cdylib", "rlib"]
 
-[dependencies]
-jet_core.workspace = true
+[package.metadata.dist]
+cdylibs = ["jet_lua"]
+# No installer for the lua cdylib — it's loaded by Neovim via require(),
+# not installed to a bin path.
+installers = []
 
+[dependencies]
 anyhow.workspace = true
+jet_core.workspace = true
 log.workspace = true
 mlua.workspace = true
 once_cell.workspace = true

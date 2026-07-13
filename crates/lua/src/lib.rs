@@ -37,6 +37,17 @@ use api::request::{
 };
 use api::stdin::provide_stdin;
 
+// Lifted from clap
+macro_rules! crate_version {
+    () => {
+        env!("CARGO_PKG_VERSION")
+    };
+}
+
+fn version(_lua: &Lua, _: ()) -> LuaResult<String> {
+    Ok(crate_version!().to_string())
+}
+
 #[mlua::lua_module]
 fn jet(lua: &Lua) -> LuaResult<LuaTable> {
     jet_core::logger::init_logger(Some(std::path::Path::new("jet-lua.log")));
@@ -67,5 +78,6 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("comm_listen", lua.create_function(comm_listen)?)?;
     exports.set("listen", lua.create_function(listen)?)?;
     exports.set("provide_stdin", lua.create_function(provide_stdin)?)?;
+    exports.set("version", lua.create_function(version)?)?;
     Ok(exports)
 }

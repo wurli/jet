@@ -453,6 +453,18 @@ fn banner_renders_before_first_prompt() {
 /// A complete one-liner executes without showing a continuation prompt.
 /// Snapshot captures the value (`2`) appearing directly under `> 1+1`,
 /// with no `+ ` in between.
+/// TODO: CI flake. Sometimes we get extra lines like this:
+/// ────────────────────────────────────────────────────────────────────────────────
+/// -old snapshot
+/// +new results
+/// ────────────┬───────────────────────────────────────────────────────────────────
+///     1     1 │ Python test banner
+///           2 │+
+///     2     3 │ > print(1+1)
+///     3     4 │ 2
+///     4     5 │ >
+/// ────────────┴───────────────────────────────────────────────────────────────────
+/// Stopped on the first failure. Run `cargo insta test` to run all snapshots.
 #[test]
 fn complete_one_liner_executes() {
     let Some(kernel_json) = python_kernelspec_or_skip() else {
