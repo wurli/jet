@@ -26,7 +26,10 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serial_test = "3"
 tokio = { version = "1", features = ["full"] }
 
-# The profile that 'dist' will build with
+# The profile that 'dist' will build with. LTO is left off: on macOS,
+# `jet_lua` links with `-undefined dynamic_lookup` (Neovim provides the
+# Lua symbols at load time), and thin-LTO on a cdylib causes the linker
+# to resolve those symbols during codegen — breaking the build with
+# "Undefined symbols: _lua_tolstring, _lua_type, …" on aarch64-apple-darwin.
 [profile.dist]
 inherits = "release"
-lto = "thin"
