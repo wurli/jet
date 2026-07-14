@@ -86,3 +86,14 @@ jobs:
           else
             echo "no ark log at $log"
           fi
+
+      # Snapshot tests spawn jet with `--log target/jet-test-logs/<test>.log`.
+      # Upload the directory on failure so flaky runs come with real log
+      # context, not just the vt100 screen snapshot.
+      - name: Upload jet test logs
+        if: ${{ always() && steps.cargo_test.outcome != 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jet-test-logs-${{ matrix.os }}
+          path: target/jet-test-logs/
+          if-no-files-found: ignore

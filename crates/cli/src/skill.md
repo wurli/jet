@@ -49,6 +49,9 @@ result) using `jet execute`:
 # Make sure you use --session-name so the user can see who's running code in their session!
 ❯ jet execute 2026-07-03_152521_r_dotfiles_bc9832 'print("hi")' --session-name claude
 [1] "hi"
+
+# You can also pipe into `jet execute`:
+echo 'print("HI")' | jet execute 2026-07-03_152521_r_dotfiles_bc9832 --session-name claude
 ```
 
 ## Advanced  use
