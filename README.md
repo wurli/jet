@@ -7,6 +7,19 @@ built with love using Rust.
 > Jet is currently in alpha. It works pretty well but is in active development
 > and **will** undergo breaking changes. Use at your own risk!
 
+### Installation
+
+Mac/Linux:
+
+```
+curl -LsSf https://github.com/wurli/jet/releases/latest/download/jet-installer.sh | sh
+```
+
+This will download the Jet CLI binary for your system and add it to the
+`$PATH`, but you should read the script first anyway!
+
+Jet is not yet supported on Windows. Contributions are welcome!
+
 ## CLI Usage
 
 * `jet start [kernelspec?]`: Start a REPL powered by a given kernel. If
@@ -21,10 +34,13 @@ built with love using Rust.
   results to stdout. You can find the `session-id` using `jet list-sessions`.
   Hint: LLMs can do a lot with this command!
 
+* `jet skill`: Print text which can be used in a `SKILL.md` file to teach
+  agents how to use Jet.
+
 The Jet CLI provides a myriad of other handy subcommands. Use `jet -h` to see
 the full list 💫
 
-## Lua lib
+## Lua API
 
 Jet also provides a Lua library which, among other things, lets you communicate
 with kernels using raw Jupyter messages. This allows much finer grained control
@@ -37,19 +53,5 @@ in the session. It's magic!
 
 ## jet.nvim
 
-Currently `jet.nvim` is bundled into this project - this will likely eventually
-be broken into its own repo.
-
-### Installation
-
-Mac/Linux:
-
-```
-curl -LsSf https://github.com/wurli/jet/releases/latest/download/jet-installer.sh | sh
-```
-
-This will download the Jet CLI binary for your system and add it to the
-`$PATH`, but you should read the script first anyway! The first time you
-install Jet you'll need to restart your terminal for this to take effect.
-
-Jet is not yet supported on Windows. Contributions are welcome!
+Currently the Neovim plugin `jet.nvim` is bundled into this project - this will
+eventually be broken into its own repo.
