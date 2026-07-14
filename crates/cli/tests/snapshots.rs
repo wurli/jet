@@ -466,6 +466,19 @@ fn spawn_reader(
                         let (r, c) = parser_for_reader.lock().unwrap().screen().cursor_position();
                         // vt100 returns 0-indexed; DSR is 1-indexed.
                         let reply = format!("\x1b[{};{}R", r + 1, c + 1);
+                        // Include chunk context (last ~80 bytes before the
+                        // DSR marker) so we can see what the parser had
+                        // just processed when the query landed.
+                        let dsr_pos = chunk
+                            .windows(4)
+                            .position(|w| w == b"\x1b[6n")
+                            .unwrap_or(0);
+                        let ctx_start = dsr_pos.saturating_sub(80);
+                        let ctx = String::from_utf8_lossy(&chunk[ctx_start..dsr_pos]);
+                        eprintln!(
+                            "[harness] DSR: replying row={} col={} (0-idx); prior ctx in chunk={ctx:?}",
+                            r, c,
+                        );
                         let mut w = writer_for_reader.lock().unwrap();
                         let _ = w.write_all(reply.as_bytes());
                         let _ = w.flush();
