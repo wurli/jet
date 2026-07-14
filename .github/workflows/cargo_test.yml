@@ -87,13 +87,17 @@ jobs:
             echo "no ark log at $log"
           fi
 
-      # Snapshot tests spawn jet with `--log target/jet-test-logs/<test>.log`.
-      # Upload the directory on failure so flaky runs come with real log
-      # context, not just the vt100 screen snapshot.
+      # Snapshot tests spawn jet with `--log <tempfile>`; each `Harness`
+      # moves its tempfile into `test-logs/` on drop, prefixed `pass-`
+      # or `fail-`. Uploaded on every run so a passing PR still has log
+      # context to diff against when investigating a later flake;
+      # failures sort under `fail-` in the artifact bundle. `test-logs/`
+      # is not cached across runs (unlike `target/`) so the bundle
+      # always reflects only this run.
       - name: Upload jet test logs
-        if: ${{ always() && steps.cargo_test.outcome != 'success' }}
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jet-test-logs-${{ matrix.os }}
-          path: target/jet-test-logs/
+          path: test-logs/
           if-no-files-found: ignore

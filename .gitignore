@@ -3,7 +3,9 @@
 /deps
 /.jet-dev
 /notes
+/test-logs
 *.log
+.DS_Store
 
 # scripts/install-dev-kernels.sh populates kernels/<name>/ with binaries
 # and a kernel.json. Only the kernel.json files are worth tracking.

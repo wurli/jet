@@ -127,7 +127,7 @@ impl Write for SharedWriter {
 struct Harness {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     /// Kept so it's not dropped (closing the master ends the reader).
-    master: Box<dyn MasterPty + Send>,
+    master: Option<Box<dyn MasterPty + Send>>,
     writer: Box<dyn Write + Send>,
     parser: Arc<Mutex<vt100::Parser>>,
     /// Raw byte stream from jet's stdout — useful for substring sync.
@@ -135,6 +135,16 @@ struct Harness {
     reader: Option<std::thread::JoinHandle<()>>,
     /// Unique connection-file path for `pkill -f` teardown.
     conn_str: String,
+    /// Tempfile jet is currently writing `--log` output to. On `Drop`,
+    /// this is moved into `test-logs/`, prefixed with `pass-` or
+    /// `fail-` based on `std::thread::panicking()`, for CI upload.
+    /// Named after the test (thread name libtest gives each test) so
+    /// the moved file lands with a grep-able filename.
+    log_path: std::path::PathBuf,
+    /// Where to move `log_path` if the test passes.
+    log_pass_path: std::path::PathBuf,
+    /// Where to move `log_path` if the test panics.
+    log_fail_path: std::path::PathBuf,
 }
 
 /// Directory under `target/` where each spawned jet writes its `--log`
@@ -149,24 +159,45 @@ fn current_test_name() -> String {
         .name()
         .unwrap_or("unknown")
         .to_string();
-    raw.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-', "_")
+    raw.replace(
+        |c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-',
+        "_",
+    )
 }
 
-/// Monotonic per-process counter so a single test that spawns multiple
-/// harnesses gets `<name>-0.log`, `<name>-1.log`, … rather than colliding.
-fn next_spawn_seq() -> usize {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static SEQ: AtomicUsize = AtomicUsize::new(0);
-    SEQ.fetch_add(1, Ordering::Relaxed)
+/// Per-test spawn counter, keyed by test name. libtest runs tests on
+/// a fixed-size thread pool (default = `available_parallelism()`), so
+/// a `thread_local!` counter would leak state between tests that
+/// happen to land on the same worker. Keying by name gives us
+/// `<name>-0.log`, `<name>-1.log`, … contiguous within one test
+/// regardless of which pool thread executed it. Most tests spawn one
+/// jet and only ever hit `-0`.
+fn next_spawn_seq(test_name: &str) -> usize {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static SEQS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+    let mut map = SEQS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    let entry = map.entry(test_name.to_string()).or_insert(0);
+    let n = *entry;
+    *entry += 1;
+    n
 }
 
+/// Repo-relative directory for preserved `--log` output from spawned
+/// `jet` processes. Intentionally *not* under `target/` — `target/` is
+/// Cargo's build cache, is wiped by `cargo clean`, and (on CI) is
+/// cached across runs which would let stale logs mix into the current
+/// run's artifact. `test-logs/` sits next to `crates/` and is
+/// gitignored via the ambient `*.log` rule.
 fn jet_test_log_dir() -> std::path::PathBuf {
     let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
         .unwrap_or_else(|| std::path::Path::new("."))
-        .join("target")
-        .join("jet-test-logs");
+        .join("test-logs");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -194,18 +225,22 @@ impl Harness {
         for a in args {
             cmd.arg(a);
         }
-        // Per-spawn log file so CI can upload every child's logs on
-        // failure. `--log` is a `global = true` clap arg, so appending
-        // it after the subcommand works regardless of which subcommand
-        // the caller passed. Named after the test (via the thread name
-        // libtest gives each test) so an artifact bundle is grep-able;
-        // some tests spawn more than one jet, so we suffix with an
-        // atomic counter to keep names unique.
-        let log_path = jet_test_log_dir().join(format!(
-            "{}-{}.log",
-            current_test_name(),
-            next_spawn_seq(),
-        ));
+        // Per-spawn log file. We write to a tempfile up-front and move
+        // it into `test-logs/` on Drop, prefixed with `pass-` or
+        // `fail-` based on `std::thread::panicking()` so CI artifacts
+        // make failures obvious without needing to grep. `--log` is a
+        // `global = true` clap arg, so appending it after the
+        // subcommand works regardless of which subcommand the caller
+        // passed. Files are named after the test (via the thread name
+        // libtest gives each test); some tests spawn more than one
+        // jet, so we suffix with a per-test counter to keep names
+        // unique.
+        let name = current_test_name();
+        let seq = next_spawn_seq(&name);
+        let log_path = std::env::temp_dir().join(format!("jet-test-{name}-{seq}.log"));
+        let log_dir = jet_test_log_dir();
+        let log_pass_path = log_dir.join(format!("pass-{name}-{seq}.log"));
+        let log_fail_path = log_dir.join(format!("fail-{name}-{seq}.log"));
         cmd.arg("--log");
         cmd.arg(&log_path);
         cmd.env("XDG_DATA_HOME", xdg);
@@ -224,12 +259,15 @@ impl Harness {
         let (writer, parser, output, reader) = spawn_reader(&*pair.master, rows, cols);
         Ok(Self {
             child,
-            master: pair.master,
+            master: Some(pair.master),
             writer,
             parser,
             output,
             reader: Some(reader),
             conn_str: conn_str.to_string(),
+            log_path,
+            log_pass_path,
+            log_fail_path,
         })
     }
 
@@ -343,13 +381,23 @@ impl Harness {
         out
     }
 
-    /// Tear down: kill the child, close the master, join the reader, and
-    /// best-effort `pkill -f <conn_str>` so the persisted kernel exits.
-    fn shutdown(mut self) {
+    /// Explicit teardown — kept as a thin wrapper so existing call sites
+    /// (`t.shutdown();` at the end of each test) still work. The real
+    /// work happens in `Drop`, which runs regardless of whether the
+    /// test reaches this point.
+    fn shutdown(self) {
+        drop(self);
+    }
+}
+
+impl Drop for Harness {
+    fn drop(&mut self) {
+        // Kill the child and wait so its file handles (including the
+        // `--log` file) are closed before we move it.
         let _ = self.child.kill();
         let _ = self.child.wait();
         // Master drop closes the slave fd; reader sees EOF.
-        drop(self.master);
+        drop(self.master.take());
         if let Some(h) = self.reader.take() {
             let _ = h.join();
         }
@@ -358,6 +406,20 @@ impl Harness {
                 .args(["-9", "-f", &self.conn_str])
                 .status();
             let _ = std::fs::remove_file(&self.conn_str);
+        }
+        // Move the log to `test-logs/`, prefixed by outcome so CI
+        // artifacts sort failures next to each other. `fs::rename`
+        // fails across filesystems (tempdir on tmpfs, repo on ext4),
+        // so fall back to copy+remove.
+        let dest = if std::thread::panicking() {
+            &self.log_fail_path
+        } else {
+            &self.log_pass_path
+        };
+        if std::fs::rename(&self.log_path, dest).is_err()
+            && std::fs::copy(&self.log_path, dest).is_ok()
+        {
+            let _ = std::fs::remove_file(&self.log_path);
         }
     }
 }
@@ -404,6 +466,19 @@ fn spawn_reader(
                         let (r, c) = parser_for_reader.lock().unwrap().screen().cursor_position();
                         // vt100 returns 0-indexed; DSR is 1-indexed.
                         let reply = format!("\x1b[{};{}R", r + 1, c + 1);
+                        // Include chunk context (last ~80 bytes before the
+                        // DSR marker) so we can see what the parser had
+                        // just processed when the query landed.
+                        let dsr_pos = chunk
+                            .windows(4)
+                            .position(|w| w == b"\x1b[6n")
+                            .unwrap_or(0);
+                        let ctx_start = dsr_pos.saturating_sub(80);
+                        let ctx = String::from_utf8_lossy(&chunk[ctx_start..dsr_pos]);
+                        eprintln!(
+                            "[harness] DSR: replying row={} col={} (0-idx); prior ctx in chunk={ctx:?}",
+                            r, c,
+                        );
                         let mut w = writer_for_reader.lock().unwrap();
                         let _ = w.write_all(reply.as_bytes());
                         let _ = w.flush();

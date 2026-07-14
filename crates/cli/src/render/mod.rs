@@ -351,6 +351,7 @@ impl Renderer {
         if bytes.is_empty() {
             return Ok(());
         }
+        let prev_at_line_start = *self.at_line_start.lock().unwrap();
         let new_at_line_start = bytes.ends_with(['\n', '\r']);
         let mut w = self.writer.lock().unwrap();
         if style.needs_crlf() {
@@ -366,22 +367,33 @@ impl Renderer {
         }
         w.flush()?;
         *self.at_line_start.lock().unwrap() = new_at_line_start;
+        log::debug!(
+            "renderer -> tty: write_styled bytes={bytes:?} needs_crlf={} at_line_start {prev_at_line_start}->{new_at_line_start}",
+            style.needs_crlf(),
+        );
         Ok(())
     }
 
     /// If the previous write left the cursor mid-line, emit a newline.
     fn ensure_newline(&self, style: &dyn SessionStyle) -> Result<()> {
         if *self.at_line_start.lock().unwrap() {
+            log::debug!("renderer -> tty: ensure_newline noop (already at line start)");
             return Ok(());
         }
         let mut w = self.writer.lock().unwrap();
-        if style.needs_crlf() {
+        let wrote = if style.needs_crlf() {
             write!(w, "\r\n")?;
+            "\r\n"
         } else {
             writeln!(w)?;
-        }
+            "\n"
+        };
         w.flush()?;
         *self.at_line_start.lock().unwrap() = true;
+        log::debug!(
+            "renderer -> tty: ensure_newline wrote={wrote:?} needs_crlf={}",
+            style.needs_crlf(),
+        );
         Ok(())
     }
 
