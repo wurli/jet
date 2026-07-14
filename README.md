@@ -7,7 +7,7 @@ built with love using Rust.
 > Jet is currently in alpha. It works pretty well but is in active development
 > and **will** undergo breaking changes. Use at your own risk!
 
-### Installation
+## Installation
 
 Mac/Linux:
 
