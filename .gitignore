@@ -3,6 +3,7 @@
 /deps
 /.jet-dev
 /notes
+/test-logs
 *.log
 
 # scripts/install-dev-kernels.sh populates kernels/<name>/ with binaries

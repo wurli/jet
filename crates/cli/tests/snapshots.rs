@@ -136,10 +136,10 @@ struct Harness {
     /// Unique connection-file path for `pkill -f` teardown.
     conn_str: String,
     /// Tempfile jet is currently writing `--log` output to. On `Drop`,
-    /// this is moved into `target/jet-test-logs/`, prefixed with
-    /// `pass-` or `fail-` based on `std::thread::panicking()`, for CI
-    /// upload. Named after the test (thread name libtest gives each
-    /// test) so the moved file lands with a grep-able filename.
+    /// this is moved into `test-logs/`, prefixed with `pass-` or
+    /// `fail-` based on `std::thread::panicking()`, for CI upload.
+    /// Named after the test (thread name libtest gives each test) so
+    /// the moved file lands with a grep-able filename.
     log_path: std::path::PathBuf,
     /// Where to move `log_path` if the test passes.
     log_pass_path: std::path::PathBuf,
@@ -159,32 +159,45 @@ fn current_test_name() -> String {
         .name()
         .unwrap_or("unknown")
         .to_string();
-    raw.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-', "_")
+    raw.replace(
+        |c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-',
+        "_",
+    )
 }
 
-/// Per-test spawn counter. libtest runs each test on its own thread,
-/// so a `thread_local!` gives us `<name>-0.log`, `<name>-1.log`, …
-/// contiguous within one test rather than scattered across the whole
-/// process. Most tests spawn one jet and only ever hit `-0`.
-fn next_spawn_seq() -> usize {
-    use std::cell::Cell;
-    thread_local! {
-        static SEQ: Cell<usize> = const { Cell::new(0) };
-    }
-    SEQ.with(|c| {
-        let n = c.get();
-        c.set(n + 1);
-        n
-    })
+/// Per-test spawn counter, keyed by test name. libtest runs tests on
+/// a fixed-size thread pool (default = `available_parallelism()`), so
+/// a `thread_local!` counter would leak state between tests that
+/// happen to land on the same worker. Keying by name gives us
+/// `<name>-0.log`, `<name>-1.log`, … contiguous within one test
+/// regardless of which pool thread executed it. Most tests spawn one
+/// jet and only ever hit `-0`.
+fn next_spawn_seq(test_name: &str) -> usize {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static SEQS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+    let mut map = SEQS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    let entry = map.entry(test_name.to_string()).or_insert(0);
+    let n = *entry;
+    *entry += 1;
+    n
 }
 
+/// Repo-relative directory for preserved `--log` output from spawned
+/// `jet` processes. Intentionally *not* under `target/` — `target/` is
+/// Cargo's build cache, is wiped by `cargo clean`, and (on CI) is
+/// cached across runs which would let stale logs mix into the current
+/// run's artifact. `test-logs/` sits next to `crates/` and is
+/// gitignored via the ambient `*.log` rule.
 fn jet_test_log_dir() -> std::path::PathBuf {
     let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
         .unwrap_or_else(|| std::path::Path::new("."))
-        .join("target")
-        .join("jet-test-logs");
+        .join("test-logs");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -213,17 +226,17 @@ impl Harness {
             cmd.arg(a);
         }
         // Per-spawn log file. We write to a tempfile up-front and move
-        // it into `target/jet-test-logs/` on Drop, prefixed with
-        // `pass-` or `fail-` based on `std::thread::panicking()` so
-        // CI artifacts make failures obvious without needing to grep.
-        // `--log` is a `global = true` clap arg, so appending it after
-        // the subcommand works regardless of which subcommand the
-        // caller passed. Files are named after the test (via the thread
-        // name libtest gives each test); some tests spawn more than
-        // one jet, so we suffix with an atomic counter to keep names
+        // it into `test-logs/` on Drop, prefixed with `pass-` or
+        // `fail-` based on `std::thread::panicking()` so CI artifacts
+        // make failures obvious without needing to grep. `--log` is a
+        // `global = true` clap arg, so appending it after the
+        // subcommand works regardless of which subcommand the caller
+        // passed. Files are named after the test (via the thread name
+        // libtest gives each test); some tests spawn more than one
+        // jet, so we suffix with a per-test counter to keep names
         // unique.
-        let seq = next_spawn_seq();
         let name = current_test_name();
+        let seq = next_spawn_seq(&name);
         let log_path = std::env::temp_dir().join(format!("jet-test-{name}-{seq}.log"));
         let log_dir = jet_test_log_dir();
         let log_pass_path = log_dir.join(format!("pass-{name}-{seq}.log"));
@@ -394,9 +407,9 @@ impl Drop for Harness {
                 .status();
             let _ = std::fs::remove_file(&self.conn_str);
         }
-        // Move the log to `target/jet-test-logs/`, prefixed by outcome
-        // so CI artifacts sort failures next to each other. `fs::rename`
-        // fails across filesystems (tempdir on tmpfs, target on ext4),
+        // Move the log to `test-logs/`, prefixed by outcome so CI
+        // artifacts sort failures next to each other. `fs::rename`
+        // fails across filesystems (tempdir on tmpfs, repo on ext4),
         // so fall back to copy+remove.
         let dest = if std::thread::panicking() {
             &self.log_fail_path
