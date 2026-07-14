@@ -137,6 +137,40 @@ struct Harness {
     conn_str: String,
 }
 
+/// Directory under `target/` where each spawned jet writes its `--log`
+/// output. On CI the `cargo_test.yml` workflow uploads this as an
+/// artifact when tests fail so flaky runs come with real log context
+/// rather than just a screen snapshot.
+/// Test name for the current libtest thread, sanitised for use as a
+/// filename. Falls back to `"unknown"` for the rare case where the
+/// spawn happens off the test thread (helpers/threads).
+fn current_test_name() -> String {
+    let raw = std::thread::current()
+        .name()
+        .unwrap_or("unknown")
+        .to_string();
+    raw.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-', "_")
+}
+
+/// Monotonic per-process counter so a single test that spawns multiple
+/// harnesses gets `<name>-0.log`, `<name>-1.log`, … rather than colliding.
+fn next_spawn_seq() -> usize {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
+    SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
+fn jet_test_log_dir() -> std::path::PathBuf {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("target")
+        .join("jet-test-logs");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 impl Harness {
     fn spawn(args: &[&str], xdg: &std::path::Path, conn_str: &str) -> Result<Self> {
         Self::spawn_with_size(args, xdg, conn_str, 24, 120)
@@ -160,14 +194,29 @@ impl Harness {
         for a in args {
             cmd.arg(a);
         }
+        // Per-spawn log file so CI can upload every child's logs on
+        // failure. `--log` is a `global = true` clap arg, so appending
+        // it after the subcommand works regardless of which subcommand
+        // the caller passed. Named after the test (via the thread name
+        // libtest gives each test) so an artifact bundle is grep-able;
+        // some tests spawn more than one jet, so we suffix with an
+        // atomic counter to keep names unique.
+        let log_path = jet_test_log_dir().join(format!(
+            "{}-{}.log",
+            current_test_name(),
+            next_spawn_seq(),
+        ));
+        cmd.arg("--log");
+        cmd.arg(&log_path);
         cmd.env("XDG_DATA_HOME", xdg);
         // Skip jet's CSI 16t cell-size query: it's not relevant for our
         // tests, vt100 doesn't answer it, and the fallback timing adds
         // noise.
         cmd.env("JET_CELL_PX_WIDTH", "9");
         cmd.env("JET_CELL_PX_HEIGHT", "18");
-        // Make logs collectable but don't spam stderr during normal runs.
-        cmd.env("RUST_LOG", "warn");
+        // Debug-level logs from jet itself so a failed CI run has enough
+        // signal to diagnose from the uploaded log artifact.
+        cmd.env("RUST_LOG", "jet=debug,jet_core=debug");
         cmd.cwd(std::env::current_dir()?);
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
@@ -230,7 +279,7 @@ impl Harness {
     fn expect_screen(&self, needle: &str, timeout: Duration) {
         if !self.wait_for_screen(needle, timeout) {
             panic!(
-                "never saw `{needle}` on screen within {:?}; screen was:\n{}",
+                "never saw `{needle}` on screen within {:?}; screen was:\n```\n{}\n```",
                 timeout,
                 self.snapshot_screen(),
             );
