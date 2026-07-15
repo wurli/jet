@@ -5,6 +5,7 @@
 /notes
 /test-logs
 *.log
+tmp.*
 .DS_Store
 
 # scripts/install-dev-kernels.sh populates kernels/<name>/ with binaries

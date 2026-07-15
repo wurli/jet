@@ -1,5 +1,7 @@
 # <p align="center">Jet ✈️</p>
 
+![GitHub Release](https://img.shields.io/github/v/release/wurli/jet?style=flat-square)
+
 Jet is command-line tool and Lua library for working with Jupyter kernels,
 built with love using Rust.
 
