@@ -47,12 +47,13 @@ with kernels using raw Jupyter messages. This allows much finer grained control
 over running kernels, e.g. allowing you to work with special 'comm' channels
 which enable special functionality in some kernels. E.g. the [Ark R
 kernel](https://github.com/posit-dev/ark) exposes a comm which starts a LSP
-server. [jet.ark](https://github.com/wurli/jet.ark) is a nvim plugin which uses
-this mechanism to show an R REPL in nvim's built-in terminal (via Jet) and
-simultaneously connect nvim to a LSP server which is aware of what's going on
-in the session. It's magic!
+server. [jet.ark](https://github.com/wurli/jet.ark) is a Neovim plugin which
+uses this mechanism to show an R REPL in Neovim's built-in terminal (via Jet)
+and simultaneously connect Neovim to a LSP server which is aware of what's
+going on in the session. It's magic!
 
 ## jet.nvim
 
-Currently the WIP Neovim plugin `jet.nvim` is bundled into this project - this
-will eventually be broken into its own repo.
+[jet.nvim](https://github.com/wurli/jet.nvim) is a Neovim plugin wrapping Jet.
+It uses Jet's CLI to provide a REPL and Jet's Lua API to provide various other
+integrations with running kernels. It's really good! 
