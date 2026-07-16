@@ -404,10 +404,10 @@ pub struct Client {
     /// TCP LSP server bound to loopback, brought up in `bring_up` so
     /// every client — CLI REPL, Lua binding, one-shot code-runners —
     /// exposes the same completion surface without a separate opt-in.
-    /// `None` only if the loopback bind itself failed (logged as a
-    /// warning; kernel keeps running). Dropped with the `Client`, at
-    /// which point `LspTcpHandle::Drop` aborts the accept loop.
-    lsp: Option<crate::lsp::LspTcpHandle>,
+    /// Dropped with the `Client`, at which point `LspTcpHandle::Drop`
+    /// aborts the accept loop. Bind failure aborts boot (see
+    /// [`start_lsp`]).
+    lsp: crate::lsp::LspTcpHandle,
 }
 
 impl Drop for Client {
@@ -566,7 +566,7 @@ impl Client {
         // exit naturally instead of hanging.
         watchers.push(spawn_listener_closer(status_tx.clone(), router.clone()));
 
-        let lsp = start_lsp(shell_tx.clone(), router.clone()).await;
+        let lsp = start_lsp(shell_tx.clone(), router.clone()).await?;
 
         Ok((
             Self {
@@ -630,10 +630,9 @@ impl Client {
         }
     }
 
-    /// The loopback port the jet LSP is listening on. `None` only if
-    /// the bind at boot failed (logged as a warning).
-    pub fn lsp_port(&self) -> Option<u16> {
-        self.lsp.as_ref().map(|h| h.port)
+    /// The loopback port the jet LSP is listening on.
+    pub fn lsp_port(&self) -> u16 {
+        self.lsp.port
     }
 
     /// Send a `comm_info_request` and return a stream of routed frames.
@@ -751,29 +750,21 @@ impl Client {
 /// the same shell/router this Client owns. Runs on every boot so
 /// every consumer — CLI REPL, Lua binding, one-shot code-runners
 /// — exposes the completion surface uniformly. The handle drops
-/// with the Client and aborts its accept loop; bind failures are
-/// non-fatal (kernel keeps running).
+/// with the Client and aborts its accept loop. Failing to bind a
+/// loopback ephemeral port means the environment is unhealthy enough
+/// that silently continuing would just hide the problem behind
+/// missing completions, so we surface the error and abort boot.
 async fn start_lsp(
     shell_tx: UnboundedSender<JupyterMessage>,
     router: Arc<FrameRouter>,
-) -> Option<LspTcpHandle> {
-    {
-        let completion = CompletionHandle {
-            shell_tx: shell_tx,
-            router: router,
-        };
-        let backend = crate::lsp::LspBackend::new(completion);
-        match crate::lsp::spawn_tcp(backend).await {
-            Ok(h) => {
-                log::info!("jet-lsp listening on 127.0.0.1:{}", h.port);
-                Some(h)
-            }
-            Err(e) => {
-                log::warn!("jet-lsp: failed to bind: {e}");
-                None
-            }
-        }
-    }
+) -> Result<LspTcpHandle> {
+    let completion = CompletionHandle { shell_tx, router };
+    let backend = crate::lsp::LspBackend::new(completion);
+    let handle = crate::lsp::spawn_tcp(backend)
+        .await
+        .map_err(|e| anyhow!("jet-lsp: failed to bind loopback port: {e}"))?;
+    log::info!("jet-lsp listening on 127.0.0.1:{}", handle.port);
+    Ok(handle)
 }
 
 /// Cheap clonable handle for issuing one-shot requests (currently just
