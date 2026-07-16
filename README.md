@@ -54,6 +54,9 @@ uses this mechanism to show an R REPL in Neovim's built-in terminal (via Jet)
 and simultaneously connect Neovim to a LSP server which is aware of what's
 going on in the session. It's magic!
 
+Lua type stubs are available at
+[`crates/lua/meta/jet.lua`](./crates/lua/meta/jet.lua).
+
 ## jet.nvim
 
 [jet.nvim](https://github.com/wurli/jet.nvim) is a Neovim plugin wrapping Jet.
