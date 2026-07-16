@@ -32,6 +32,25 @@ pub enum EventData {
     },
     DisplayData {
         data: Value,
+        /// `transient.display_id` — set by kernels/libraries that intend the
+        /// output to be updatable in place. `UpdateDisplayData` messages with
+        /// a matching id refer back to this display's on-screen region.
+        display_id: Option<String>,
+    },
+    /// A later message referring to a previous `DisplayData` by `display_id`.
+    /// Some libraries (e.g. IPython's `display(..., display_id=X)` + later
+    /// `update_display`) use this to mutate a specific display region.
+    /// Note: rich's `Live` doesn't use this — see `ClearOutput`.
+    UpdateDisplayData {
+        data: Value,
+        display_id: String,
+    },
+    /// `clear_output` iopub message. With `wait: true` (rich, tqdm, and
+    /// most animation libraries), the frontend should hold the current
+    /// output on screen until the next output arrives, then replace it —
+    /// the mechanism behind rich `Live` / `track` progress-bar animation.
+    ClearOutput {
+        wait: bool,
     },
     Error {
         traceback: String,
@@ -140,9 +159,34 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
         },
         (Channel::IoPub, JupyterMessageContent::DisplayData(dd)) => EventData::DisplayData {
             data: media_to_value(&dd.data.content),
+            display_id: dd
+                .transient
+                .as_ref()
+                .and_then(|t| t.display_id.clone()),
         },
+        (Channel::IoPub, JupyterMessageContent::UpdateDisplayData(ud)) => {
+            match ud.transient.display_id.clone() {
+                Some(display_id) => EventData::UpdateDisplayData {
+                    data: media_to_value(&ud.data.content),
+                    display_id,
+                },
+                // Spec requires transient.display_id on update_display_data;
+                // if a kernel misbehaves, treat it as a fresh display.
+                None => EventData::DisplayData {
+                    data: media_to_value(&ud.data.content),
+                    display_id: None,
+                },
+            }
+        }
+        (Channel::IoPub, JupyterMessageContent::ClearOutput(co)) => {
+            EventData::ClearOutput { wait: co.wait }
+        }
         (Channel::IoPub, JupyterMessageContent::ExecuteResult(er)) => EventData::DisplayData {
             data: media_to_value(&er.data.content),
+            display_id: er
+                .transient
+                .as_ref()
+                .and_then(|t| t.display_id.clone()),
         },
         (Channel::IoPub, JupyterMessageContent::ExecuteInput(ei)) => EventData::ExecuteInput {
             code: ei.code.clone(),
@@ -323,8 +367,9 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg).data {
-            EventData::DisplayData { data } => {
+            EventData::DisplayData { data, display_id } => {
                 assert_eq!(data["text/plain"], "x");
+                assert_eq!(display_id, None);
             }
             other => panic!("expected DisplayData, got {other:?}"),
         }
