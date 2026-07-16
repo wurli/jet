@@ -22,6 +22,7 @@ use jet_core::jupyter_protocol::{
 };
 use jet_core::kernel::{AttachOptions, KernelSpec};
 use jet_core::manager::{Session, SessionStore};
+use jet_core::lsp::{self, LspBackend, LspTcpHandle};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -443,11 +444,30 @@ pub async fn drive_repl(
             }
         });
     }
-    // Persist the kernel pid into session.json now — before the REPL loop starts —
-    // so external readers (e.g. `jet list-sessions`, the nvim plugin) see it for the
-    // whole lifetime of the kernel, not just after the user quits the REPL.
-    if let (Some(pid), Some(entry)) = (session.child_pid(), session_store_entry) {
-        entry.set_kernel_pid(pid);
+    // Bring up the LSP server. Wraps the same CompletionHandle the CLI
+    // completer uses, so internal (reedline) and external (editor) clients
+    // hit the same code path. Bound to 127.0.0.1:0; the assigned port
+    // goes into session.json so editors can discover it.
+    let lsp_backend = LspBackend::new(session.completion_handle());
+    let lsp_handle: Option<LspTcpHandle> = match lsp::spawn_tcp(lsp_backend.clone()).await {
+        Ok(h) => Some(h),
+        Err(e) => {
+            log::warn!("jet-lsp: failed to bind: {e}");
+            None
+        }
+    };
+    let lsp_port = lsp_handle.as_ref().map(|h| h.port);
+
+    // Persist the kernel pid + LSP port into session.json now — before the REPL loop
+    // starts — so external readers (e.g. `jet list-sessions`, the nvim plugin) see them
+    // for the whole lifetime of the kernel, not just after the user quits the REPL.
+    if let Some(entry) = session_store_entry {
+        if let Some(pid) = session.child_pid() {
+            entry.set_kernel_pid(pid);
+        }
+        if let Some(port) = lsp_port {
+            entry.set_lsp_port(port);
+        }
     }
     // session.json bookkeeping (mark_session_closed on kernel exit) reads the id off
     // the Client now — kept in an Arc so it survives moves into select! branches below.
@@ -467,10 +487,7 @@ pub async fn drive_repl(
     use std::io::IsTerminal;
     let mut rl = Some(if std::io::stdin().is_terminal() {
         LineSource::Tty(build_editor(
-            JetCompleter::new(
-                session.completion_handle(),
-                tokio::runtime::Handle::current(),
-            ),
+            JetCompleter::new(lsp_backend.clone(), tokio::runtime::Handle::current()),
             external_printer.clone(),
             busy_state.break_signal.clone(),
         ))
