@@ -27,6 +27,11 @@ ARK_VERSION="${ARK_VERSION:-0.1.252}"
 # tests/snapshots.rs — but everything else is now deterministic.
 IPYKERNEL_VERSION="${IPYKERNEL_VERSION:-7.3.0}"
 IPYTHON_VERSION="${IPYTHON_VERSION:-9.15.0}"
+# rich + ipywidgets drive the `clear_output` animation snapshot test.
+# rich only takes the `Output()` widget path (which emits the clear_output
+# frames we care about) when ipywidgets is importable, so both are pinned.
+RICH_VERSION="${RICH_VERSION:-13.9.4}"
+IPYWIDGETS_VERSION="${IPYWIDGETS_VERSION:-8.1.5}"
 # The R version the ark kernel drives. Pinned so snapshots that capture
 # the R startup banner survive local-vs-CI mismatches. CI's
 # r-lib/actions/setup-r should use the same version; locally, install
@@ -86,17 +91,21 @@ VENV_PY="$VENV_DIR/bin/python"
 # lets CI restore the venv from cache without re-downloading wheels.
 if [[ -x "$VENV_PY" ]] \
   && "$VENV_PY" -c "
-import sys, ipykernel, IPython
+import sys, ipykernel, IPython, rich, ipywidgets
 sys.exit(0 if ipykernel.__version__ == '$IPYKERNEL_VERSION'
-             and IPython.__version__ == '$IPYTHON_VERSION' else 1)
+             and IPython.__version__ == '$IPYTHON_VERSION'
+             and rich.__version__ == '$RICH_VERSION'
+             and ipywidgets.__version__ == '$IPYWIDGETS_VERSION' else 1)
 " 2>/dev/null; then
-  echo "==> ipykernel ${IPYKERNEL_VERSION} + ipython ${IPYTHON_VERSION} already installed at $VENV_DIR"
+  echo "==> ipykernel ${IPYKERNEL_VERSION} + ipython ${IPYTHON_VERSION} + rich ${RICH_VERSION} + ipywidgets ${IPYWIDGETS_VERSION} already installed at $VENV_DIR"
 else
   echo "==> creating ipykernel venv at $VENV_DIR"
   uv venv --clear "$VENV_DIR"
   uv pip install --python "$VENV_PY" \
     "ipykernel==$IPYKERNEL_VERSION" \
-    "ipython==$IPYTHON_VERSION"
+    "ipython==$IPYTHON_VERSION" \
+    "rich==$RICH_VERSION" \
+    "ipywidgets==$IPYWIDGETS_VERSION"
 fi
 
 mkdir -p "$KERNELS_DIR"

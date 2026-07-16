@@ -1052,6 +1052,89 @@ fn foreign_traceback_lines_are_tagged() {
     t1.shutdown();
 }
 
+/// rich's `Live` renderer (used by `track`, `Progress`, table refreshes) drives
+/// animation via iopub `clear_output {wait: true}` frames rather than ANSI
+/// cursor-up. Before jet learned to honour those frames every intermediate
+/// state was appended and the terminal filled with stacked half-drawn bars.
+/// Snapshot the observer screen after running the user-supplied rich example
+/// (track → Table → Panel) to confirm only the *final* frame of the animation
+/// survives and the follow-up table + panel render cleanly.
+#[test]
+fn rich_live_animation_collapses_via_clear_output() {
+    let Some(kernel_json) = python_kernelspec_or_skip() else {
+        return;
+    };
+    // Skip if the dev venv is missing rich / ipywidgets; rich only takes
+    // the widget path (which emits the `clear_output` frames) when
+    // ipywidgets is importable.
+    let venv_py = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join(".jet-dev/venv/bin/python"))
+        .expect("locate dev venv");
+    let has_deps = std::process::Command::new(&venv_py)
+        .args(["-c", "import rich, ipywidgets"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !has_deps {
+        skip("rich / ipywidgets missing — run scripts/install-dev-kernels.sh");
+        return;
+    }
+    let xdg = scratch_xdg_dir();
+    let conn = temp_conn_file("rich-live");
+    let conn_str = conn.to_string_lossy().to_string();
+
+    // Feed the rich script line by line through the harness — reedline
+    // calls `is_complete_request` after each `\n`, so each line needs to
+    // settle before the next is sent (bulk-paste races the reply and the
+    // paste stalls after the first line). Blank line at the end closes
+    // the final block so ipykernel executes the cell.
+    //
+    // No `time.sleep` in the loop: rich's elapsed-time counter on the
+    // final progress frame would otherwise vary run-to-run. Without a
+    // sleep rich's internal refresh timer still emits multiple
+    // `clear_output` frames between iterations — the behaviour under test.
+    let lines: &[&[u8]] = &[
+        b"from rich.console import Console\n",
+        b"from rich.panel import Panel\n",
+        b"from rich.table import Table\n",
+        b"from rich.progress import track\n",
+        b"from rich.text import Text\n",
+        b"console = Console(force_terminal=True, force_interactive=False)\n",
+        b"for _ in track(range(30), description='Animating...'):\n",
+        b"pass\n",
+        b"\n",
+        b"table = Table(title='Cool Results', show_lines=True)\n",
+        b"table.add_column('Frame', style='cyan', justify='right')\n",
+        b"table.add_column('Status', style='magenta')\n",
+        b"table.add_column('Progress', style='green')\n",
+        b"for i in range(1, 6):\n",
+        b"bar = '\xe2\x96\x88' * (i*3) + '\xe2\x96\x91' * (15 - i*3)\n",
+        b"table.add_row(str(i), 'OK', bar)\n",
+        b"\n",
+        b"console.print(table)\n",
+        b"console.print(Panel.fit(Text('\xe2\x9c\xa8 Done! \xe2\x9c\xa8', style='bold yellow'), border_style='bright_blue'))\n",
+    ];
+
+    let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
+    for line in lines {
+        h.send(line).unwrap();
+        h.settle(Duration::from_millis(150), Duration::from_secs(2));
+    }
+    // "Done!" only appears after the track loop and the follow-up prints
+    // have all landed — wait for it before snapshotting.
+    h.expect_screen("Done!", Duration::from_secs(15));
+    h.settle(Duration::from_millis(500), Duration::from_secs(3));
+
+    insta::assert_snapshot!(
+        "rich_live_animation_collapses_via_clear_output",
+        h.snapshot_screen()
+    );
+
+    h.shutdown();
+}
+
 /// `quit()` in ipykernel: the REPL should exit cleanly without drawing a
 /// trailing `> ` prompt and without printing the "Kernel exited" red
 /// warning. The ordering trap is that ipykernel emits iopub Idle before
