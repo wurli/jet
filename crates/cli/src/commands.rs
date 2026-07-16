@@ -173,6 +173,9 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
 
     let render_graphics = !args.no_graphics;
     let session_id = session.as_ref().map(|s| s.meta().session_id.clone());
+    let title = crate::window_title::WindowTitle::set(
+        spec.display_name.as_deref().or(Some(spec.language.as_str())),
+    );
     let mut kernel_session = drive_repl(
         ReplTarget::Spawn {
             spec: &spec,
@@ -184,6 +187,7 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
         args.session_name,
         args.external_client_style.into(),
         session.as_mut(),
+        title.handle(),
     )
     .await?;
 
@@ -199,10 +203,12 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
 }
 
 pub async fn run_attach(args: AttachArgs) -> Result<()> {
-    let (conn_path, session_id) = match (args.session_id, args.connection_file) {
+    let (conn_path, session_id, display_name) = match (args.session_id, args.connection_file) {
         (Some(id), None) => {
-            let path = SessionStore::default()?.open(&id)?.connection_file_path();
-            (path, Some(id))
+            let session = SessionStore::default()?.open(&id)?;
+            let path = session.connection_file_path();
+            let name = session.meta().display_name.clone();
+            (path, Some(id), Some(name))
         }
         (None, Some(path)) => {
             // Best-effort: if the path lives inside a tracked session, recover the id so
@@ -212,19 +218,22 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
             // However I expect we'll have more behaviour in the future which depends on
             // session.json. Anyway this is an extreme edge-case, so probs not one to worry about
             // much right now.
-            let id = SessionStore::default()
+            let session = SessionStore::default()
                 .ok()
-                .and_then(|s| s.find_by_connection_file(&path).ok().flatten())
-                .map(|s| s.meta().session_id.clone());
-            (path, id)
+                .and_then(|s| s.find_by_connection_file(&path).ok().flatten());
+            let name = session.as_ref().map(|s| s.meta().display_name.clone());
+            let id = session.map(|s| s.meta().session_id.clone());
+            (path, id, name)
         }
         (None, None) => {
             let Some(id) = pick_session("Connect to an existing session:").await? else {
                 // No session selected
                 return Ok(());
             };
-            let path = SessionStore::default()?.open(&id)?.connection_file_path();
-            (path, Some(id))
+            let session = SessionStore::default()?.open(&id)?;
+            let path = session.connection_file_path();
+            let name = session.meta().display_name.clone();
+            (path, Some(id), Some(name))
         }
         (Some(_), Some(_)) => {
             unreachable!("clap ArgGroup forbids passing both session_id and --connection-file")
@@ -232,6 +241,7 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
     };
     let render_graphics = !args.no_graphics;
     let attach_opts = recover_attach_options(&conn_path);
+    let title = crate::window_title::WindowTitle::set(display_name.as_deref());
     drive_repl(
         ReplTarget::Attach {
             connection_path: &conn_path,
@@ -244,6 +254,7 @@ pub async fn run_attach(args: AttachArgs) -> Result<()> {
         args.session_name,
         args.external_client_style.into(),
         None,
+        title.handle(),
     )
     .await?;
     // Attach mode never kills the kernel; we just disconnect.

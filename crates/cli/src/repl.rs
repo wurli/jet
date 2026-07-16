@@ -396,6 +396,7 @@ pub async fn drive_repl(
     session_name: Option<String>,
     external_client_style: ExternalClientStyle,
     session_store_entry: Option<&mut Session>,
+    title_handle: crate::window_title::TitleHandle,
 ) -> Result<Client> {
     if render_graphics {
         warn_if_passthrough_off();
@@ -416,7 +417,8 @@ pub async fn drive_repl(
         .with_is_complete_tx(is_complete_tx)
         .with_execute_reply_tx(execute_reply_tx)
         .with_own_session_name(session_name.clone())
-        .with_external_client_style(external_client_style);
+        .with_external_client_style(external_client_style)
+        .with_title_handle(title_handle);
     let busy_state = renderer.busy_state.clone();
 
     // Client::spawn/attach perform the kernel_info handshake before returning,

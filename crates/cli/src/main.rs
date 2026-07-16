@@ -15,6 +15,7 @@ mod picker;
 mod pickers;
 mod render;
 mod repl;
+mod window_title;
 
 use cli::{Args, Command};
 
