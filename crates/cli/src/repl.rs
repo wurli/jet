@@ -172,10 +172,40 @@ fn build_editor(
 ) -> Reedline {
     // Drop reedline's default `| ` left-marker; the menu sits below the
     // prompt and the bar adds visual noise to every keystroke.
+    // Cap the menu height so a huge completion list (e.g. `<Tab>` at an
+    // empty Python prompt yields hundreds of matches) can't overflow the
+    // terminal and shred the scrollback. reedline scrolls the list
+    // internally via `skip_values` when the selection moves past the
+    // visible window.
+    // Panel background: a dim slate so the menu reads as a distinct pane
+    // instead of floating text sharing the terminal's background. Kept
+    // dark enough to work on both light and dark themes.
+    let text_style = nu_ansi_term::Style::new().fg(nu_ansi_term::Color::Rgb(200, 200, 210));
+    // Selected row: subtle blue highlight, no reverse-video (the default
+    // `green.bold().reverse()` is loud and clashes on many themes).
+    let selected_text_style = nu_ansi_term::Style::new()
+        .fg(nu_ansi_term::Color::White)
+        .on(nu_ansi_term::Color::Rgb(70, 90, 140))
+        .bold();
+    let match_style = nu_ansi_term::Style::new()
+        .fg(nu_ansi_term::Color::Rgb(140, 180, 240))
+        .bold();
+    let selected_match_style = nu_ansi_term::Style::new()
+        .fg(nu_ansi_term::Color::Rgb(180, 210, 255))
+        .on(nu_ansi_term::Color::Rgb(70, 90, 140))
+        .bold()
+        .underline();
     let completion_menu = Box::new(
         IdeMenu::default()
             .with_name("completion_menu")
-            .with_marker(""),
+            .with_marker("")
+            // TODO: make this configurable
+            .with_max_completion_height(15)
+            .with_default_border()
+            .with_text_style(text_style)
+            .with_selected_text_style(selected_text_style)
+            .with_match_text_style(match_style)
+            .with_selected_match_text_style(selected_match_style),
     );
     let mut keybindings = reedline::default_emacs_keybindings();
     keybindings.add_binding(
