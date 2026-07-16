@@ -75,6 +75,7 @@ use crate::jupyter_zmq_client::{
     ClientIoPubConnection, ClientShellConnection, ClientStdinConnection,
 };
 use crate::kernel::Kernel;
+use crate::lsp::LspTcpHandle;
 
 /// Generate a client id of the form `<name>---repl---<rand>`. Kernels report this back in
 /// the parent header so we can see which client triggered a message. When `name` is `None`
@@ -400,6 +401,13 @@ pub struct Client {
     /// Background liveness watchers (heartbeat for attached kernels,
     /// waitpid for spawned ones). Aborted on Drop.
     watchers: Vec<tokio::task::JoinHandle<()>>,
+    /// TCP LSP server bound to loopback, brought up in `bring_up` so
+    /// every client — CLI REPL, Lua binding, one-shot code-runners —
+    /// exposes the same completion surface without a separate opt-in.
+    /// `None` only if the loopback bind itself failed (logged as a
+    /// warning; kernel keeps running). Dropped with the `Client`, at
+    /// which point `LspTcpHandle::Drop` aborts the accept loop.
+    lsp: Option<crate::lsp::LspTcpHandle>,
 }
 
 impl Drop for Client {
@@ -558,6 +566,8 @@ impl Client {
         // exit naturally instead of hanging.
         watchers.push(spawn_listener_closer(status_tx.clone(), router.clone()));
 
+        let lsp = start_lsp(shell_tx.clone(), router.clone()).await;
+
         Ok((
             Self {
                 kernel,
@@ -571,6 +581,7 @@ impl Client {
                 router,
                 status_tx,
                 watchers,
+                lsp,
             },
             info,
             boot_stream,
@@ -617,6 +628,12 @@ impl Client {
             shell_tx: self.shell_tx.clone(),
             router: self.router.clone(),
         }
+    }
+
+    /// The loopback port the jet LSP is listening on. `None` only if
+    /// the bind at boot failed (logged as a warning).
+    pub fn lsp_port(&self) -> Option<u16> {
+        self.lsp.as_ref().map(|h| h.port)
     }
 
     /// Send a `comm_info_request` and return a stream of routed frames.
@@ -727,6 +744,35 @@ impl Client {
     /// child when the session drops. Used by `--persist`.
     pub fn detach(&mut self) {
         self.kernel.detach();
+    }
+}
+
+/// Bring up the jet LSP on a loopback ephemeral port, wired to
+/// the same shell/router this Client owns. Runs on every boot so
+/// every consumer — CLI REPL, Lua binding, one-shot code-runners
+/// — exposes the completion surface uniformly. The handle drops
+/// with the Client and aborts its accept loop; bind failures are
+/// non-fatal (kernel keeps running).
+async fn start_lsp(
+    shell_tx: UnboundedSender<JupyterMessage>,
+    router: Arc<FrameRouter>,
+) -> Option<LspTcpHandle> {
+    {
+        let completion = CompletionHandle {
+            shell_tx: shell_tx,
+            router: router,
+        };
+        let backend = crate::lsp::LspBackend::new(completion);
+        match crate::lsp::spawn_tcp(backend).await {
+            Ok(h) => {
+                log::info!("jet-lsp listening on 127.0.0.1:{}", h.port);
+                Some(h)
+            }
+            Err(e) => {
+                log::warn!("jet-lsp: failed to bind: {e}");
+                None
+            }
+        }
     }
 }
 

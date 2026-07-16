@@ -22,7 +22,7 @@ use jet_core::jupyter_protocol::{
 };
 use jet_core::kernel::{AttachOptions, KernelSpec};
 use jet_core::manager::{Session, SessionStore};
-use jet_core::lsp::{self, LspBackend, LspTcpHandle};
+use jet_core::lsp::LspBackend;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -444,25 +444,18 @@ pub async fn drive_repl(
             }
         });
     }
-    // Bring up the LSP server. Wraps the same CompletionHandle the CLI
-    // completer uses, so internal (reedline) and external (editor) clients
-    // hit the same code path. Bound to 127.0.0.1:0. The port is
+    // The LSP server is brought up inside `Client::spawn`/`Client::attach`
+    // (bound to 127.0.0.1:0) and dropped with the Client. The port is
     // deliberately not persisted to session.json: it belongs to *this*
     // jet process, not to the kernel, and a second jet attached to the
-    // same kernel would bind its own. External discovery, when we want
-    // it, will happen through per-process channels (Lua API, an explicit
+    // same kernel would bind its own. External discovery happens
+    // through per-process channels (Lua API return value, an explicit
     // --lsp-tcp <port> flag, etc.), not through the session store.
+    //
+    // The completer holds its own LspBackend cloning the same
+    // CompletionHandle, so internal (reedline) and external (editor)
+    // clients still hit the same completion code path.
     let lsp_backend = LspBackend::new(session.completion_handle());
-    let _lsp_handle: Option<LspTcpHandle> = match lsp::spawn_tcp(lsp_backend.clone()).await {
-        Ok(h) => {
-            log::info!("jet-lsp listening on 127.0.0.1:{}", h.port);
-            Some(h)
-        }
-        Err(e) => {
-            log::warn!("jet-lsp: failed to bind: {e}");
-            None
-        }
-    };
 
     // Persist the kernel pid into session.json now — before the REPL loop starts —
     // so external readers (e.g. `jet list-sessions`, the nvim plugin) see it for the
