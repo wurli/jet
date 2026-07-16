@@ -28,8 +28,9 @@ use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use reedline::{
-    ExternalPrinter, IdeMenu, KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode,
-    PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal,
+    ExternalPrinter, IdeMenu, KeyCode, KeyModifiers, MenuBuilder, Osc133Markers, Prompt,
+    PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent,
+    ReedlineMenu, Signal,
 };
 
 /// Put the terminal back into cooked mode. reedline holds the tty in
@@ -46,6 +47,32 @@ fn restore_terminal() {
 fn exit_cleanly(code: i32) -> ! {
     restore_terminal();
     std::process::exit(code);
+}
+
+/// OSC 133;C — start of command output. Reedline emits A/B around the
+/// prompt; the shell layer is responsible for C (after Enter) and D
+/// (after the command finishes). No-op when stdout isn't a TTY.
+fn emit_osc133_c() {
+    use std::io::{IsTerminal, Write};
+    let mut out = std::io::stdout().lock();
+    if !out.is_terminal() {
+        return;
+    }
+    let _ = out.write_all(b"\x1b]133;C\x1b\\");
+    let _ = out.flush();
+}
+
+/// OSC 133;D — end of command. Emitted without an exit code (the spec
+/// allows the bare form) since Jupyter's execute_reply status isn't
+/// currently plumbed through to the REPL loop.
+fn emit_osc133_d() {
+    use std::io::{IsTerminal, Write};
+    let mut out = std::io::stdout().lock();
+    if !out.is_terminal() {
+        return;
+    }
+    let _ = out.write_all(b"\x1b]133;D\x1b\\");
+    let _ = out.flush();
 }
 
 use crate::completer::JetCompleter;
@@ -237,6 +264,12 @@ fn build_editor(
         // user's in-progress buffer, so the REPL loop can write foreign
         // output in cooked mode without reedline's repaint fighting it.
         .with_break_signal(break_signal)
+        // OSC 133 semantic prompt marks (A before prompt, B before user
+        // input). Terminals that understand them (Ghostty, iTerm2,
+        // WezTerm, Kitty) can then jump between prompts and select
+        // command output. C and D are emitted by the REPL loop around
+        // execute_request/execute_reply.
+        .with_semantic_markers(Some(Osc133Markers::boxed()))
         // Honor bracketed-paste: a multi-line block wrapped in
         // \x1b[200~ ... \x1b[201~ goes into the buffer as one unit
         // and waits for a separate Enter to submit. Matches what real
@@ -714,6 +747,11 @@ pub async fn drive_repl(
             let _ = ed.history_mut().save(item);
         }
 
+        // OSC 133 C: start of command output. Reedline emitted A/B
+        // around the prompt; the shell (us) marks where the kernel's
+        // output begins so terminals can fold or select it as a unit.
+        emit_osc133_c();
+
         let req: JupyterMessage = ExecuteRequest {
             code,
             silent: false,
@@ -872,5 +910,10 @@ pub async fn drive_repl(
             shutdown.notify_waiters();
             exit_cleanly(0);
         }
+
+        // OSC 133 D: end of command. The Jupyter execute_reply carries a
+        // status but we don't currently plumb it through, so emit the
+        // bare D form (spec-compliant — exit code is optional).
+        emit_osc133_d();
     }
 }
