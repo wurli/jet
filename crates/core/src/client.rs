@@ -747,20 +747,42 @@ impl CompletionHandle {
     /// Returns `None` if the request stream ends without a reply — treat
     /// that as "no completions" rather than an error so a flaky completion
     /// path doesn't disrupt the prompt.
+    ///
+    /// Uses a `listen()` subscriber (filtered to shell `complete_reply`)
+    /// as the sync point rather than the by-parent request slot. The
+    /// request slot is closed when `status: idle` for our msg_id arrives
+    /// on iopub, and the reply on shell can lose the race against that
+    /// idle — the caveat documented on [`FrameRouter::dispatch`]. A
+    /// listener isn't tied to that slot, so it can't lose the reply.
+    /// The listener is registered before the request is sent, so we
+    /// can't miss the reply on the other end either.
     pub async fn complete(&self, code: String, cursor_pos: usize) -> Result<Option<CompleteReply>> {
-        let req: JupyterMessage = CompleteRequest { code, cursor_pos }.into();
-        let msg_id = req.header.msg_id.clone();
-        let rx = self.router.register(msg_id.clone());
-        self.shell_tx
-            .send(req)
-            .map_err(|e| anyhow!("shell_tx send: {e}"))?;
+        let filter = ListenFilter {
+            channels: Some([Channel::Shell].into_iter().collect()),
+            msg_types: Some(["complete_reply".to_string()].into_iter().collect()),
+        };
+        let (listener_id, rx) = self.router.register_listener(filter);
         let mut stream = RequestStream {
-            msg_id,
-            kind: SlotKind::Parent,
+            msg_id: String::new(),
+            kind: SlotKind::Listener(listener_id),
             rx: Some(rx),
             router: self.router.clone(),
         };
+        let req: JupyterMessage = CompleteRequest { code, cursor_pos }.into();
+        let msg_id = req.header.msg_id.clone();
+        self.shell_tx
+            .send(req)
+            .map_err(|e| anyhow!("shell_tx send: {e}"))?;
         while let Some(frame) = stream.recv().await {
+            let parent = frame
+                .message
+                .parent_header
+                .as_ref()
+                .map(|h| h.msg_id.as_str())
+                .unwrap_or("");
+            if parent != msg_id {
+                continue;
+            }
             if let JupyterMessageContent::CompleteReply(reply) = frame.message.content {
                 return Ok(Some(reply));
             }
