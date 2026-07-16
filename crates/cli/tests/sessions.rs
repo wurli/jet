@@ -215,6 +215,7 @@ fn session_left_open_with_persist() {
 /// `ChildGuard` won't run after SIGKILL, so the kernel layer has to
 /// arrange its own death — otherwise every closed terminal leaks a
 /// kernel that only `jet stop` can clean up.
+/// TODO: this is flakey in CI
 #[test]
 fn kernel_dies_when_parent_killed_without_persist() {
     let kernel_json = match ensure_python_kernelspec() {

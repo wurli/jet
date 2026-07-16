@@ -15,7 +15,7 @@ use style::{OwnStyle, PromptStyle, SessionStyle, WrappedStyle};
 pub use tmux::warn_if_passthrough_off;
 
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -101,6 +101,20 @@ pub struct Renderer {
     // skip redrawing the header — the gutter alone carries attribution.
     active_block_key: Arc<Mutex<Option<String>>>,
     external_client_style: ExternalClientStyle,
+    // Newlines emitted since the last `clear_output {wait: true}` was armed
+    // (or since the last cell boundary). When the next content event arrives
+    // after a pending clear, we rewind the cursor by this many rows to
+    // overwrite the previous frame. Counting newlines rather than true
+    // terminal rows keeps the implementation small: rich (and any well-
+    // behaved animation library) sizes each frame to `console.width` so
+    // wrapping doesn't happen in practice.
+    newlines_since_mark: Arc<AtomicUsize>,
+    // Some(rows) when a `clear_output {wait: true}` is armed and waiting
+    // for the next output event. `rows` is the newline-count captured at
+    // arm time — the number of rows to move up (plus one for the row the
+    // cursor is currently on) before writing the new frame. None means no
+    // clear is pending.
+    pending_clear: Arc<Mutex<Option<usize>>>,
 }
 
 impl Renderer {
@@ -122,6 +136,8 @@ impl Renderer {
             at_line_start: Arc::new(Mutex::new(true)),
             active_block_key: Arc::new(Mutex::new(None)),
             external_client_style: ExternalClientStyle::Wrap,
+            newlines_since_mark: Arc::new(AtomicUsize::new(0)),
+            pending_clear: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -193,6 +209,11 @@ impl Renderer {
                     // should redraw its own header. Also, reedline already
                     // drew the code on the prompt line, so we emit nothing.
                     *self.active_block_key.lock().unwrap() = None;
+                    // Reset clear_output bookkeeping at cell boundaries so
+                    // a later `clear_output` doesn't rewind past this cell's
+                    // output into the banner / previous cell's tail.
+                    self.newlines_since_mark.store(0, Ordering::SeqCst);
+                    *self.pending_clear.lock().unwrap() = None;
                 } else {
                     // Erase the current line first: reedline's ExternalBreak
                     // leaves its own `> ` prompt on screen, and we want the
@@ -209,16 +230,45 @@ impl Renderer {
                 }
             }
             EventData::Stream { name: _, text } => {
+                self.apply_pending_clear(is_own_session)?;
                 self.ensure_block_header(&*style)?;
                 self.emit_stream(&*style, &text)?;
             }
             EventData::Error { traceback } => {
+                self.apply_pending_clear(is_own_session)?;
                 self.ensure_block_header(&*style)?;
                 self.emit_stream(&*style, &traceback)?;
                 self.ensure_newline(&*style)?;
             }
-            EventData::DisplayData { data } => {
+            EventData::DisplayData { data, display_id: _ } => {
+                self.apply_pending_clear(is_own_session)?;
                 self.render_display_data(&*style, &data)?;
+            }
+            EventData::UpdateDisplayData { data, display_id: _ } => {
+                // No per-display_id rewriting: rich (the animation case that
+                // motivated this) drives updates via `ClearOutput` instead,
+                // and other libraries using `update_display_data` are rare.
+                // Just render fresh — behaviourally the same as `DisplayData`.
+                self.apply_pending_clear(is_own_session)?;
+                self.render_display_data(&*style, &data)?;
+            }
+            EventData::ClearOutput { wait } => {
+                // Only rewrite our own-session output — foreign gutters/headers
+                // shouldn't be clobbered by another client's clear.
+                if is_own_session {
+                    let rows = self.newlines_since_mark.load(Ordering::SeqCst);
+                    if wait {
+                        // Defer: on the next content event we'll rewind by
+                        // this many rows and overwrite the previous frame.
+                        *self.pending_clear.lock().unwrap() = Some(rows);
+                    } else {
+                        // Non-wait: clear immediately. A scrolling terminal
+                        // doesn't have a bounded cell, but rewinding to the
+                        // frame start + clear-to-end is the closest analog.
+                        self.rewind_and_clear(rows)?;
+                        self.newlines_since_mark.store(0, Ordering::SeqCst);
+                    }
+                }
             }
             EventData::Banner { text } => {
                 // Banner always renders as own-style regardless of who
@@ -367,6 +417,14 @@ impl Renderer {
         }
         w.flush()?;
         *self.at_line_start.lock().unwrap() = new_at_line_start;
+        // Count `\n` in the emitted bytes so a later `clear_output` knows
+        // how many rows to rewind. `\r` alone doesn't advance a row and is
+        // not counted; explicit newlines added by `needs_crlf` translation
+        // are the same `\n` count as the source.
+        let newlines = bytes.matches('\n').count();
+        if newlines > 0 {
+            self.newlines_since_mark.fetch_add(newlines, Ordering::SeqCst);
+        }
         log::debug!(
             "renderer -> tty: write_styled bytes={bytes:?} needs_crlf={} at_line_start {prev_at_line_start}->{new_at_line_start}",
             style.needs_crlf(),
@@ -390,6 +448,7 @@ impl Renderer {
         };
         w.flush()?;
         *self.at_line_start.lock().unwrap() = true;
+        self.newlines_since_mark.fetch_add(1, Ordering::SeqCst);
         log::debug!(
             "renderer -> tty: ensure_newline wrote={wrote:?} needs_crlf={}",
             style.needs_crlf(),
@@ -407,10 +466,6 @@ impl Renderer {
         if let Some(image_data) = data.get("image/png").and_then(|s| s.as_str()) {
             self.ensure_block_header(style)?;
             if self.render_graphics {
-                // PNGs bypass the styler — kitty escape sequences are
-                // control bytes, not text to be gutter-prefixed. On failure
-                // we render the error message through the style so it
-                // still gets attributed.
                 let result = {
                     let mut w = self.writer.lock().unwrap();
                     let r = emit_png(&mut *w, image_data);
@@ -418,7 +473,9 @@ impl Renderer {
                     r
                 };
                 match result {
-                    Ok(()) => *self.at_line_start.lock().unwrap() = true,
+                    Ok(()) => {
+                        *self.at_line_start.lock().unwrap() = true;
+                    }
                     Err(e) => {
                         log::warn!("kitty render failed: {e}");
                         self.emit_stream(style, &format!("Image render failed: {e}\n"))?;
@@ -444,6 +501,48 @@ impl Renderer {
             self.emit_stream(style, t)?;
             self.ensure_newline(style)?;
         }
+        Ok(())
+    }
+
+    /// If a `clear_output {wait: true}` is pending, rewind the cursor by
+    /// the row-count captured at arm time and clear from there — the next
+    /// write will paint the new frame over the old one. Only fires for
+    /// own-session content: foreign sessions have their own gutter/header
+    /// state that we shouldn't blow away.
+    ///
+    /// Always resets the newline counter (whether or not a clear was
+    /// pending) so a later `clear_output` sees a fresh baseline of "rows
+    /// written since the last mark."
+    fn apply_pending_clear(&self, is_own_session: bool) -> Result<()> {
+        if !is_own_session {
+            return Ok(());
+        }
+        let pending = self.pending_clear.lock().unwrap().take();
+        if let Some(rows) = pending {
+            self.rewind_and_clear(rows)?;
+        }
+        Ok(())
+    }
+
+    /// Move the cursor up `rows` (plus one for the row the cursor's
+    /// currently on, since a trailing `\n` from the previous frame parked
+    /// it below the content) and clear to end of screen. `\r` snaps to
+    /// column 0; `\x1b[NA` moves up N rows; `\x1b[J` clears to end of
+    /// screen. The caller then writes the new frame.
+    ///
+    /// After the rewind the newline counter is reset — subsequent writes
+    /// start a fresh region for the next potential clear.
+    fn rewind_and_clear(&self, rows: usize) -> Result<()> {
+        let mut w = self.writer.lock().unwrap();
+        write!(w, "\r")?;
+        if rows > 0 {
+            write!(w, "\x1b[{rows}A")?;
+        }
+        write!(w, "\x1b[J")?;
+        w.flush()?;
+        drop(w);
+        *self.at_line_start.lock().unwrap() = true;
+        self.newlines_since_mark.store(0, Ordering::SeqCst);
         Ok(())
     }
 }

@@ -1,0 +1,29 @@
+---
+source: crates/cli/tests/snapshots.rs
+assertion_line: 1130
+expression: h.snapshot_screen()
+---
+> for i in range(1, 6):
++     bar = '█' * (i*3) + '░' * (15 - i*3)
++     table.add_row(str(i), 'OK', bar)
++
+> console.print(table)
+            Cool Results
+┏━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Frame ┃ Status ┃ Progress        ┃
+┡━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│     1 │ OK     │ ███░░░░░░░░░░░░ │
+├───────┼────────┼─────────────────┤
+│     2 │ OK     │ ██████░░░░░░░░░ │
+├───────┼────────┼─────────────────┤
+│     3 │ OK     │ █████████░░░░░░ │
+├───────┼────────┼─────────────────┤
+│     4 │ OK     │ ████████████░░░ │
+├───────┼────────┼─────────────────┤
+│     5 │ OK     │ ███████████████ │
+└───────┴────────┴─────────────────┘
+> console.print(Panel.fit(Text('✨ Done! ✨', style='bold yellow'), border_style='bright_blue'))
+╭─────────────╮
+│ ✨ Done! ✨ │
+╰─────────────╯
+>
