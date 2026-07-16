@@ -45,11 +45,6 @@ pub struct SessionMeta {
     /// OS pid of the kernel process, recorded at spawn. None for attached
     /// sessions (we don't own the child).
     pub kernel_pid: Option<u32>,
-    /// TCP port on 127.0.0.1 where jet's LSP server (see `jet_lsp`) is
-    /// listening for this session. External editors read this to connect.
-    /// `None` for older sessions or when the LSP failed to bind.
-    #[serde(default)]
-    pub lsp_port: Option<u16>,
 }
 
 #[derive(Debug)]
@@ -123,7 +118,6 @@ impl Session {
                 status: SessionStatus::Open,
                 closed_at: None,
                 kernel_pid: None,
-                lsp_port: None,
             },
             dir,
         };
@@ -145,13 +139,6 @@ impl Session {
         self.persist_best_effort("record kernel pid");
     }
 
-    /// Record the loopback port where jet's LSP is listening for this
-    /// session. Best-effort (see [`Self::set_kernel_pid`]).
-    pub fn set_lsp_port(&mut self, port: u16) {
-        self.meta.lsp_port = Some(port);
-        self.persist_best_effort("record lsp port");
-    }
-
     /// Mark the session as closed. Best-effort (see [`Self::set_kernel_pid`]).
     pub fn mark_closed(&mut self) {
         self.mark_closed_at(SystemTime::now());
@@ -161,9 +148,6 @@ impl Session {
         self.meta.status = SessionStatus::Closed;
         self.meta.closed_at = Some(format_iso8601(now));
         self.meta.kernel_pid = None;
-        // LSP listener is torn down with the Client that owned it, so
-        // the port is no longer valid — clear it alongside the pid.
-        self.meta.lsp_port = None;
         self.persist_best_effort("record closed status");
     }
 

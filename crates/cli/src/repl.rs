@@ -446,28 +446,29 @@ pub async fn drive_repl(
     }
     // Bring up the LSP server. Wraps the same CompletionHandle the CLI
     // completer uses, so internal (reedline) and external (editor) clients
-    // hit the same code path. Bound to 127.0.0.1:0; the assigned port
-    // goes into session.json so editors can discover it.
+    // hit the same code path. Bound to 127.0.0.1:0. The port is
+    // deliberately not persisted to session.json: it belongs to *this*
+    // jet process, not to the kernel, and a second jet attached to the
+    // same kernel would bind its own. External discovery, when we want
+    // it, will happen through per-process channels (Lua API, an explicit
+    // --lsp-tcp <port> flag, etc.), not through the session store.
     let lsp_backend = LspBackend::new(session.completion_handle());
-    let lsp_handle: Option<LspTcpHandle> = match lsp::spawn_tcp(lsp_backend.clone()).await {
-        Ok(h) => Some(h),
+    let _lsp_handle: Option<LspTcpHandle> = match lsp::spawn_tcp(lsp_backend.clone()).await {
+        Ok(h) => {
+            log::info!("jet-lsp listening on 127.0.0.1:{}", h.port);
+            Some(h)
+        }
         Err(e) => {
             log::warn!("jet-lsp: failed to bind: {e}");
             None
         }
     };
-    let lsp_port = lsp_handle.as_ref().map(|h| h.port);
 
-    // Persist the kernel pid + LSP port into session.json now — before the REPL loop
-    // starts — so external readers (e.g. `jet list-sessions`, the nvim plugin) see them
-    // for the whole lifetime of the kernel, not just after the user quits the REPL.
-    if let Some(entry) = session_store_entry {
-        if let Some(pid) = session.child_pid() {
-            entry.set_kernel_pid(pid);
-        }
-        if let Some(port) = lsp_port {
-            entry.set_lsp_port(port);
-        }
+    // Persist the kernel pid into session.json now — before the REPL loop starts —
+    // so external readers (e.g. `jet list-sessions`, the nvim plugin) see it for the
+    // whole lifetime of the kernel, not just after the user quits the REPL.
+    if let (Some(pid), Some(entry)) = (session.child_pid(), session_store_entry) {
+        entry.set_kernel_pid(pid);
     }
     // session.json bookkeeping (mark_session_closed on kernel exit) reads the id off
     // the Client now — kept in an Arc so it survives moves into select! branches below.
