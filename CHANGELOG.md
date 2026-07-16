@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.3 - LSP integration 💫
+
+*   Completions no longer suck
+*   Completions are powered internally by a LSP server. Each Jet client spawns
+    one LSP server - you can get this in Lua from the callback returned by
+    `jet.start()` and/or `jet.attach()`
+*   jet.nvim has been split into its own repo [jet.nvim](https://github.com/wurli/jet.nvim)
+
 ## 0.0.2
 
 CLI
