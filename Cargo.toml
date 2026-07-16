@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 license = "MIT"
 license-file = "LICENSE"
@@ -13,6 +13,7 @@ anyhow = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["cargo", "derive", "env", "wrap_help"] }
 crossbeam-channel = "0.5"
+dashmap = "6"
 env_logger = "0.11"
 futures-util = "0.3"
 jet_core = { path = "crates/core" }
@@ -23,10 +24,12 @@ once_cell = "1"
 portable-pty = "0.8"
 rand = "0.8"
 reedline = { version = "0.48", features = ["external_printer"] }
+ropey = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serial_test = "3"
 tokio = { version = "1", features = ["full"] }
+tower-lsp = "0.20"
 
 # The profile that 'dist' will build with
 [profile.dist]

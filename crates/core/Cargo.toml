@@ -9,6 +9,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+dashmap.workspace = true
 env_logger.workspace = true
 hex = "0.4"
 jupyter-protocol = "2.0"
@@ -16,9 +17,11 @@ jupyter-zmq-client = { version = "1.0", default-features = false, features = ["t
 libc.workspace = true
 log.workspace = true
 rand.workspace = true
+ropey.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tower-lsp.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true

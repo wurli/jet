@@ -22,6 +22,7 @@ use jet_core::jupyter_protocol::{
 };
 use jet_core::kernel::{AttachOptions, KernelSpec};
 use jet_core::manager::{Session, SessionStore};
+use jet_core::lsp::LspBackend;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -172,10 +173,40 @@ fn build_editor(
 ) -> Reedline {
     // Drop reedline's default `| ` left-marker; the menu sits below the
     // prompt and the bar adds visual noise to every keystroke.
+    // Cap the menu height so a huge completion list (e.g. `<Tab>` at an
+    // empty Python prompt yields hundreds of matches) can't overflow the
+    // terminal and shred the scrollback. reedline scrolls the list
+    // internally via `skip_values` when the selection moves past the
+    // visible window.
+    // Panel background: a dim slate so the menu reads as a distinct pane
+    // instead of floating text sharing the terminal's background. Kept
+    // dark enough to work on both light and dark themes.
+    let text_style = nu_ansi_term::Style::new().fg(nu_ansi_term::Color::Rgb(200, 200, 210));
+    // Selected row: subtle blue highlight, no reverse-video (the default
+    // `green.bold().reverse()` is loud and clashes on many themes).
+    let selected_text_style = nu_ansi_term::Style::new()
+        .fg(nu_ansi_term::Color::White)
+        .on(nu_ansi_term::Color::Rgb(70, 90, 140))
+        .bold();
+    let match_style = nu_ansi_term::Style::new()
+        .fg(nu_ansi_term::Color::Rgb(140, 180, 240))
+        .bold();
+    let selected_match_style = nu_ansi_term::Style::new()
+        .fg(nu_ansi_term::Color::Rgb(180, 210, 255))
+        .on(nu_ansi_term::Color::Rgb(70, 90, 140))
+        .bold()
+        .underline();
     let completion_menu = Box::new(
         IdeMenu::default()
             .with_name("completion_menu")
-            .with_marker(""),
+            .with_marker("")
+            // TODO: make this configurable
+            .with_max_completion_height(15)
+            .with_default_border()
+            .with_text_style(text_style)
+            .with_selected_text_style(selected_text_style)
+            .with_match_text_style(match_style)
+            .with_selected_match_text_style(selected_match_style),
     );
     let mut keybindings = reedline::default_emacs_keybindings();
     keybindings.add_binding(
@@ -413,6 +444,19 @@ pub async fn drive_repl(
             }
         });
     }
+    // The LSP server is brought up inside `Client::spawn`/`Client::attach`
+    // (bound to 127.0.0.1:0) and dropped with the Client. The port is
+    // deliberately not persisted to session.json: it belongs to *this*
+    // jet process, not to the kernel, and a second jet attached to the
+    // same kernel would bind its own. External discovery happens
+    // through per-process channels (Lua API return value, an explicit
+    // --lsp-tcp <port> flag, etc.), not through the session store.
+    //
+    // The completer holds its own LspBackend cloning the same
+    // CompletionHandle, so internal (reedline) and external (editor)
+    // clients still hit the same completion code path.
+    let lsp_backend = LspBackend::new(session.completion_handle());
+
     // Persist the kernel pid into session.json now — before the REPL loop starts —
     // so external readers (e.g. `jet list-sessions`, the nvim plugin) see it for the
     // whole lifetime of the kernel, not just after the user quits the REPL.
@@ -437,10 +481,7 @@ pub async fn drive_repl(
     use std::io::IsTerminal;
     let mut rl = Some(if std::io::stdin().is_terminal() {
         LineSource::Tty(build_editor(
-            JetCompleter::new(
-                session.completion_handle(),
-                tokio::runtime::Handle::current(),
-            ),
+            JetCompleter::new(lsp_backend.clone(), tokio::runtime::Handle::current()),
             external_printer.clone(),
             busy_state.break_signal.clone(),
         ))

@@ -217,6 +217,10 @@ fn register(
 ) -> LuaResult<LuaTable> {
     let client_id = client.client_id().to_string();
     let session_id = client.session_id().map(str::to_string);
+    // The LSP is spawned inside `Client::spawn`/`Client::attach`; read
+    // back the bound port so Lua callers can hand it to editors. Boot
+    // would have failed if the bind didn't succeed.
+    let lsp_port = client.lsp_port();
     let stream = make_poll(lua, boot_stream)?;
     let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(client));
     KERNELS.lock().unwrap().insert(client_id.clone(), handle);
@@ -230,6 +234,7 @@ fn register(
     if let Some(session_id) = session_id {
         out.set("session_id", session_id)?;
     }
+    out.set("lsp_port", lsp_port)?;
 
     Ok(out)
 }

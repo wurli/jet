@@ -11,6 +11,7 @@ pub mod events;
 pub mod kernel;
 pub mod kernel_spec;
 pub mod logger;
+pub mod lsp;
 pub mod manager;
 
 pub use jupyter_protocol;

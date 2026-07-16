@@ -75,6 +75,7 @@ use crate::jupyter_zmq_client::{
     ClientIoPubConnection, ClientShellConnection, ClientStdinConnection,
 };
 use crate::kernel::Kernel;
+use crate::lsp::LspTcpHandle;
 
 /// Generate a client id of the form `<name>---repl---<rand>`. Kernels report this back in
 /// the parent header so we can see which client triggered a message. When `name` is `None`
@@ -400,6 +401,13 @@ pub struct Client {
     /// Background liveness watchers (heartbeat for attached kernels,
     /// waitpid for spawned ones). Aborted on Drop.
     watchers: Vec<tokio::task::JoinHandle<()>>,
+    /// TCP LSP server bound to loopback, brought up in `bring_up` so
+    /// every client — CLI REPL, Lua binding, one-shot code-runners —
+    /// exposes the same completion surface without a separate opt-in.
+    /// Dropped with the `Client`, at which point `LspTcpHandle::Drop`
+    /// aborts the accept loop. Bind failure aborts boot (see
+    /// [`start_lsp`]).
+    lsp: crate::lsp::LspTcpHandle,
 }
 
 impl Drop for Client {
@@ -558,6 +566,8 @@ impl Client {
         // exit naturally instead of hanging.
         watchers.push(spawn_listener_closer(status_tx.clone(), router.clone()));
 
+        let lsp = start_lsp(shell_tx.clone(), router.clone()).await?;
+
         Ok((
             Self {
                 kernel,
@@ -571,6 +581,7 @@ impl Client {
                 router,
                 status_tx,
                 watchers,
+                lsp,
             },
             info,
             boot_stream,
@@ -617,6 +628,11 @@ impl Client {
             shell_tx: self.shell_tx.clone(),
             router: self.router.clone(),
         }
+    }
+
+    /// The loopback port the jet LSP is listening on.
+    pub fn lsp_port(&self) -> u16 {
+        self.lsp.port
     }
 
     /// Send a `comm_info_request` and return a stream of routed frames.
@@ -730,6 +746,27 @@ impl Client {
     }
 }
 
+/// Bring up the jet LSP on a loopback ephemeral port, wired to
+/// the same shell/router this Client owns. Runs on every boot so
+/// every consumer — CLI REPL, Lua binding, one-shot code-runners
+/// — exposes the completion surface uniformly. The handle drops
+/// with the Client and aborts its accept loop. Failing to bind a
+/// loopback ephemeral port means the environment is unhealthy enough
+/// that silently continuing would just hide the problem behind
+/// missing completions, so we surface the error and abort boot.
+async fn start_lsp(
+    shell_tx: UnboundedSender<JupyterMessage>,
+    router: Arc<FrameRouter>,
+) -> Result<LspTcpHandle> {
+    let completion = CompletionHandle { shell_tx, router };
+    let backend = crate::lsp::LspBackend::new(completion);
+    let handle = crate::lsp::spawn_tcp(backend)
+        .await
+        .map_err(|e| anyhow!("jet-lsp: failed to bind loopback port: {e}"))?;
+    log::info!("jet-lsp listening on 127.0.0.1:{}", handle.port);
+    Ok(handle)
+}
+
 /// Cheap clonable handle for issuing one-shot requests (currently just
 /// `complete_request`) off the main REPL task — e.g. from rustyline's
 /// sync `Completer::complete`, which runs on the blocking thread pool.
@@ -747,20 +784,42 @@ impl CompletionHandle {
     /// Returns `None` if the request stream ends without a reply — treat
     /// that as "no completions" rather than an error so a flaky completion
     /// path doesn't disrupt the prompt.
+    ///
+    /// Uses a `listen()` subscriber (filtered to shell `complete_reply`)
+    /// as the sync point rather than the by-parent request slot. The
+    /// request slot is closed when `status: idle` for our msg_id arrives
+    /// on iopub, and the reply on shell can lose the race against that
+    /// idle — the caveat documented on [`FrameRouter::dispatch`]. A
+    /// listener isn't tied to that slot, so it can't lose the reply.
+    /// The listener is registered before the request is sent, so we
+    /// can't miss the reply on the other end either.
     pub async fn complete(&self, code: String, cursor_pos: usize) -> Result<Option<CompleteReply>> {
-        let req: JupyterMessage = CompleteRequest { code, cursor_pos }.into();
-        let msg_id = req.header.msg_id.clone();
-        let rx = self.router.register(msg_id.clone());
-        self.shell_tx
-            .send(req)
-            .map_err(|e| anyhow!("shell_tx send: {e}"))?;
+        let filter = ListenFilter {
+            channels: Some([Channel::Shell].into_iter().collect()),
+            msg_types: Some(["complete_reply".to_string()].into_iter().collect()),
+        };
+        let (listener_id, rx) = self.router.register_listener(filter);
         let mut stream = RequestStream {
-            msg_id,
-            kind: SlotKind::Parent,
+            msg_id: String::new(),
+            kind: SlotKind::Listener(listener_id),
             rx: Some(rx),
             router: self.router.clone(),
         };
+        let req: JupyterMessage = CompleteRequest { code, cursor_pos }.into();
+        let msg_id = req.header.msg_id.clone();
+        self.shell_tx
+            .send(req)
+            .map_err(|e| anyhow!("shell_tx send: {e}"))?;
         while let Some(frame) = stream.recv().await {
+            let parent = frame
+                .message
+                .parent_header
+                .as_ref()
+                .map(|h| h.msg_id.as_str())
+                .unwrap_or("");
+            if parent != msg_id {
+                continue;
+            }
             if let JupyterMessageContent::CompleteReply(reply) = frame.message.content {
                 return Ok(Some(reply));
             }
