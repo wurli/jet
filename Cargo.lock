@@ -996,7 +996,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jet"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "jet_core"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "jet_lua"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "jet_core",
