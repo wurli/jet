@@ -1124,7 +1124,7 @@ fn rich_live_animation_collapses_via_clear_output() {
     let mut h = start_jet(&kernel_json, &xdg, &conn_str, &[]).expect("spawn");
     for line in lines {
         h.send(line).unwrap();
-        h.settle(Duration::from_millis(150), Duration::from_secs(2));
+        h.settle(Duration::from_millis(500), Duration::from_secs(2));
     }
     // "Done!" only appears after the track loop and the follow-up prints
     // have all landed — wait for it before snapshotting.
