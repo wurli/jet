@@ -719,10 +719,13 @@ impl Client {
         }
     }
 
-    /// Shutdown the kernel (best-effort). Sends `shutdown_request` on control and gives
-    /// the kernel a moment to react before returning. Drop the [`Client`] afterwards to
-    /// tear down the reader/writer tasks; if you want the kernel to outlive this process,
-    /// call [`Client::detach`] before dropping instead.
+    /// Shutdown the kernel. Sends `shutdown_request` on control, then waits for the
+    /// child-wait watcher (or heartbeat watcher, for attached kernels) to flip status
+    /// to `Exited` — i.e. the OS process has actually reaped, so no fd we inherited
+    /// is still held by a live descendant. Bounded by a short timeout so a wedged
+    /// kernel can't hang shutdown indefinitely. Drop the [`Client`] afterwards to
+    /// tear down the reader/writer tasks; if you want the kernel to outlive this
+    /// process, call [`Client::detach`] before dropping instead.
     pub async fn shutdown(&mut self) -> Result<()> {
         log::debug!("Sending shutdown_request to kernel");
         let req = jupyter_protocol::ShutdownRequest { restart: false };
@@ -730,7 +733,23 @@ impl Client {
         if let Err(e) = self.control_tx.send(msg) {
             log::warn!("shutdown_request send failed: {e}");
         }
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        let mut rx = self.status_tx.subscribe();
+        let wait_exited = async {
+            loop {
+                if *rx.borrow() == KernelStatus::Exited {
+                    return;
+                }
+                if rx.changed().await.is_err() {
+                    return;
+                }
+            }
+        };
+        if tokio::time::timeout(Duration::from_secs(2), wait_exited)
+            .await
+            .is_err()
+        {
+            log::warn!("kernel did not reach Exited within shutdown timeout");
+        }
         // Clean up the on-disk stderr log on graceful shutdown. Detach skips this path,
         // so detached kernels leave the log in place for a future `attach` to tail.
         if let Some(p) = self.kernel.log_file_path.take() {

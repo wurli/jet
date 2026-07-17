@@ -241,11 +241,39 @@ fn register(
 
 /// `jet.stop(session_id)`
 ///
-/// Resolves the session via the on-disk SessionStore, attaches a fresh
-/// client to the kernel's connection file, and sends `shutdown_request`.
-/// Mirrors `jet stop <session_id>` — works for any tracked session,
-/// regardless of which process owns the live in-memory client.
+/// If a Client for this session is live in-process, drive shutdown through it —
+/// that waits for the child-wait watcher to flip status to `Exited` (i.e. the
+/// kernel process has been reaped), so no fd we inherited is still held by a
+/// live descendant when we return. Otherwise falls back to resolving the
+/// session via the on-disk SessionStore and attaching a fresh client just to
+/// send `shutdown_request`. Mirrors `jet stop <session_id>` — works for any
+/// tracked session, regardless of which process owns the live in-memory client.
 pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
+    // Look for a live in-process handle bound to this session_id.
+    let live_handle = {
+        let map = KERNELS.lock().unwrap();
+        map.iter()
+            .find_map(|(client_id, handle)| {
+                let bound = handle
+                    .try_lock()
+                    .ok()
+                    .and_then(|c| c.session_id().map(str::to_string));
+                (bound.as_deref() == Some(session_id.as_str()))
+                    .then(|| (client_id.clone(), handle.clone()))
+            })
+    };
+
+    if let Some((client_id, handle)) = live_handle {
+        runtime()
+            .block_on(async move { handle.lock().await.shutdown().await })
+            .into_lua_err()?;
+        // Drop the Client from the registry so its background tasks tear down
+        // and the ChildGuard (if any) is released — the process is already gone
+        // by the time Client::shutdown returns.
+        KERNELS.lock().unwrap().remove(&client_id);
+        return Ok(());
+    }
+
     let path = SessionStore::default()
         .into_lua_err()?
         .open(&session_id)

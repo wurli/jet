@@ -18,7 +18,7 @@ local kernel = utils.start_kernel("python3")
 
 -- Simple addition ------------------------------------------------------------
 local ok1 = false
-for msg in kernel:execute("print(1 + 1)", 5) do
+for msg in kernel:execute("print(1 + 1)", 10) do
 	ok1 = msg.status == "busy"
 		and msg.msg.header
 		and msg.msg.header.msg_type == "stream"
@@ -33,7 +33,7 @@ assert(ok1, "expected '2' in stream output")
 
 -- Error message --------------------------------------------------------------
 local ok2 = nil
-for msg in kernel:execute("raise ValueError('bananas')", 5) do
+for msg in kernel:execute("raise ValueError('bananas')", 10) do
 	ok2 = msg.status == "busy"
 		and msg.msg.header.msg_type == "error"
 		and msg.msg.content

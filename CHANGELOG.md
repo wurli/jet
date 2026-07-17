@@ -1,12 +1,20 @@
 # Changelog
 
+## Development version
+
+* CI now uses nextest
+* `jet skill` now teaches agents how to start their own persistent Jet session
+* Repl emits window title signal (OSC 0/1/2)
+* Repl emits semantic prompt markers (OSC 133)
+* Repl now handles `update_display_data` messages
+
 ## 0.0.3 - LSP integration 💫
 
-*   Completions no longer suck
-*   Completions are powered internally by a LSP server. Each Jet client spawns
-    one LSP server - you can get this in Lua from the callback returned by
-    `jet.start()` and/or `jet.attach()`
-*   jet.nvim has been split into its own repo [jet.nvim](https://github.com/wurli/jet.nvim)
+* Completions no longer suck
+* Completions are powered internally by a LSP server. Each Jet client spawns
+  one LSP server - you can get this in Lua from the callback returned by
+  `jet.start()` and/or `jet.attach()`
+* jet.nvim has been split into its own repo [jet.nvim](https://github.com/wurli/jet.nvim)
 
 ## 0.0.2
 
@@ -31,7 +39,7 @@ Neovim plugin
 ## 0.0.1 – first dev release 🎉
 
 Jet is a command line tool for interacting with Jupyter kernels. In particular,
-Jet provides a REPL which allows multiple clients (e.g. you and an agent) to
+Jet provides a repl which allows multiple clients (e.g. you and an agent) to
 connect to the same Python/R/Julia/{your favourite interpreted language} and
 run code, inspect the environment, etc. A super cool application of this is
 that when using a LLM for data-oriented work, your LLM can just jump into a
@@ -44,7 +52,7 @@ with kernels using raw Jupyter messages. This allows much finer grained control
 over running kernels, e.g. allowing you to work with special 'comm' channels
 exposed by some kernels. E.g. the Ark R kernel exposes a comm which starts an
 LSP server. [`jet.ark`](https://github.com/wurli/jet.ark) is a nvim plugin
-which uses this mechanism to show an R REPL in nvim's built-in terminal (via
+which uses this mechanism to show an R repl in nvim's built-in terminal (via
 Jet) and simultaneously connect nvim to a LSP server which is aware of what's
 going on in the session. It's magic!
 

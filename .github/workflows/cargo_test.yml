@@ -15,7 +15,6 @@ jobs:
       # Don't abort the mac leg because linux failed (or vice versa) —
       # a failure on one OS is often specific to that OS and we want to
       # see both.
-      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
 
@@ -68,9 +67,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Run cargo test
-        id: cargo_test
-        run: make test-cargo
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run Tests
+        env:
+          NEXTEST_PROFILE: "ci"
+        run: |
+          cargo nextest run
 
       # Kernel-startup failures show up in tests as "kernel not reachable"
       # or "timed out waiting for kernel_info_reply" with no upstream

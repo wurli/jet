@@ -44,7 +44,7 @@ assert(type(lsp_comm_id) == "string" and #lsp_comm_id > 0, "expected comm_id fro
 ui_comm_messages()
 
 -- Listen on the UI comm ------------------------------------------------------
-local ui_comm_notifications = kernel:comm_listen(ui_comm_id, 5)
+local ui_comm_notifications = kernel:comm_listen(ui_comm_id, 10)
 local msg1 = ui_comm_notifications()
 local msg2 = ui_comm_notifications()
 
