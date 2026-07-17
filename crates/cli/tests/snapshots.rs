@@ -70,7 +70,7 @@ fn start_jet(
     args.extend_from_slice(extra_args);
     args.push(&kernel_arg);
     let h = Harness::spawn(&args, xdg, conn_str)?;
-    h.expect("Python", Duration::from_secs(20));
+    h.expect("Python test banner", Duration::from_secs(20));
     h.settle(Duration::from_millis(300), Duration::from_secs(2));
     Ok(h)
 }
@@ -469,10 +469,7 @@ fn spawn_reader(
                         // Include chunk context (last ~80 bytes before the
                         // DSR marker) so we can see what the parser had
                         // just processed when the query landed.
-                        let dsr_pos = chunk
-                            .windows(4)
-                            .position(|w| w == b"\x1b[6n")
-                            .unwrap_or(0);
+                        let dsr_pos = chunk.windows(4).position(|w| w == b"\x1b[6n").unwrap_or(0);
                         let ctx_start = dsr_pos.saturating_sub(80);
                         let ctx = String::from_utf8_lossy(&chunk[ctx_start..dsr_pos]);
                         eprintln!(

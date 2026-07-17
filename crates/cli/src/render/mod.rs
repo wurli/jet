@@ -115,6 +115,10 @@ pub struct Renderer {
     // cursor is currently on) before writing the new frame. None means no
     // clear is pending.
     pending_clear: Arc<Mutex<Option<usize>>>,
+    /// Handle to the terminal window-title guard. Toggled to `busy=true`
+    /// on any Busy status and `false` on the matching Idle, so the title
+    /// shows a `●` marker while the kernel is executing.
+    title: crate::window_title::TitleHandle,
 }
 
 impl Renderer {
@@ -138,7 +142,13 @@ impl Renderer {
             external_client_style: ExternalClientStyle::Wrap,
             newlines_since_mark: Arc::new(AtomicUsize::new(0)),
             pending_clear: Arc::new(Mutex::new(None)),
+            title: crate::window_title::TitleHandle::default(),
         }
+    }
+
+    pub fn with_title_handle(mut self, title: crate::window_title::TitleHandle) -> Self {
+        self.title = title;
+        self
     }
 
     pub fn with_external_client_style(mut self, style: ExternalClientStyle) -> Self {
@@ -282,6 +292,7 @@ impl Renderer {
 
             // --- lifecycle events ---
             EventData::Busy { .. } => {
+                self.title.set_busy(true);
                 // Foreign Busy parks our prompt and trips reedline's
                 // break_signal so any in-flight `read_line` returns
                 // `ExternalBreak(buffer)` and yields the terminal.
@@ -292,6 +303,7 @@ impl Renderer {
                 }
             }
             EventData::Idle { parent_id } => {
+                self.title.set_busy(false);
                 if !is_own_session {
                     // If the last foreign write left the cursor mid-line
                     // (e.g. a trailing partial Stream chunk with no \n),

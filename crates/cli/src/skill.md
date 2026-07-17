@@ -11,7 +11,6 @@ Jet is a command line tool which can be used to interact with running Jupyter
 kernels.
 
 ```
-❯ jet -h
 A Jupyter Kernel REPL Driver
 
 Usage: jet <COMMAND>
@@ -29,11 +28,15 @@ Commands:
   send           Send code to a running kernel and exit immediately. Output (if any) is discarded —
                  the kernel runs the cell after `jet` has gone. Same target shape as `jet execute`,
                  minus rendering options
+  skill          Print the bundled agent skill documentation (SKILL.md) to stdout
   help           Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help  Print help
+  -h, --help     Print help
+  -V, --version  Print version
 ```
+
+### Running code in an existing session
 
 For example, you can run code in the user's kernel session (and see  the
 result) using `jet execute`:
@@ -47,11 +50,30 @@ result) using `jet execute`:
 ```
 # pass the session id to `jet execute` to run code in the user's session.
 # Make sure you use --session-name so the user can see who's running code in their session!
-❯ jet execute 2026-07-03_152521_r_dotfiles_bc9832 'print("hi")' --session-name claude
+❯ jet execute 2026-07-03_152521_r_dotfiles_bc9832 'print("hi")' --session-name Claude
 [1] "hi"
 
 # You can also pipe into `jet execute`:
-echo 'print("HI")' | jet execute 2026-07-03_152521_r_dotfiles_bc9832 --session-name claude
+echo 'print("HI")' | jet execute 2026-07-03_152521_r_dotfiles_bc9832 --session-name Claude
+```
+
+### Starting a new persistent session
+
+Use `jet start --persist` to start a new long-lived session. Once started, you
+can interact with the kernel using `jet execute`.
+
+``` sh
+# Find available kernels
+jet list-kernels
+/Users/JACOB.SCOTT1/.local/share/nvim/jet/kernels/ark/kernel.json
+/Users/JACOB.SCOTT1/Library/Jupyter/kernels/python3/kernel.json
+/Users/JACOB.SCOTT1/Library/Jupyter/kernels/ark_test/kernel.json
+
+# Start a long-lived session
+jet start \
+  /Users/JACOB.SCOTT1/.local/share/nvim/jet/kernels/ark/kernel.json \
+  --persist \
+  --session-name Claude
 ```
 
 ## Advanced  use
