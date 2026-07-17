@@ -21,21 +21,6 @@ fn which(name: &str) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
-/// Path to `<repo>/kernels`, populated by `scripts/install-dev-kernels.sh`.
-fn repo_kernels_dir() -> Option<PathBuf> {
-    // CARGO_MANIFEST_DIR is `<repo>/crates/lua`; go up two.
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()?
-        .parent()?
-        .join("test-kernels");
-    p.exists().then_some(p)
-}
-
-fn dev_kernel(name: &str) -> Option<PathBuf> {
-    let p = repo_kernels_dir()?.join(name).join("kernel.json");
-    p.exists().then_some(p)
-}
-
 /// Path to the prebuilt `jet_lua` cdylib. `cargo test` only links the rlib
 /// into the test binary and doesn't produce the cdylib that luajit loads,
 /// so callers must run `cargo build -p jet_lua` first. Tests skip when
@@ -76,37 +61,11 @@ fn walkdir(root: &Path) -> Box<dyn Iterator<Item = PathBuf>> {
     }))
 }
 
-enum TestKernel {
-    Python,
-    Ark,
-}
-
 fn run_lua_test(script_name: &str) {
-    run_lua_test_with(script_name, TestKernel::Python);
-}
-
-fn run_lua_test_with(script_name: &str, which_kernel: TestKernel) {
     let Some(luajit) = which("luajit") else {
         skip("luajit not on PATH");
         return;
     };
-    let kernelspec = match which_kernel {
-        TestKernel::Python => {
-            let Some(p) = dev_kernel("python3") else {
-                skip("python3 kernelspec missing; run scripts/install-dev-kernels.sh");
-                return;
-            };
-            p
-        }
-        TestKernel::Ark => {
-            let Some(p) = dev_kernel("ark") else {
-                skip("ark kernelspec missing; run scripts/install-dev-kernels.sh");
-                return;
-            };
-            p
-        }
-    };
-
     let Some(dylib) = find_cdylib() else {
         skip("cdylib not built; run `cargo build -p jet_lua` first");
         return;
@@ -126,7 +85,6 @@ fn run_lua_test_with(script_name: &str, which_kernel: TestKernel) {
     let status = Command::new(&luajit)
         .arg(&script)
         .env("LUA_CPATH", &cpath)
-        .env("JET_TEST_KERNEL", &kernelspec)
         .status()
         .expect("spawn luajit");
     assert!(status.success(), "{} failed", script_name);
@@ -144,7 +102,7 @@ fn input_request_smoke() {
 
 #[test]
 fn comm_lsp_smoke() {
-    run_lua_test_with("comm_lsp.lua", TestKernel::Ark);
+    run_lua_test("comm_lsp.lua");
 }
 
 #[test]
