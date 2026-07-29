@@ -239,7 +239,13 @@ fn register(
     Ok(out)
 }
 
-/// `jet.stop(session_id)`
+/// Result of the async shutdown future: `Ok(())` on success, `Err(msg)` when
+/// the session couldn't be found (unknown id, no live handle, no store entry).
+/// Any other shutdown failure comes back as a `Result::Err` on the oneshot
+/// value itself and is raised as a Lua error by the poll closure.
+type ShutdownOutcome = Result<(), String>;
+
+/// `jet.stop(session_id) -> poll`
 ///
 /// If a Client for this session is live in-process, drive shutdown through it —
 /// that waits for the child-wait watcher to flip status to `Exited` (i.e. the
@@ -248,7 +254,13 @@ fn register(
 /// session via the on-disk SessionStore and attaching a fresh client just to
 /// send `shutdown_request`. Mirrors `jet stop <session_id>` — works for any
 /// tracked session, regardless of which process owns the live in-memory client.
-pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
+///
+/// Non-blocking: returns a poll closure that the caller drives (e.g. via
+/// `vim.schedule`) until it yields `{status="ready", success=bool,
+/// failure_msg=string?}`. Subsequent calls return `nil`. Shutdown failures
+/// mid-flight raise a Lua error on the observing call; "no such session"
+/// comes back as `{success=false, failure_msg=...}`.
+pub fn shutdown_kernel(lua: &Lua, session_id: String) -> LuaResult<LuaFunction> {
     // Look for a live in-process handle bound to this session_id.
     let live_handle = {
         let map = KERNELS.lock().unwrap();
@@ -263,37 +275,97 @@ pub fn shutdown_kernel(_lua: &Lua, session_id: String) -> LuaResult<()> {
             })
     };
 
+    let (tx, rx) = oneshot::channel::<anyhow::Result<ShutdownOutcome>>();
+
     if let Some((client_id, handle)) = live_handle {
-        runtime()
-            .block_on(async move { handle.lock().await.shutdown().await })
-            .into_lua_err()?;
-        // Drop the Client from the registry so its background tasks tear down
-        // and the ChildGuard (if any) is released — the process is already gone
-        // by the time Client::shutdown returns.
-        KERNELS.lock().unwrap().remove(&client_id);
-        return Ok(());
+        runtime().spawn(async move {
+            let res = handle.lock().await.shutdown().await;
+            // Drop the Client from the registry so its background tasks tear down
+            // and the ChildGuard (if any) is released — the process is already gone
+            // by the time Client::shutdown returns.
+            if res.is_ok() {
+                KERNELS.lock().unwrap().remove(&client_id);
+            }
+            let _ = tx.send(res.map(|()| Ok(())));
+        });
+    } else {
+        runtime().spawn(async move {
+            let store = match SessionStore::default() {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            };
+            let session = match store.open(&session_id) {
+                Ok(s) => s,
+                Err(_) => {
+                    let _ = tx.send(Ok(Err(format!("no session with id {session_id}"))));
+                    return;
+                }
+            };
+            let path = session.connection_file_path();
+            let result: anyhow::Result<ShutdownOutcome> = async {
+                let connection = connection_file::read(path.as_path())?;
+                if probe_kernel_alive(&connection).await.is_ok() {
+                    let client_id = make_client_id(None);
+                    // `shutdown_kernel` sends `shutdown_request`, not an
+                    // interrupt — the interrupt-mode/pid fields don't matter.
+                    let mut kernel =
+                        Kernel::attach(&path, &client_id, AttachOptions::default()).await?;
+                    kernel.shutdown().await?;
+                }
+                // Kernel already dead → stop is idempotent, treat as success.
+                Ok(Ok(()))
+            }
+            .await;
+            let _ = tx.send(result);
+        });
     }
 
-    let path = SessionStore::default()
-        .into_lua_err()?
-        .open(&session_id)
-        .into_lua_err()?
-        .connection_file_path();
-    runtime()
-        .block_on(async move {
-            let connection = connection_file::read(path.as_path())?;
-            if probe_kernel_alive(&connection).await.is_ok() {
-                let client_id = make_client_id(None);
-                // `shutdown_kernel` sends `shutdown_request`, not an
-                // interrupt — the interrupt-mode/pid fields don't matter.
-                let mut kernel =
-                    Kernel::attach(&path, &client_id, AttachOptions::default()).await?;
-                kernel.shutdown().await
-            } else {
-                Ok(())
+    make_shutdown_poll(lua, rx)
+}
+
+fn make_shutdown_poll(
+    lua: &Lua,
+    rx: oneshot::Receiver<anyhow::Result<ShutdownOutcome>>,
+) -> LuaResult<LuaFunction> {
+    let state = RefCell::new(Some(rx));
+    lua.create_function(move |lua, ()| {
+        let mut borrow = state.borrow_mut();
+        let Some(rx) = borrow.as_mut() else {
+            return Ok(LuaValue::Nil);
+        };
+        match rx.try_recv() {
+            Err(oneshot::error::TryRecvError::Empty) => {
+                let t = lua.create_table()?;
+                t.set("status", "pending")?;
+                Ok(LuaValue::Table(t))
             }
-        })
-        .into_lua_err()
+            Err(oneshot::error::TryRecvError::Closed) => {
+                *borrow = None;
+                Err(LuaError::external(anyhow::anyhow!(
+                    "kernel shutdown task aborted before completing"
+                )))
+            }
+            Ok(result) => {
+                *borrow = None;
+                let outcome = result.into_lua_err()?;
+                let t = lua.create_table()?;
+                t.set("status", "ready")?;
+                match outcome {
+                    Ok(()) => {
+                        t.set("success", true)?;
+                    }
+                    Err(msg) => {
+                        t.set("success", false)?;
+                        t.set("failure_msg", msg)?;
+                    }
+                }
+                Ok(LuaValue::Table(t))
+            }
+        }
+    })
 }
 
 /// `jet.interrupt(client_id)`

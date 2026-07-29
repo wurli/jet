@@ -1,7 +1,8 @@
 # Changelog
 
-## Development version
+## 0.0.4
 
+* Lua: `jet.stop()` is now non-blocking
 * CI now uses nextest
 * `jet skill` now teaches agents how to start their own persistent Jet session
 * Repl emits window title signal (OSC 0/1/2)
