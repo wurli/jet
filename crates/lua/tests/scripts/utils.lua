@@ -183,7 +183,8 @@ function Kernel:listen(opts, timeout_seconds)
 end
 
 function Kernel:stop()
-	M.jet.stop(self.session_id)
+	local res = await(M.jet.stop(self.session_id))
+	assert(res.success, "jet.stop failed: " .. tostring(res.failure_msg))
 end
 
 ---@param spec_name string

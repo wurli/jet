@@ -101,6 +101,13 @@
 
 ---@alias jet.init.callback fun(): jet.init.response?
 
+---@class jet.stop.response
+---@field status "ready" | "pending"
+---@field success boolean
+---@field failure_msg string?
+
+---@alias jet.stop.callback fun(): jet.stop.response?
+
 ---@class jet.session_info
 ---@field session_id string
 ---@field closed_at string?
@@ -116,7 +123,7 @@
 ---@class jet.engine
 ---@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.init.callback, jet.session_info?
 ---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.init.callback, jet.session_info?
----@field stop fun(session_id: string)
+---@field stop fun(session_id: string): jet.stop.callback
 ---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }[]
 ---@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.session_info[]
