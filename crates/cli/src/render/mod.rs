@@ -19,7 +19,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use base64::Engine;
 use jet_core::events::{Event, EventData, InputRequest, IsCompleteReplyMsg};
 use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
@@ -493,14 +492,7 @@ impl Renderer {
                         self.emit_stream(style, &format!("Image render failed: {e}\n"))?;
                     }
                 }
-                return Ok(());
             }
-            let len = base64::engine::general_purpose::STANDARD
-                .decode(image_data)
-                .map(|b| b.len())
-                .unwrap_or(0);
-            self.emit_stream(style, &format!("[image/png {len} bytes]"))?;
-            self.ensure_newline(style)?;
             return Ok(());
         }
         if let Some(t) = data.get("text/plain").and_then(|s| s.as_str()) {

@@ -203,7 +203,7 @@ pub struct StartArgs {
     #[arg(long)]
     pub persist: bool,
 
-    /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
+    /// Disable kitty graphics
     #[arg(long)]
     pub no_graphics: bool,
 
@@ -247,7 +247,7 @@ pub struct AttachArgs {
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
 
-    /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
+    /// Disable kitty graphics
     #[arg(long)]
     pub no_graphics: bool,
 
@@ -305,7 +305,7 @@ pub struct ExecuteArgs {
     #[arg(long)]
     pub silent: bool,
 
-    /// Disable kitty graphics; PNGs are reported as `[image/png NxN bytes]`.
+    /// Disable kitty graphics
     #[arg(long)]
     pub no_graphics: bool,
 
