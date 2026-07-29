@@ -249,11 +249,17 @@ impl Renderer {
                 self.emit_stream(&*style, &traceback)?;
                 self.ensure_newline(&*style)?;
             }
-            EventData::DisplayData { data, display_id: _ } => {
+            EventData::DisplayData {
+                data,
+                display_id: _,
+            } => {
                 self.apply_pending_clear(is_own_session)?;
                 self.render_display_data(&*style, &data)?;
             }
-            EventData::UpdateDisplayData { data, display_id: _ } => {
+            EventData::UpdateDisplayData {
+                data,
+                display_id: _,
+            } => {
                 // No per-display_id rewriting: rich (the animation case that
                 // motivated this) drives updates via `ClearOutput` instead,
                 // and other libraries using `update_display_data` are rare.
@@ -434,7 +440,8 @@ impl Renderer {
         // are the same `\n` count as the source.
         let newlines = bytes.matches('\n').count();
         if newlines > 0 {
-            self.newlines_since_mark.fetch_add(newlines, Ordering::SeqCst);
+            self.newlines_since_mark
+                .fetch_add(newlines, Ordering::SeqCst);
         }
         log::debug!(
             "renderer -> tty: write_styled bytes={bytes:?} needs_crlf={} at_line_start {prev_at_line_start}->{new_at_line_start}",

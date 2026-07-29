@@ -719,7 +719,10 @@ mod tests {
         // Default is already Signal, but make the intent explicit.
         kernel.interrupt_mode = InterruptMode::Signal;
 
-        kernel.interrupt().await.expect("interrupt should not error");
+        kernel
+            .interrupt()
+            .await
+            .expect("interrupt should not error");
 
         // Wait for the child to die; assert it was killed by SIGINT within
         // a couple of seconds. `sleep` doesn't install a handler, so SIGINT
@@ -754,7 +757,10 @@ mod tests {
     async fn interrupt_signal_without_pid_is_a_noop() {
         let mut kernel = super::Kernel::synthetic_for_test(None);
         kernel.interrupt_mode = InterruptMode::Signal;
-        kernel.interrupt().await.expect("no-pid path must not error");
+        kernel
+            .interrupt()
+            .await
+            .expect("no-pid path must not error");
     }
 
     #[test]

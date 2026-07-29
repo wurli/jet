@@ -174,7 +174,9 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
     let render_graphics = !args.no_graphics;
     let session_id = session.as_ref().map(|s| s.meta().session_id.clone());
     let title = crate::window_title::WindowTitle::set(
-        spec.display_name.as_deref().or(Some(spec.language.as_str())),
+        spec.display_name
+            .as_deref()
+            .or(Some(spec.language.as_str())),
     );
     let mut kernel_session = drive_repl(
         ReplTarget::Spawn {

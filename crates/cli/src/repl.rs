@@ -21,8 +21,8 @@ use jet_core::jupyter_protocol::{
     ExecuteRequest, InputReply, IsCompleteReplyStatus, IsCompleteRequest, JupyterMessage,
 };
 use jet_core::kernel::{AttachOptions, KernelSpec};
-use jet_core::manager::{Session, SessionStore};
 use jet_core::lsp::LspBackend;
+use jet_core::manager::{Session, SessionStore};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc::UnboundedReceiver;

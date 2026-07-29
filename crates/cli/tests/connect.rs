@@ -131,11 +131,7 @@ fn spawn_persisted_with_env(
 /// the kernel accepts or `timeout` elapses. Panics with a useful message
 /// on timeout — the alternative is `run_execute` failing later with the
 /// opaque "kernel not reachable" error.
-fn wait_for_kernel_reachable(
-    conn: &std::path::Path,
-    timeout: Duration,
-    ctx: &PersistedContext,
-) {
+fn wait_for_kernel_reachable(conn: &std::path::Path, timeout: Duration, ctx: &PersistedContext) {
     let info: serde_json::Value =
         serde_json::from_slice(&std::fs::read(conn).expect("read connection file"))
             .expect("parse connection file");

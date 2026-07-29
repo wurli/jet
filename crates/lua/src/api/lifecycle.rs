@@ -264,15 +264,14 @@ pub fn shutdown_kernel(lua: &Lua, session_id: String) -> LuaResult<LuaFunction> 
     // Look for a live in-process handle bound to this session_id.
     let live_handle = {
         let map = KERNELS.lock().unwrap();
-        map.iter()
-            .find_map(|(client_id, handle)| {
-                let bound = handle
-                    .try_lock()
-                    .ok()
-                    .and_then(|c| c.session_id().map(str::to_string));
-                (bound.as_deref() == Some(session_id.as_str()))
-                    .then(|| (client_id.clone(), handle.clone()))
-            })
+        map.iter().find_map(|(client_id, handle)| {
+            let bound = handle
+                .try_lock()
+                .ok()
+                .and_then(|c| c.session_id().map(str::to_string));
+            (bound.as_deref() == Some(session_id.as_str()))
+                .then(|| (client_id.clone(), handle.clone()))
+        })
     };
 
     let (tx, rx) = oneshot::channel::<anyhow::Result<ShutdownOutcome>>();

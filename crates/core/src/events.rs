@@ -159,10 +159,7 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
         },
         (Channel::IoPub, JupyterMessageContent::DisplayData(dd)) => EventData::DisplayData {
             data: media_to_value(&dd.data.content),
-            display_id: dd
-                .transient
-                .as_ref()
-                .and_then(|t| t.display_id.clone()),
+            display_id: dd.transient.as_ref().and_then(|t| t.display_id.clone()),
         },
         (Channel::IoPub, JupyterMessageContent::UpdateDisplayData(ud)) => {
             match ud.transient.display_id.clone() {
@@ -183,10 +180,7 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
         }
         (Channel::IoPub, JupyterMessageContent::ExecuteResult(er)) => EventData::DisplayData {
             data: media_to_value(&er.data.content),
-            display_id: er
-                .transient
-                .as_ref()
-                .and_then(|t| t.display_id.clone()),
+            display_id: er.transient.as_ref().and_then(|t| t.display_id.clone()),
         },
         (Channel::IoPub, JupyterMessageContent::ExecuteInput(ei)) => EventData::ExecuteInput {
             code: ei.code.clone(),

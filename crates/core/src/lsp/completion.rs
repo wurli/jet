@@ -27,10 +27,7 @@ pub fn reply_to_response(reply: CompleteReply, rope: &Rope) -> CompletionRespons
         .map(|m| CompletionItem {
             label: m.clone(),
             kind: Some(CompletionItemKind::VARIABLE),
-            text_edit: Some(CompletionTextEdit::Edit(TextEdit {
-                range,
-                new_text: m,
-            })),
+            text_edit: Some(CompletionTextEdit::Edit(TextEdit { range, new_text: m })),
             ..Default::default()
         })
         .collect();
