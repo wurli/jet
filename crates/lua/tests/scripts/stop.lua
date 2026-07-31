@@ -8,12 +8,19 @@ local utils = require("utils")
 local kernel = utils.start_kernel("ark")
 
 local kernel_alive = function()
-	for _, session in ipairs(utils.jet.list_sessions()) do
-		if session.session_id == kernel.session_id then
-			return true
+	local poll = utils.jet.list_sessions()
+	while true do
+		local res = poll()
+		assert(res ~= nil, "list_sessions poll ended before ready")
+		if res.status == "ready" then
+			for _, session in ipairs(res.sessions) do
+				if session.session_id == kernel.session_id then
+					return true
+				end
+			end
+			return false
 		end
 	end
-	return false
 end
 
 assert(kernel_alive(), "Kernel should be alive after start")

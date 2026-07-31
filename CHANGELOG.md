@@ -2,7 +2,7 @@
 
 ## Development
 
-* Lua: `list_sessions()` is way faster
+* Lua: `list_sessions()` is now async, but also way faster
 * Lua (fix): `jet.stop()` records closure in `session.json`
 * CLI: with `--no-graphics` repl no longer prints `[image/png NxN bytes]`
 

@@ -389,7 +389,11 @@ pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     Ok(out)
 }
 
-/// `jet.list_sessions({ status?, all_dirs? })` — Jet sessions on disk (the SessionStore).
+/// `jet.list_sessions({ status?, all_dirs? }) -> poll` — Jet sessions on disk (the
+/// SessionStore). Returns a poll closure the caller drives (e.g. via `vim.schedule`)
+/// until it yields `{status="ready", sessions=<jet.session_info[]>}`; subsequent calls
+/// return `nil`. While the background listing runs it returns `{status="pending"}`.
+///
 /// Returns every `session.json` jet has written, regardless of which process owns the live
 /// client (or whether one is open at all). Each entry exposes the full `SessionMeta`.
 ///
@@ -398,9 +402,10 @@ pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 /// - `all_dirs`: when true, return sessions for every working directory; otherwise only
 ///   sessions whose `working_dir` matches the current dir.
 ///
-/// Probes Open sessions first so kernels that exited while detached are flipped to Closed
-/// before filtering.
-pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
+/// Runs the listing on the tokio runtime so the main thread doesn't block on parsing
+/// `session.json` files. Uses the cached form (backed by [`ClientRegistry`]'s background
+/// poller), so the future completes as soon as the runtime picks it up.
+pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaFunction> {
     let (status, all_dirs) = match opts {
         Some(t) => (
             t.get::<Option<String>>("status")?,
@@ -411,19 +416,57 @@ pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
     let status: jet_core::manager::StatusFilter =
         status.as_deref().unwrap_or("open").parse().into_lua_err()?;
 
-    // list_filtered_cached() touches ClientRegistry::global(), which
-    // spawns the background liveness poller on first access — so the
-    // cache is always being refreshed by the time we read from it.
-    let store = SessionStore::default().into_lua_err()?;
-    let sessions = store
-        .list_filtered_cached(status, all_dirs)
-        .into_lua_err()?;
+    let (tx, rx) = oneshot::channel::<anyhow::Result<Vec<jet_core::manager::SessionMeta>>>();
+    runtime().spawn(async move {
+        let result = (|| {
+            // list_filtered_cached() touches ClientRegistry::global(), which
+            // spawns the background liveness poller on first access — so the
+            // cache is always being refreshed by the time we read from it.
+            let store = SessionStore::default()?;
+            store.list_filtered_cached(status, all_dirs)
+        })();
+        let _ = tx.send(result);
+    });
 
-    let table = lua.create_table()?;
-    for session in sessions {
-        table.push(crate::to_lua_value(lua, &session)?)?;
-    }
-    Ok(table)
+    make_list_sessions_poll(lua, rx)
+}
+
+fn make_list_sessions_poll(
+    lua: &Lua,
+    rx: oneshot::Receiver<anyhow::Result<Vec<jet_core::manager::SessionMeta>>>,
+) -> LuaResult<LuaFunction> {
+    let state = RefCell::new(Some(rx));
+    lua.create_function(move |lua, ()| {
+        let mut borrow = state.borrow_mut();
+        let Some(rx) = borrow.as_mut() else {
+            return Ok(LuaValue::Nil);
+        };
+        match rx.try_recv() {
+            Err(oneshot::error::TryRecvError::Empty) => {
+                let t = lua.create_table()?;
+                t.set("status", "pending")?;
+                Ok(LuaValue::Table(t))
+            }
+            Err(oneshot::error::TryRecvError::Closed) => {
+                *borrow = None;
+                Err(LuaError::external(anyhow::anyhow!(
+                    "list_sessions task aborted before completing"
+                )))
+            }
+            Ok(result) => {
+                *borrow = None;
+                let sessions = result.into_lua_err()?;
+                let list = lua.create_table()?;
+                for session in sessions {
+                    list.push(crate::to_lua_value(lua, &session)?)?;
+                }
+                let t = lua.create_table()?;
+                t.set("status", "ready")?;
+                t.set("sessions", list)?;
+                Ok(LuaValue::Table(t))
+            }
+        }
+    })
 }
 
 /// `jet.show(session_id) -> { session, spec }`

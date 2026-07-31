@@ -108,6 +108,12 @@
 
 ---@alias jet.stop.callback fun(): jet.stop.response?
 
+---@class jet.list_sessions.response
+---@field status "ready" | "pending"
+---@field sessions jet.session_info[]
+
+---@alias jet.list_sessions.callback fun(): jet.list_sessions.response?
+
 ---@class jet.session_info
 ---@field session_id string
 ---@field closed_at string?
@@ -126,7 +132,7 @@
 ---@field stop fun(session_id: string): jet.stop.callback
 ---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }[]
----@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.session_info[]
+---@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.list_sessions.callback
 ---@field list_kernels fun(): { path: string, spec: jet.kernel.spec }[]
 ---@field show_spec fun(path: string): jet.kernel.spec
 ---@field show_session fun(session_id: string): { session: jet.session_info, spec: jet.kernel.spec }
