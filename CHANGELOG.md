@@ -2,9 +2,17 @@
 
 ## Development
 
-* Lua: `list_sessions()` is now async, but also way faster
-* Lua (fix): `jet.stop()` records closure in `session.json`
-* CLI: with `--no-graphics` repl no longer prints `[image/png NxN bytes]`
+Lua
+* Fix: `list_sessions()` is now async, but also way faster
+* Fix: `jet.stop()` records closure in `session.json`
+
+CLI
+* with `--no-graphics` repl no longer prints `[image/png NxN bytes]`
+
+General
+* Fix: Kernels which fail to start no longer linger as open in the session store
+* Feat: better error messages when kernel command not found
+
 
 ## 0.0.4
 
