@@ -192,4 +192,8 @@ M.start_kernel = function(spec_name)
 	return Kernel.init(spec_name)
 end
 
+M.list_sessions = function()
+	return await(M.jet.list_sessions()).sessions
+end
+
 return M

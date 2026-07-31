@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "broken-kernel",
+    "--connection_file",
+    "{connection_file}"
+  ],
+  "display_name": "Broken Kernel",
+  "language": "c"
+}
