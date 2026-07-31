@@ -185,10 +185,9 @@ impl SessionStore {
     ) -> Result<Vec<SessionMeta>> {
         let reg = super::ClientRegistry::global();
         let owned = reg.live_session_ids();
-        // Prefer the registry's cached meta list — refreshed each poll
-        // tick, avoids re-parsing ~2k session.json files on every call.
-        // Fall back to a live read on the rare path where the seed
-        // failed and the poller hasn't yet filled it.
+        // The registry caches the parsed meta list and revalidates it
+        // against the sessions-dir mtime, so this avoids re-parsing ~2k
+        // session.json files on every call.
         let cwd = (!all_dirs).then(|| std::env::current_dir().ok()).flatten();
         let filter = |s: &SessionMeta| -> bool {
             let status_ok = match status {
@@ -208,21 +207,13 @@ impl SessionStore {
             }
             m
         };
-        if let Some(cached) = reg.cached_metas() {
-            Ok(cached
-                .iter()
-                .cloned()
-                .map(apply_liveness)
-                .filter(filter)
-                .collect())
-        } else {
-            Ok(self
-                .list()?
-                .into_iter()
-                .map(apply_liveness)
-                .filter(filter)
-                .collect())
-        }
+        Ok(reg
+            .cached_metas()?
+            .iter()
+            .cloned()
+            .map(apply_liveness)
+            .filter(filter)
+            .collect())
     }
 
     fn filter(&self, status: StatusFilter, all_dirs: bool) -> Result<Vec<SessionMeta>> {

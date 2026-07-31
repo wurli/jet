@@ -199,31 +199,29 @@ impl ClientRegistry {
     }
 
     /// Snapshot of the on-disk `SessionMeta` list. Returns the cached
-    /// list only if the sessions-dir mtime is unchanged since the scan;
-    /// otherwise re-scans synchronously and updates the cache. Falls
-    /// back to a fresh scan if the cache is unpopulated (seed still in
-    /// flight). Returns `None` only if we couldn't determine the store
-    /// path — callers should fall back to `SessionStore::list()` then.
-    pub fn cached_metas(&self) -> Option<Arc<Vec<SessionMeta>>> {
-        let store = SessionStore::default().ok()?;
+    /// list when the sessions-dir mtime is unchanged since the last
+    /// scan; otherwise re-scans synchronously and updates the cache.
+    /// Errors only if the underlying `SessionStore::default()` /
+    /// `list()` fail.
+    pub fn cached_metas(&self) -> anyhow::Result<Arc<Vec<SessionMeta>>> {
+        let store = SessionStore::default()?;
         let current_mtime = dir_mtime(store.dir());
         {
             let guard = self.metas.read().unwrap();
             if let Some(cache) = guard.as_ref()
                 && cache.dir_mtime == current_mtime
             {
-                return Some(cache.metas.clone());
+                return Ok(cache.metas.clone());
             }
         }
         // mtime changed (or cache empty) — rescan and publish.
-        let metas = store.list().ok()?;
         let cache = MetaCache {
-            metas: Arc::new(metas),
+            metas: Arc::new(store.list()?),
             dir_mtime: current_mtime,
         };
         let arc = cache.metas.clone();
         *self.metas.write().unwrap() = Some(cache);
-        Some(arc)
+        Ok(arc)
     }
 
     async fn poll_loop(&'static self) {
