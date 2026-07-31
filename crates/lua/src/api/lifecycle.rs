@@ -193,7 +193,19 @@ fn make_lifecycle_poll(
             Ok(result) => {
                 let mut store_entry = store_entry.take();
                 *borrow = None;
-                let (client, info, boot_stream) = result.into_lua_err()?;
+                let (client, info, boot_stream) = match result {
+                    Ok(v) => v,
+                    Err(e) => {
+                        // Boot failed — the session.json we wrote up front would
+                        // otherwise linger as `open` forever. Flip it to closed
+                        // so `jet.list_sessions()` doesn't surface a kernel that
+                        // never came up.
+                        if let Some(mut s) = store_entry {
+                            s.mark_closed();
+                        }
+                        return Err(LuaError::external(e));
+                    }
+                };
                 if let (Some(pid), Some(s)) = (client.child_pid(), store_entry.as_mut()) {
                     s.set_kernel_pid(pid);
                 }
