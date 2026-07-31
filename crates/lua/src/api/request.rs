@@ -12,11 +12,11 @@ use rand::Rng;
 use serde_json::Value;
 
 use crate::poll::make_poll;
-use crate::runtime::{KernelHandle, get, runtime};
+use jet_core::manager::{ClientHandle, ClientRegistry, runtime};
 
 /// Common path: hand a message to the kernel session and wrap the
 /// resulting [`RequestStream`] in a Lua poll closure.
-fn shell_request(lua: &Lua, handle: &KernelHandle, msg: JupyterMessage) -> LuaResult<LuaFunction> {
+fn shell_request(lua: &Lua, handle: &ClientHandle, msg: JupyterMessage) -> LuaResult<LuaFunction> {
     let session = handle.clone();
     let stream = runtime()
         .block_on(async move { session.lock().await.request(msg) })
@@ -34,7 +34,7 @@ pub fn execute_code(
         LuaTable,
     ),
 ) -> LuaResult<LuaFunction> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     // ExecuteRequest expects `HashMap<String, String>` — flatten anything
     // non-string into its serde_json string form.
     use std::collections::HashMap;
@@ -66,7 +66,7 @@ pub fn execute_code(
 }
 
 pub fn is_complete(lua: &Lua, (session_id, code): (String, String)) -> LuaResult<LuaFunction> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let req: JupyterMessage = IsCompleteRequest { code }.into();
     shell_request(lua, &handle, req)
 }
@@ -75,7 +75,7 @@ pub fn get_completions(
     lua: &Lua,
     (session_id, code, cursor_pos): (String, String, u32),
 ) -> LuaResult<LuaFunction> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let req: JupyterMessage = CompleteRequest {
         code,
         cursor_pos: cursor_pos as usize,
@@ -88,7 +88,7 @@ pub fn comm_open(
     lua: &Lua,
     (session_id, target_name, data): (String, String, LuaValue),
 ) -> LuaResult<(String, LuaFunction)> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let data_json: Value = lua.from_value(data)?;
     let data_map = match data_json {
         Value::Object(m) => m,
@@ -110,7 +110,7 @@ pub fn comm_info(
     lua: &Lua,
     (session_id, target_name): (String, Option<String>),
 ) -> LuaResult<LuaFunction> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let session = handle.clone();
     let stream = runtime()
         .block_on(async move { session.lock().await.comm_info(target_name) })
@@ -139,7 +139,7 @@ fn parse_string_set(v: LuaValue) -> LuaResult<Option<Vec<String>>> {
 }
 
 pub fn listen(lua: &Lua, (session_id, opts): (String, Option<LuaTable>)) -> LuaResult<LuaFunction> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let mut filter = ListenFilter::default();
     if let Some(t) = opts {
         if let Some(chs) = parse_string_set(t.get("channel")?)? {
@@ -164,7 +164,7 @@ pub fn listen(lua: &Lua, (session_id, opts): (String, Option<LuaTable>)) -> LuaR
 }
 
 pub fn comm_listen(lua: &Lua, (session_id, comm_id): (String, String)) -> LuaResult<LuaFunction> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let session = handle.clone();
     let stream = runtime().block_on(async move { session.lock().await.comm_listen(comm_id) });
     make_poll(lua, stream)
@@ -174,7 +174,7 @@ pub fn comm_send(
     lua: &Lua,
     (session_id, comm_id, data): (String, String, LuaValue),
 ) -> LuaResult<LuaFunction> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let data_json: Value = lua.from_value(data)?;
     let data_map = match data_json {
         Value::Object(m) => m,

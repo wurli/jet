@@ -53,6 +53,13 @@ impl SessionStore {
         Self { dir: dir.into() }
     }
 
+    /// The data-dir this store is bound to. Used by the background
+    /// liveness poller to resolve connection files without threading
+    /// the path through every call.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     pub fn create(
         &self,
         lang: &str,
@@ -121,12 +128,63 @@ impl SessionStore {
     /// Probe Open sessions, then return entries matching `status` and (unless
     /// `all_dirs`) the current working directory. The filter pair `jet list-sessions`
     /// and `jet.list_sessions` both apply.
+    ///
+    /// Async form: probes every Open session on the hot path with a fresh
+    /// heartbeat ping. Used by the CLI (one-shot process, no long-lived
+    /// poller). Long-lived callers should use [`Self::list_filtered_cached`],
+    /// which consults [`super::ClientRegistry`]'s background cache instead.
     pub async fn list_filtered(
         &self,
         status: StatusFilter,
         all_dirs: bool,
     ) -> Result<Vec<SessionMeta>> {
         self.probe_open().await?;
+        Ok(self.filter(status, all_dirs)?)
+    }
+
+    /// Fast, sync form: consults [`super::ClientRegistry`] for both
+    /// in-process client status and the background poller's cached
+    /// probe results. Never awaits, never runs a fresh probe. Callers
+    /// that live in a process with the poller running (Lua) use this
+    /// so `list_sessions()` is virtually instant.
+    ///
+    /// Sessions the poller hasn't yet probed keep their on-disk status,
+    /// so the first call after startup can return a slightly stale view
+    /// until the first tick lands (< 1s).
+    pub fn list_filtered_cached(
+        &self,
+        status: StatusFilter,
+        all_dirs: bool,
+    ) -> Result<Vec<SessionMeta>> {
+        let reg = super::ClientRegistry::global();
+        let owned = reg.live_session_ids();
+        let all = self.list()?;
+        let filtered = all
+            .into_iter()
+            .map(|mut m| {
+                if m.status == SessionStatus::Open && !owned.contains(&m.session_id) {
+                    if let Some(false) = reg.cached_alive(&m.session_id) {
+                        m.status = SessionStatus::Closed;
+                    }
+                }
+                m
+            })
+            .filter(|s| match status {
+                StatusFilter::Open => s.status == SessionStatus::Open,
+                StatusFilter::Closed => s.status == SessionStatus::Closed,
+                StatusFilter::All => true,
+            })
+            .filter(|s| {
+                all_dirs
+                    || std::env::current_dir()
+                        .map(|cwd| s.working_dir == cwd)
+                        .unwrap_or(false)
+            })
+            .collect();
+        Ok(filtered)
+    }
+
+    fn filter(&self, status: StatusFilter, all_dirs: bool) -> Result<Vec<SessionMeta>> {
         let cwd = std::env::current_dir()?;
         Ok(self
             .list()?

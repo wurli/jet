@@ -15,7 +15,7 @@ use tokio::sync::oneshot;
 use jet_core::client::RequestStream;
 
 use crate::poll::make_poll;
-use crate::runtime::{KERNELS, KernelHandle, get, runtime};
+use jet_core::manager::{ClientHandle, ClientRegistry, runtime};
 
 /// `jet.start(spec_path, connection_file?, session_name?) -> poll`
 ///
@@ -222,8 +222,12 @@ fn register(
     // would have failed if the bind didn't succeed.
     let lsp_port = client.lsp_port();
     let stream = make_poll(lua, boot_stream)?;
-    let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(client));
-    KERNELS.lock().unwrap().insert(client_id.clone(), handle);
+    let handle: ClientHandle = Arc::new(tokio::sync::Mutex::new(client));
+    let reg = ClientRegistry::global();
+    reg.insert(client_id.clone(), handle);
+    // Kick off the background liveness poller on first client registration.
+    // Idempotent — subsequent calls are no-ops.
+    reg.ensure_poller_started();
 
     let out = lua.create_table()?;
 
@@ -262,17 +266,15 @@ type ShutdownOutcome = Result<(), String>;
 /// comes back as `{success=false, failure_msg=...}`.
 pub fn shutdown_kernel(lua: &Lua, session_id: String) -> LuaResult<LuaFunction> {
     // Look for a live in-process handle bound to this session_id.
-    let live_handle = {
-        let map = KERNELS.lock().unwrap();
-        map.iter().find_map(|(client_id, handle)| {
-            let bound = handle
-                .try_lock()
-                .ok()
-                .and_then(|c| c.session_id().map(str::to_string));
-            (bound.as_deref() == Some(session_id.as_str()))
-                .then(|| (client_id.clone(), handle.clone()))
-        })
-    };
+    let live_handle = ClientRegistry::global()
+        .snapshot()
+        .into_iter()
+        .find(|v| v.session_id.as_deref() == Some(session_id.as_str()))
+        .and_then(|v| {
+            ClientRegistry::global()
+                .get(&v.client_id)
+                .map(|h| (v.client_id, h))
+        });
 
     let (tx, rx) = oneshot::channel::<anyhow::Result<ShutdownOutcome>>();
 
@@ -283,7 +285,7 @@ pub fn shutdown_kernel(lua: &Lua, session_id: String) -> LuaResult<LuaFunction> 
             // and the ChildGuard (if any) is released — the process is already gone
             // by the time Client::shutdown returns.
             if res.is_ok() {
-                KERNELS.lock().unwrap().remove(&client_id);
+                ClientRegistry::global().remove(&client_id);
             }
             let _ = tx.send(res.map(|()| Ok(())));
         });
@@ -369,7 +371,7 @@ fn make_shutdown_poll(
 
 /// `jet.interrupt(client_id)`
 pub fn interrupt(_lua: &Lua, client_id: String) -> LuaResult<()> {
-    let handle = get(&client_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&client_id).into_lua_err()?;
     runtime()
         .block_on(async move { handle.lock().await.interrupt().await })
         .into_lua_err()
@@ -380,19 +382,12 @@ pub fn interrupt(_lua: &Lua, client_id: String) -> LuaResult<()> {
 /// `jet.list_sessions()`.
 pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let out = lua.create_table()?;
-    let map = KERNELS.lock().unwrap();
-    // Snapshot client→session mappings under the registry lock without awaiting; reading
-    // session_id() needs the per-client Mutex but try_lock avoids parking the runtime.
-    for (client_id, handle) in map.iter() {
+    for view in ClientRegistry::global().snapshot() {
         let entry = lua.create_table()?;
-        let session_id = handle
-            .try_lock()
-            .ok()
-            .and_then(|c| c.session_id().map(str::to_string));
-        if let Some(sid) = session_id {
+        if let Some(sid) = view.session_id {
             entry.set("session_id", sid)?;
         }
-        entry.set("client_id", client_id.clone())?;
+        entry.set("client_id", view.client_id)?;
         out.push(entry)?;
     }
     Ok(out)
@@ -420,9 +415,13 @@ pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
     let status: jet_core::manager::StatusFilter =
         status.as_deref().unwrap_or("open").parse().into_lua_err()?;
 
+    // Ensure the poller is running — if a lua caller hits list_sessions before
+    // any client is registered, we still need cached probe results for foreign
+    // sessions on disk. Idempotent.
+    ClientRegistry::global().ensure_poller_started();
     let store = SessionStore::default().into_lua_err()?;
-    let sessions = runtime()
-        .block_on(store.list_filtered(status, all_dirs))
+    let sessions = store
+        .list_filtered_cached(status, all_dirs)
         .into_lua_err()?;
 
     let table = lua.create_table()?;

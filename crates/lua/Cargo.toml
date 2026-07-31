@@ -21,7 +21,6 @@ anyhow.workspace = true
 jet_core.workspace = true
 log.workspace = true
 mlua.workspace = true
-once_cell.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

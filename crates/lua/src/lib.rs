@@ -11,7 +11,6 @@
 
 mod api;
 mod poll;
-mod runtime;
 
 use mlua::SerializeOptions;
 use mlua::prelude::*;

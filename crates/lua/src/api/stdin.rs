@@ -4,13 +4,13 @@
 use jet_core::jupyter_protocol::{InputReply, JupyterMessage};
 use mlua::prelude::*;
 
-use crate::runtime::{get, runtime};
+use jet_core::manager::{ClientRegistry, runtime};
 
 pub fn provide_stdin(
     _lua: &Lua,
     (session_id, _parent_msg_id, value): (String, String, String),
 ) -> LuaResult<()> {
-    let handle = get(&session_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     // Jupyter pairs an `input_reply` with the in-flight `input_request`
     // by proximity on the stdin channel; we don't carry parent_msg_id
     // through to the wire (matches the CLI behaviour).
