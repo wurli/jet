@@ -17,8 +17,9 @@
 //! The registry itself is sync — all state lives behind `std::sync`
 //! locks. The poller uses the shared tokio runtime returned by [`runtime`].
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use once_cell::sync::Lazy;
 use tokio::runtime::{Builder, Runtime};
@@ -67,13 +68,24 @@ struct Liveness {
 
 /// Process-global registry: live in-process clients + background liveness
 /// cache for foreign on-disk sessions. Use [`ClientRegistry::global`].
+/// Cached snapshot of the on-disk session list plus the sessions-dir
+/// mtime it was taken from. The mtime lets readers detect create/delete
+/// churn (including from other jet processes) without re-parsing every
+/// `session.json` on the hot path.
+#[derive(Clone)]
+struct MetaCache {
+    metas: Arc<Vec<SessionMeta>>,
+    dir_mtime: Option<SystemTime>,
+}
+
 pub struct ClientRegistry {
     clients: RwLock<HashMap<String, ClientHandle>>,
     cache: RwLock<HashMap<String, Liveness>>,
-    /// Cached result of `SessionStore::default().list()`, refreshed each
-    /// poll tick. Wrapped in `Arc` so readers can clone without holding
-    /// the lock while they filter. `None` until the first tick lands.
-    metas: RwLock<Option<Arc<Vec<SessionMeta>>>>,
+    /// Cached result of `SessionStore::default().list()` paired with the
+    /// sessions-dir mtime at scan time. Refreshed each poll tick and
+    /// on-demand when a reader spots a newer mtime. `None` until the
+    /// first read lands.
+    metas: RwLock<Option<MetaCache>>,
 }
 
 impl ClientRegistry {
@@ -100,7 +112,11 @@ impl ClientRegistry {
                 if let Ok(store) = SessionStore::default()
                     && let Ok(metas) = store.list()
                 {
-                    *reg.metas.write().unwrap() = Some(Arc::new(metas));
+                    let dir_mtime = dir_mtime(store.dir());
+                    *reg.metas.write().unwrap() = Some(MetaCache {
+                        metas: Arc::new(metas),
+                        dir_mtime,
+                    });
                 }
             });
             runtime().spawn(reg.poll_loop());
@@ -182,11 +198,32 @@ impl ClientRegistry {
         self.cache.read().unwrap().get(session_id).map(|l| l.alive)
     }
 
-    /// Snapshot of the on-disk `SessionMeta` list, refreshed each poll
-    /// tick. `None` if the seed read failed and the poller hasn't yet
-    /// filled it; callers should fall back to a live `SessionStore::list()`.
+    /// Snapshot of the on-disk `SessionMeta` list. Returns the cached
+    /// list only if the sessions-dir mtime is unchanged since the scan;
+    /// otherwise re-scans synchronously and updates the cache. Falls
+    /// back to a fresh scan if the cache is unpopulated (seed still in
+    /// flight). Returns `None` only if we couldn't determine the store
+    /// path — callers should fall back to `SessionStore::list()` then.
     pub fn cached_metas(&self) -> Option<Arc<Vec<SessionMeta>>> {
-        self.metas.read().unwrap().clone()
+        let store = SessionStore::default().ok()?;
+        let current_mtime = dir_mtime(store.dir());
+        {
+            let guard = self.metas.read().unwrap();
+            if let Some(cache) = guard.as_ref()
+                && cache.dir_mtime == current_mtime
+            {
+                return Some(cache.metas.clone());
+            }
+        }
+        // mtime changed (or cache empty) — rescan and publish.
+        let metas = store.list().ok()?;
+        let cache = MetaCache {
+            metas: Arc::new(metas),
+            dir_mtime: current_mtime,
+        };
+        let arc = cache.metas.clone();
+        *self.metas.write().unwrap() = Some(cache);
+        Some(arc)
     }
 
     async fn poll_loop(&'static self) {
@@ -206,7 +243,11 @@ impl ClientRegistry {
     pub async fn refresh_once(&self) -> anyhow::Result<()> {
         let store = SessionStore::default()?;
         let metas = store.list()?;
-        *self.metas.write().unwrap() = Some(Arc::new(metas.clone()));
+        let dir_mtime = dir_mtime(store.dir());
+        *self.metas.write().unwrap() = Some(MetaCache {
+            metas: Arc::new(metas.clone()),
+            dir_mtime,
+        });
         let owned = self.live_session_ids();
 
         let mut tasks: JoinSet<(String, bool)> = JoinSet::new();
@@ -260,6 +301,16 @@ impl ClientRegistry {
         }
         Ok(())
     }
+}
+
+/// Directory mtime, or `None` if the dir doesn't exist / can't be
+/// stat'd. Used as a cheap change-detector for the sessions dir:
+/// creating or removing an entry bumps this on macOS/Linux, so a
+/// matching mtime means the entry set is unchanged since the last scan.
+/// (In-place writes to files *inside* the dir don't bump it — the 1s
+/// poll picks those up.)
+fn dir_mtime(dir: &Path) -> Option<SystemTime> {
+    std::fs::metadata(dir).ok()?.modified().ok()
 }
 
 /// Heartbeat probe with a short timeout. `false` on any error/timeout,
