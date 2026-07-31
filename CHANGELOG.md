@@ -1,5 +1,10 @@
 # Changelog
 
+## Development
+
+* Lua: `list_sessions()` is way faster
+* CLI: with `--no-graphics` repl no longer prints `[image/png NxN bytes]`
+
 ## 0.0.4
 
 * Lua: `jet.stop()` is now non-blocking
