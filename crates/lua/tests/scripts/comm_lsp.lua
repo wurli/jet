@@ -23,7 +23,7 @@ lsp_comm_msgs()
 
 -- Check open comms -----------------------------------------------------------
 local found_lsp = false
-for res in kernel:comm_info("lsp", 10) do
+for res in kernel:comm_info("lsp", 20) do
 	local msg = res.msg
 	if msg.header.msg_type == "comm_info_reply" and msg.content and msg.content.comms then
 		for _, info in pairs(msg.content.comms) do
@@ -44,7 +44,7 @@ assert(type(lsp_comm_id) == "string" and #lsp_comm_id > 0, "expected comm_id fro
 ui_comm_messages()
 
 -- Listen on the UI comm ------------------------------------------------------
-local ui_comm_notifications = kernel:comm_listen(ui_comm_id, 10)
+local ui_comm_notifications = kernel:comm_listen(ui_comm_id, 20)
 local msg1 = ui_comm_notifications()
 local msg2 = ui_comm_notifications()
 
