@@ -471,12 +471,11 @@ impl Client {
         client_id: String,
         session_id: Option<String>,
     ) -> Result<(Self, Value, RequestStream)> {
-        // shell/iopub/stdin/control always present immediately after start; the Options
-        // exist for the post-take state (heartbeat moves out below for attached kernels
-        // only). Control moves into the socket loop so `shutdown_reply` and other
-        // control-channel frames flow through the router — per Jupyter spec, control
-        // is meant to run on a separate thread from shell so shutdown/interrupt aren't
-        // queued behind execute traffic.
+        // shell/iopub/stdin/control/heartbeat always present immediately after start; the
+        // Options exist for the post-take state. Control moves into the socket loop so
+        // `shutdown_reply` and other control-channel frames flow through the router — per
+        // Jupyter spec, control is meant to run on a separate thread from shell so
+        // shutdown/interrupt aren't queued behind execute traffic.
         let mut shell = kernel.channels.shell.take().expect("shell channel");
         let mut iopub = kernel.channels.iopub.take().expect("iopub channel");
         let stdin_sock = kernel.channels.stdin.take().expect("stdin channel");
@@ -539,23 +538,21 @@ impl Client {
         );
 
         // Liveness watchers:
-        // - Attach path (no owned pid): heartbeat. ZMQ DEALER/SUB reads
-        //   on a kernel that has exited cleanly don't error — they block
-        //   forever — so the heartbeat REQ/REP is the only way to catch
-        //   a clean exit like R's `quit()`.
-        // - Spawn path (we own the child): move the `Child` handle into a
+        // - Heartbeat REQ/REP (both paths): the only signal that catches a
+        //   *wedged* kernel — process alive but not answering. ZMQ DEALER/
+        //   SUB reads on a kernel that has exited cleanly don't error, they
+        //   block forever, so this is also how clean exits (R's `quit()`)
+        //   surface for attached kernels.
+        // - Child-wait (spawn path only): move the `Child` handle into a
         //   task and `wait().await` it. Fully event-driven — SIGCHLD wakes
-        //   the wait the instant the kernel dies, so we detect in-band
-        //   exits (ipykernel `quit()`, R `q()`) fast enough that the REPL
-        //   can suppress the trailing prompt redraw without a poll loop.
+        //   the wait the instant the kernel dies, so in-band exits
+        //   (ipykernel `quit()`, R `q()`) surface within microseconds.
         // The socket loop also flips status to Exited on any read/send
         // error, so a crash is caught even if neither watcher polls in
         // time.
         let mut watchers = Vec::new();
-        if kernel.is_attached() {
-            let hb = kernel.channels.heartbeat.take().expect("heartbeat channel");
-            watchers.push(spawn_heartbeat_watcher(hb, status_tx.clone()));
-        }
+        let hb = kernel.channels.heartbeat.take().expect("heartbeat channel");
+        watchers.push(spawn_heartbeat_watcher(hb, status_tx.clone()));
         let child_pid = kernel.child_pid();
         if let Some(child) = kernel.take_child() {
             watchers.push(spawn_child_wait_watcher(child, status_tx.clone()));
@@ -720,8 +717,7 @@ impl Client {
     }
 
     /// Shutdown the kernel. Sends `shutdown_request` on control, then waits for the
-    /// child-wait watcher (or heartbeat watcher, for attached kernels) to flip status
-    /// to `Exited` — i.e. the OS process has actually reaped, so no fd we inherited
+    /// child-wait or heartbeat watcher to flip status to `Exited` — i.e. the OS process has actually reaped, so no fd we inherited
     /// is still held by a live descendant. Bounded by a short timeout so a wedged
     /// kernel can't hang shutdown indefinitely. Drop the [`Client`] afterwards to
     /// tear down the reader/writer tasks; if you want the kernel to outlive this
@@ -754,6 +750,27 @@ impl Client {
         // so detached kernels leave the log in place for a future `attach` to tail.
         if let Some(p) = self.kernel.log_file_path.take() {
             let _ = std::fs::remove_file(p);
+        }
+        // Flip the SessionStore entry to Closed so cross-process readers
+        // (jet list-sessions, jet.list_sessions from Lua) see the state
+        // change immediately rather than waiting for the ~1Hz liveness
+        // poller. Best-effort: sessions started with a caller-supplied
+        // connection file have no store entry, and a missing/unreadable
+        // session.json is just logged.
+        if let Some(id) = self.session_id.as_deref()
+            && let Ok(store) = crate::manager::SessionStore::default()
+        {
+            match store.open(id) {
+                Ok(mut s) => {
+                    s.mark_closed();
+                    // The registry's meta cache is keyed on the sessions-dir
+                    // mtime, which doesn't move for in-file writes — patch
+                    // this one entry so the next `list_sessions()` reflects
+                    // Closed instead of waiting for the 1Hz poller.
+                    crate::manager::ClientRegistry::global().mark_meta_closed(id);
+                }
+                Err(e) => log::warn!("failed to reopen session {id} to mark closed: {e}"),
+            }
         }
         Ok(())
     }

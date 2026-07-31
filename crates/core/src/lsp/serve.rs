@@ -57,8 +57,7 @@ pub async fn spawn_tcp(backend: Arc<LspBackend>) -> io::Result<LspTcpHandle> {
             let backend = backend.clone();
             tokio::spawn(async move {
                 let (read, write) = tokio::io::split(stream);
-                let (service, socket) =
-                    LspService::new(|client| LspServer::new(backend, client));
+                let (service, socket) = LspService::new(|client| LspServer::new(backend, client));
                 Server::new(read, write, socket).serve(service).await;
                 log::info!("jet-lsp: client {peer} disconnected");
             });

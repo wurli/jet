@@ -109,3 +109,8 @@ fn comm_lsp_smoke() {
 fn listen_smoke() {
     run_lua_test("listen.lua");
 }
+
+#[test]
+fn stop_smoke() {
+    run_lua_test("stop.lua");
+}

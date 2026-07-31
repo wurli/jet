@@ -219,12 +219,12 @@ pub fn log_path_for(connection_path: &Path) -> PathBuf {
 }
 
 /// The five ZMQ client connections. `Client::bring_up` moves shell/iopub/stdin/control
-/// into background tasks (and, for attached kernels, heartbeat into a liveness watcher).
-/// The raw `Kernel::interrupt`/`Kernel::shutdown` methods use `control` when it is still
-/// present here — i.e. before a `Client` has taken it — so callers like Lua's
-/// `shutdown_kernel` can attach and send a shutdown without setting up a full Client.
-/// The slots are `Option`s so the owning Client can `.take()` them; for spawned kernels
-/// heartbeat is never taken (waitpid is used instead) and just drops with the kernel.
+/// into background tasks and heartbeat into a liveness watcher (both spawn and attach
+/// paths — see the wedge-detection comment there). The raw `Kernel::interrupt`/
+/// `Kernel::shutdown` methods use `control` when it is still present here — i.e. before
+/// a `Client` has taken it — so callers like Lua's `shutdown_kernel` can attach and send
+/// a shutdown without setting up a full Client. The slots are `Option`s so the owning
+/// Client can `.take()` them.
 #[derive(Default)]
 pub struct Channels {
     pub shell: Option<ClientShellConnection>,
@@ -311,11 +311,24 @@ impl Kernel {
             command.process_group(0);
         }
         log::info!("spawning kernel: {:?}", spec.argv);
-        let child = command.spawn().with_context(|| {
-            format!(
-                "running startup command given by kernelspec `{}`",
-                spec.argv.join(" ")
-            )
+        let child = command.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                let program = &spec.argv[0];
+                let where_ = if program.contains('/') {
+                    format!("no such file at `{program}`")
+                } else {
+                    format!("`{program}` is not on PATH")
+                };
+                anyhow!(
+                    "kernel command not found: {where_} (from kernelspec argv `{}`)",
+                    spec.argv.join(" "),
+                )
+            } else {
+                anyhow::Error::new(e).context(format!(
+                    "running startup command given by kernelspec `{}`",
+                    spec.argv.join(" ")
+                ))
+            }
         })?;
         let guard = ChildGuard::new(child);
 
@@ -585,21 +598,34 @@ pub fn enrich_startup_error(
     anyhow!(parts.join("\n\n"))
 }
 
-/// Quick liveness check: TCP-start to the shell port with a short
-/// timeout. Returns `Err` if the kernel's no longer listening, so
-/// external probers (session list self-heal) can check liveness
-/// without constructing a full `Kernel`.
+/// Liveness check: open the heartbeat REQ socket and send one ping,
+/// waiting for the echo within `timeout`. Confirms the kernel is
+/// actually *answering* — a wedged kernel with a live pid whose ZMQ
+/// sockets are bound but never serviced won't echo, so a bare TCP
+/// connect would falsely report it alive. Used by the SessionStore
+/// self-heal path for kernels this process doesn't own a `Client` for.
 pub async fn probe_kernel_alive(info: &ConnectionInfo) -> Result<()> {
     use jupyter_protocol::Transport;
     if !matches!(info.transport, Transport::TCP) {
         return Ok(());
     }
-    let addr = format!("{}:{}", info.ip, info.shell_port);
-    let start = tokio::net::TcpStream::connect(&addr);
-    match tokio::time::timeout(std::time::Duration::from_millis(200), start).await {
-        Ok(Ok(_stream)) => Ok(()),
-        Ok(Err(e)) => Err(anyhow!("kernel not reachable at {addr}: {e}")),
-        Err(_) => Err(anyhow!("kernel probe timed out at {addr}")),
+    let timeout = std::time::Duration::from_millis(300);
+    let probe = async {
+        let mut hb = create_client_heartbeat_connection(info)
+            .await
+            .map_err(|e| anyhow!("heartbeat connect: {e}"))?;
+        hb.single_heartbeat()
+            .await
+            .map_err(|e| anyhow!("heartbeat ping: {e}"))
+    };
+    match tokio::time::timeout(timeout, probe).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(anyhow!(
+            "kernel heartbeat probe timed out at {}:{}",
+            info.ip,
+            info.hb_port
+        )),
     }
 }
 
@@ -719,7 +745,10 @@ mod tests {
         // Default is already Signal, but make the intent explicit.
         kernel.interrupt_mode = InterruptMode::Signal;
 
-        kernel.interrupt().await.expect("interrupt should not error");
+        kernel
+            .interrupt()
+            .await
+            .expect("interrupt should not error");
 
         // Wait for the child to die; assert it was killed by SIGINT within
         // a couple of seconds. `sleep` doesn't install a handler, so SIGINT
@@ -754,7 +783,10 @@ mod tests {
     async fn interrupt_signal_without_pid_is_a_noop() {
         let mut kernel = super::Kernel::synthetic_for_test(None);
         kernel.interrupt_mode = InterruptMode::Signal;
-        kernel.interrupt().await.expect("no-pid path must not error");
+        kernel
+            .interrupt()
+            .await
+            .expect("no-pid path must not error");
     }
 
     #[test]

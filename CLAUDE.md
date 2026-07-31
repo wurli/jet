@@ -87,7 +87,7 @@ cargo run -- attach <printed-path>
 ## Tests
 
 ```bash
-cargo test --workspace          # unit + integration
+cargo nextest run
 ```
 
 Integration tests under `crates/cli/tests/repl.rs` and

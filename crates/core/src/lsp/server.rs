@@ -75,10 +75,7 @@ impl LanguageServer for LspServer {
         self.backend.did_close(params);
     }
 
-    async fn completion(
-        &self,
-        params: CompletionParams,
-    ) -> RpcResult<Option<CompletionResponse>> {
+    async fn completion(&self, params: CompletionParams) -> RpcResult<Option<CompletionResponse>> {
         Ok(self.backend.completion(params).await)
     }
 }

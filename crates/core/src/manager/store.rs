@@ -53,6 +53,13 @@ impl SessionStore {
         Self { dir: dir.into() }
     }
 
+    /// The data-dir this store is bound to. Used by the background
+    /// liveness poller to resolve connection files without threading
+    /// the path through every call.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     pub fn create(
         &self,
         lang: &str,
@@ -105,15 +112,42 @@ impl SessionStore {
         }
         let entries = std::fs::read_dir(&self.dir)
             .with_context(|| format!("reading {}", self.dir.display()))?;
-        let mut out = Vec::new();
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && let Ok(meta) = read_meta(&path)
-            {
-                out.push(meta);
-            }
-        }
+        let dirs: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+
+        // Fan the per-dir read_meta calls out across a small worker pool.
+        // Each call is ~400µs of syscall + serde work; with ~2k sessions
+        // the serial loop was the whole cost of list(). Threads = 8 covers
+        // typical laptop core counts without oversubscribing.
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get().min(8))
+            .unwrap_or(4);
+        let chunk_size = dirs.len().div_ceil(workers.max(1));
+        let out: Vec<SessionMeta> = if chunk_size == 0 {
+            Vec::new()
+        } else {
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = dirs
+                    .chunks(chunk_size)
+                    .map(|chunk| {
+                        scope.spawn(move || {
+                            chunk
+                                .iter()
+                                .filter_map(|p| read_meta(p).ok())
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .flat_map(|h| h.join().unwrap_or_default())
+                    .collect()
+            })
+        };
+        let mut out = out;
         out.sort_by(|a, b| a.session_id.cmp(&b.session_id));
         Ok(out)
     }
@@ -121,12 +155,68 @@ impl SessionStore {
     /// Probe Open sessions, then return entries matching `status` and (unless
     /// `all_dirs`) the current working directory. The filter pair `jet list-sessions`
     /// and `jet.list_sessions` both apply.
+    ///
+    /// Async form: probes every Open session on the hot path with a fresh
+    /// heartbeat ping. Used by the CLI (one-shot process, no long-lived
+    /// poller). Long-lived callers should use [`Self::list_filtered_cached`],
+    /// which consults [`super::ClientRegistry`]'s background cache instead.
     pub async fn list_filtered(
         &self,
         status: StatusFilter,
         all_dirs: bool,
     ) -> Result<Vec<SessionMeta>> {
         self.probe_open().await?;
+        Ok(self.filter(status, all_dirs)?)
+    }
+
+    /// Fast, sync form: consults [`super::ClientRegistry`] for both
+    /// in-process client status and the background poller's cached
+    /// probe results. Never awaits, never runs a fresh probe. Callers
+    /// that live in a process with the poller running (Lua) use this
+    /// so `list_sessions()` is virtually instant.
+    ///
+    /// Sessions the poller hasn't yet probed keep their on-disk status,
+    /// so the first call after startup can return a slightly stale view
+    /// until the first tick lands (< 1s).
+    pub fn list_filtered_cached(
+        &self,
+        status: StatusFilter,
+        all_dirs: bool,
+    ) -> Result<Vec<SessionMeta>> {
+        let reg = super::ClientRegistry::global();
+        let owned = reg.live_session_ids();
+        // The registry caches the parsed meta list and revalidates it
+        // against the sessions-dir mtime, so this avoids re-parsing ~2k
+        // session.json files on every call.
+        let cwd = (!all_dirs).then(|| std::env::current_dir().ok()).flatten();
+        let filter = |s: &SessionMeta| -> bool {
+            let status_ok = match status {
+                StatusFilter::Open => s.status == SessionStatus::Open,
+                StatusFilter::Closed => s.status == SessionStatus::Closed,
+                StatusFilter::All => true,
+            };
+            let dir_ok = all_dirs || cwd.as_deref() == Some(&s.working_dir);
+            status_ok && dir_ok
+        };
+        let apply_liveness = |mut m: SessionMeta| -> SessionMeta {
+            if m.status == SessionStatus::Open
+                && !owned.contains(&m.session_id)
+                && let Some(false) = reg.cached_alive(&m.session_id)
+            {
+                m.status = SessionStatus::Closed;
+            }
+            m
+        };
+        Ok(reg
+            .cached_metas()?
+            .iter()
+            .cloned()
+            .map(apply_liveness)
+            .filter(filter)
+            .collect())
+    }
+
+    fn filter(&self, status: StatusFilter, all_dirs: bool) -> Result<Vec<SessionMeta>> {
         let cwd = std::env::current_dir()?;
         Ok(self
             .list()?

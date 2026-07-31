@@ -15,7 +15,7 @@ use tokio::sync::oneshot;
 use jet_core::client::RequestStream;
 
 use crate::poll::make_poll;
-use crate::runtime::{KERNELS, KernelHandle, get, runtime};
+use jet_core::manager::{ClientHandle, ClientRegistry, runtime};
 
 /// `jet.start(spec_path, connection_file?, session_name?) -> poll`
 ///
@@ -193,7 +193,19 @@ fn make_lifecycle_poll(
             Ok(result) => {
                 let mut store_entry = store_entry.take();
                 *borrow = None;
-                let (client, info, boot_stream) = result.into_lua_err()?;
+                let (client, info, boot_stream) = match result {
+                    Ok(v) => v,
+                    Err(e) => {
+                        // Boot failed — the session.json we wrote up front would
+                        // otherwise linger as `open` forever. Flip it to closed
+                        // so `jet.list_sessions()` doesn't surface a kernel that
+                        // never came up.
+                        if let Some(mut s) = store_entry {
+                            s.mark_closed();
+                        }
+                        return Err(LuaError::external(e));
+                    }
+                };
                 if let (Some(pid), Some(s)) = (client.child_pid(), store_entry.as_mut()) {
                     s.set_kernel_pid(pid);
                 }
@@ -222,8 +234,8 @@ fn register(
     // would have failed if the bind didn't succeed.
     let lsp_port = client.lsp_port();
     let stream = make_poll(lua, boot_stream)?;
-    let handle: KernelHandle = Arc::new(tokio::sync::Mutex::new(client));
-    KERNELS.lock().unwrap().insert(client_id.clone(), handle);
+    let handle: ClientHandle = Arc::new(tokio::sync::Mutex::new(client));
+    ClientRegistry::global().insert(client_id.clone(), handle);
 
     let out = lua.create_table()?;
 
@@ -262,18 +274,15 @@ type ShutdownOutcome = Result<(), String>;
 /// comes back as `{success=false, failure_msg=...}`.
 pub fn shutdown_kernel(lua: &Lua, session_id: String) -> LuaResult<LuaFunction> {
     // Look for a live in-process handle bound to this session_id.
-    let live_handle = {
-        let map = KERNELS.lock().unwrap();
-        map.iter()
-            .find_map(|(client_id, handle)| {
-                let bound = handle
-                    .try_lock()
-                    .ok()
-                    .and_then(|c| c.session_id().map(str::to_string));
-                (bound.as_deref() == Some(session_id.as_str()))
-                    .then(|| (client_id.clone(), handle.clone()))
-            })
-    };
+    let live_handle = ClientRegistry::global()
+        .snapshot()
+        .into_iter()
+        .find(|v| v.session_id.as_deref() == Some(session_id.as_str()))
+        .and_then(|v| {
+            ClientRegistry::global()
+                .get(&v.client_id)
+                .map(|h| (v.client_id, h))
+        });
 
     let (tx, rx) = oneshot::channel::<anyhow::Result<ShutdownOutcome>>();
 
@@ -284,7 +293,7 @@ pub fn shutdown_kernel(lua: &Lua, session_id: String) -> LuaResult<LuaFunction> 
             // and the ChildGuard (if any) is released — the process is already gone
             // by the time Client::shutdown returns.
             if res.is_ok() {
-                KERNELS.lock().unwrap().remove(&client_id);
+                ClientRegistry::global().remove(&client_id);
             }
             let _ = tx.send(res.map(|()| Ok(())));
         });
@@ -370,7 +379,7 @@ fn make_shutdown_poll(
 
 /// `jet.interrupt(client_id)`
 pub fn interrupt(_lua: &Lua, client_id: String) -> LuaResult<()> {
-    let handle = get(&client_id).into_lua_err()?;
+    let handle = ClientRegistry::global().require(&client_id).into_lua_err()?;
     runtime()
         .block_on(async move { handle.lock().await.interrupt().await })
         .into_lua_err()
@@ -381,25 +390,22 @@ pub fn interrupt(_lua: &Lua, client_id: String) -> LuaResult<()> {
 /// `jet.list_sessions()`.
 pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
     let out = lua.create_table()?;
-    let map = KERNELS.lock().unwrap();
-    // Snapshot client→session mappings under the registry lock without awaiting; reading
-    // session_id() needs the per-client Mutex but try_lock avoids parking the runtime.
-    for (client_id, handle) in map.iter() {
+    for view in ClientRegistry::global().snapshot() {
         let entry = lua.create_table()?;
-        let session_id = handle
-            .try_lock()
-            .ok()
-            .and_then(|c| c.session_id().map(str::to_string));
-        if let Some(sid) = session_id {
+        if let Some(sid) = view.session_id {
             entry.set("session_id", sid)?;
         }
-        entry.set("client_id", client_id.clone())?;
+        entry.set("client_id", view.client_id)?;
         out.push(entry)?;
     }
     Ok(out)
 }
 
-/// `jet.list_sessions({ status?, all_dirs? })` — Jet sessions on disk (the SessionStore).
+/// `jet.list_sessions({ status?, all_dirs? }) -> poll` — Jet sessions on disk (the
+/// SessionStore). Returns a poll closure the caller drives (e.g. via `vim.schedule`)
+/// until it yields `{status="ready", sessions=<jet.session_info[]>}`; subsequent calls
+/// return `nil`. While the background listing runs it returns `{status="pending"}`.
+///
 /// Returns every `session.json` jet has written, regardless of which process owns the live
 /// client (or whether one is open at all). Each entry exposes the full `SessionMeta`.
 ///
@@ -408,9 +414,10 @@ pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 /// - `all_dirs`: when true, return sessions for every working directory; otherwise only
 ///   sessions whose `working_dir` matches the current dir.
 ///
-/// Probes Open sessions first so kernels that exited while detached are flipped to Closed
-/// before filtering.
-pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
+/// Runs the listing on the tokio runtime so the main thread doesn't block on parsing
+/// `session.json` files. Uses the cached form (backed by [`ClientRegistry`]'s background
+/// poller), so the future completes as soon as the runtime picks it up.
+pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaFunction> {
     let (status, all_dirs) = match opts {
         Some(t) => (
             t.get::<Option<String>>("status")?,
@@ -421,16 +428,57 @@ pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
     let status: jet_core::manager::StatusFilter =
         status.as_deref().unwrap_or("open").parse().into_lua_err()?;
 
-    let store = SessionStore::default().into_lua_err()?;
-    let sessions = runtime()
-        .block_on(store.list_filtered(status, all_dirs))
-        .into_lua_err()?;
+    let (tx, rx) = oneshot::channel::<anyhow::Result<Vec<jet_core::manager::SessionMeta>>>();
+    runtime().spawn(async move {
+        let result = (|| {
+            // list_filtered_cached() touches ClientRegistry::global(), which
+            // spawns the background liveness poller on first access — so the
+            // cache is always being refreshed by the time we read from it.
+            let store = SessionStore::default()?;
+            store.list_filtered_cached(status, all_dirs)
+        })();
+        let _ = tx.send(result);
+    });
 
-    let table = lua.create_table()?;
-    for session in sessions {
-        table.push(crate::to_lua_value(lua, &session)?)?;
-    }
-    Ok(table)
+    make_list_sessions_poll(lua, rx)
+}
+
+fn make_list_sessions_poll(
+    lua: &Lua,
+    rx: oneshot::Receiver<anyhow::Result<Vec<jet_core::manager::SessionMeta>>>,
+) -> LuaResult<LuaFunction> {
+    let state = RefCell::new(Some(rx));
+    lua.create_function(move |lua, ()| {
+        let mut borrow = state.borrow_mut();
+        let Some(rx) = borrow.as_mut() else {
+            return Ok(LuaValue::Nil);
+        };
+        match rx.try_recv() {
+            Err(oneshot::error::TryRecvError::Empty) => {
+                let t = lua.create_table()?;
+                t.set("status", "pending")?;
+                Ok(LuaValue::Table(t))
+            }
+            Err(oneshot::error::TryRecvError::Closed) => {
+                *borrow = None;
+                Err(LuaError::external(anyhow::anyhow!(
+                    "list_sessions task aborted before completing"
+                )))
+            }
+            Ok(result) => {
+                *borrow = None;
+                let sessions = result.into_lua_err()?;
+                let list = lua.create_table()?;
+                for session in sessions {
+                    list.push(crate::to_lua_value(lua, &session)?)?;
+                }
+                let t = lua.create_table()?;
+                t.set("status", "ready")?;
+                t.set("sessions", list)?;
+                Ok(LuaValue::Table(t))
+            }
+        }
+    })
 }
 
 /// `jet.show(session_id) -> { session, spec }`

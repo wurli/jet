@@ -5,10 +5,12 @@
 
 mod dir;
 mod naming;
-mod session;
-mod store;
+pub(crate) mod registry;
+pub(crate) mod session;
+pub(crate) mod store;
 
 pub use naming::generate_session_name;
+pub use registry::{ClientHandle, ClientRegistry, ClientView, runtime};
 pub use session::{Session, SessionMeta, SessionStatus};
 pub use store::{
     SessionStore, SessionView, StatusFilter, list_sessions, probe_open_sessions, show_session,

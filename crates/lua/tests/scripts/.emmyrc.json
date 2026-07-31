@@ -10,7 +10,8 @@
 		"library": [
 			"$VIMRUNTIME",
 			".",
-			"../../../../lua"
+			"../../../../lua",
+			"../../meta/"
 		],
 		"ignoreDir": [
 			"target",

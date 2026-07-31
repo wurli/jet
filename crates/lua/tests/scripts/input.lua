@@ -20,7 +20,7 @@ local kernel = utils.start_kernel("python3")
 local received_input_request = false
 local received_value = ""
 
-for res in kernel:execute("v = input('ASK> '); print('GOT:' + v)", 5) do
+for res in kernel:execute("v = input('ASK> '); print('GOT:' + v)", 20) do
 	local msg = res.msg
 	if res.status == "busy" then
 		if msg.header.msg_type == "input_request" then

@@ -191,6 +191,22 @@ cat >"$ark_dir/kernel.json" <<JSON
 JSON
 echo "==> wrote $ark_dir/kernel.json"
 
+# ─── broken kernel ─────────────────────────────────────────────────────
+broken_dir="$KERNELS_DIR/broken"
+mkdir -p "$broken_dir"
+cat >"$broken_dir/kernel.json" <<JSON
+{
+  "argv": [
+    "broken-kernel",
+    "--connection_file",
+    "{connection_file}"
+  ],
+  "display_name": "Broken Kernel",
+  "language": "c"
+}
+JSON
+echo "==> wrote $broken_dir/kernel.json"
+
 # ─── summary ───────────────────────────────────────────────────────────
 echo
 echo "Kernels ready under $KERNELS_DIR:"

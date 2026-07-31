@@ -66,7 +66,7 @@ kernel:stop()
 
 -- Drain iterators ------------------------------------------------------------
 ---@diagnostic disable-next-line: empty-block
-for _ in kernel:stream(10) do
+for _ in kernel:stream(20) do
 end
 ---@diagnostic disable-next-line: empty-block
 for _ in iopub_streams() do
