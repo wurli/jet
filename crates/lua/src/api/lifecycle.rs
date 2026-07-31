@@ -223,11 +223,7 @@ fn register(
     let lsp_port = client.lsp_port();
     let stream = make_poll(lua, boot_stream)?;
     let handle: ClientHandle = Arc::new(tokio::sync::Mutex::new(client));
-    let reg = ClientRegistry::global();
-    reg.insert(client_id.clone(), handle);
-    // Kick off the background liveness poller on first client registration.
-    // Idempotent — subsequent calls are no-ops.
-    reg.ensure_poller_started();
+    ClientRegistry::global().insert(client_id.clone(), handle);
 
     let out = lua.create_table()?;
 
@@ -415,10 +411,9 @@ pub fn list_sessions(lua: &Lua, opts: Option<LuaTable>) -> LuaResult<LuaTable> {
     let status: jet_core::manager::StatusFilter =
         status.as_deref().unwrap_or("open").parse().into_lua_err()?;
 
-    // Ensure the poller is running — if a lua caller hits list_sessions before
-    // any client is registered, we still need cached probe results for foreign
-    // sessions on disk. Idempotent.
-    ClientRegistry::global().ensure_poller_started();
+    // list_filtered_cached() touches ClientRegistry::global(), which
+    // spawns the background liveness poller on first access — so the
+    // cache is always being refreshed by the time we read from it.
     let store = SessionStore::default().into_lua_err()?;
     let sessions = store
         .list_filtered_cached(status, all_dirs)

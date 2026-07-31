@@ -17,7 +17,7 @@
 //! The registry itself is sync — all state lives behind `std::sync`
 //! locks. The poller uses the shared tokio runtime returned by [`runtime`].
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use once_cell::sync::Lazy;
@@ -70,17 +70,26 @@ struct Liveness {
 pub struct ClientRegistry {
     clients: RwLock<HashMap<String, ClientHandle>>,
     cache: RwLock<HashMap<String, Liveness>>,
-    poller_started: Mutex<bool>,
 }
 
 impl ClientRegistry {
+    /// The process-global registry. The background liveness poller is
+    /// spawned the first time this is called; subsequent calls just
+    /// hand back the same static.
+    ///
+    /// The CLI never touches this (it's a one-shot process and uses the
+    /// async `SessionStore::list_filtered` path directly), so the poller
+    /// only runs in long-lived embeddings — today, the lua cdylib.
     pub fn global() -> &'static Self {
-        static REG: Lazy<ClientRegistry> = Lazy::new(|| ClientRegistry {
-            clients: RwLock::new(HashMap::new()),
-            cache: RwLock::new(HashMap::new()),
-            poller_started: Mutex::new(false),
+        static REG: Lazy<&'static ClientRegistry> = Lazy::new(|| {
+            let reg: &'static ClientRegistry = Box::leak(Box::new(ClientRegistry {
+                clients: RwLock::new(HashMap::new()),
+                cache: RwLock::new(HashMap::new()),
+            }));
+            runtime().spawn(reg.poll_loop());
+            reg
         });
-        &REG
+        *REG
     }
 
     pub fn insert(&self, client_id: String, handle: ClientHandle) {
@@ -156,21 +165,7 @@ impl ClientRegistry {
         self.cache.read().unwrap().get(session_id).map(|l| l.alive)
     }
 
-    /// Start the background poller once. Idempotent — subsequent calls
-    /// are no-ops. Safe to call from sync contexts; the poller runs on
-    /// the shared runtime returned by [`runtime`].
-    pub fn ensure_poller_started(&'static self) {
-        let mut started = self.poller_started.lock().unwrap();
-        if *started {
-            return;
-        }
-        *started = true;
-        runtime().spawn(async move {
-            self.poll_loop().await;
-        });
-    }
-
-    async fn poll_loop(&self) {
+    async fn poll_loop(&'static self) {
         let mut ticker = tokio::time::interval(Duration::from_secs(1));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -282,7 +277,6 @@ mod tests {
         let reg = ClientRegistry {
             clients: RwLock::new(HashMap::new()),
             cache: RwLock::new(HashMap::new()),
-            poller_started: Mutex::new(false),
         };
         reg.refresh_once().await.unwrap();
 
