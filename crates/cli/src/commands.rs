@@ -197,9 +197,6 @@ pub async fn run_connect(args: StartArgs) -> Result<()> {
         kernel_session.detach();
     } else {
         let _ = kernel_session.shutdown().await;
-        if let Some(s) = session.as_mut() {
-            s.mark_closed();
-        }
     }
     Ok(())
 }

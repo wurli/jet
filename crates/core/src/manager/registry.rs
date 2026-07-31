@@ -198,6 +198,30 @@ impl ClientRegistry {
         self.cache.read().unwrap().get(session_id).map(|l| l.alive)
     }
 
+    /// Patch the cached [`SessionMeta`] for `session_id` to `Closed`.
+    /// Called after `Session::mark_closed` writes the change to disk on
+    /// graceful shutdown: the sessions-dir mtime doesn't move for
+    /// in-file writes, so without this the cache would keep serving the
+    /// stale Open status until the next 1Hz poll tick. No-op if the
+    /// cache hasn't been populated yet or the id isn't present.
+    pub fn mark_meta_closed(&self, session_id: &str) {
+        let mut guard = self.metas.write().unwrap();
+        let Some(cache) = guard.as_ref() else { return };
+        if !cache.metas.iter().any(|m| m.session_id == session_id) {
+            return;
+        }
+        let mut metas = (*cache.metas).clone();
+        for m in &mut metas {
+            if m.session_id == session_id {
+                m.status = SessionStatus::Closed;
+            }
+        }
+        *guard = Some(MetaCache {
+            metas: Arc::new(metas),
+            dir_mtime: cache.dir_mtime,
+        });
+    }
+
     /// Snapshot of the on-disk `SessionMeta` list. Returns the cached
     /// list when the sessions-dir mtime is unchanged since the last
     /// scan; otherwise re-scans synchronously and updates the cache.

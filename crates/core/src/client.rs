@@ -751,6 +751,27 @@ impl Client {
         if let Some(p) = self.kernel.log_file_path.take() {
             let _ = std::fs::remove_file(p);
         }
+        // Flip the SessionStore entry to Closed so cross-process readers
+        // (jet list-sessions, jet.list_sessions from Lua) see the state
+        // change immediately rather than waiting for the ~1Hz liveness
+        // poller. Best-effort: sessions started with a caller-supplied
+        // connection file have no store entry, and a missing/unreadable
+        // session.json is just logged.
+        if let Some(id) = self.session_id.as_deref()
+            && let Ok(store) = crate::manager::SessionStore::default()
+        {
+            match store.open(id) {
+                Ok(mut s) => {
+                    s.mark_closed();
+                    // The registry's meta cache is keyed on the sessions-dir
+                    // mtime, which doesn't move for in-file writes — patch
+                    // this one entry so the next `list_sessions()` reflects
+                    // Closed instead of waiting for the 1Hz poller.
+                    crate::manager::ClientRegistry::global().mark_meta_closed(id);
+                }
+                Err(e) => log::warn!("failed to reopen session {id} to mark closed: {e}"),
+            }
+        }
         Ok(())
     }
 
