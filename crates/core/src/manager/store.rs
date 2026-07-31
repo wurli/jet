@@ -112,15 +112,42 @@ impl SessionStore {
         }
         let entries = std::fs::read_dir(&self.dir)
             .with_context(|| format!("reading {}", self.dir.display()))?;
-        let mut out = Vec::new();
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && let Ok(meta) = read_meta(&path)
-            {
-                out.push(meta);
-            }
-        }
+        let dirs: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+
+        // Fan the per-dir read_meta calls out across a small worker pool.
+        // Each call is ~400µs of syscall + serde work; with ~2k sessions
+        // the serial loop was the whole cost of list(). Threads = 8 covers
+        // typical laptop core counts without oversubscribing.
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get().min(8))
+            .unwrap_or(4);
+        let chunk_size = dirs.len().div_ceil(workers.max(1));
+        let out: Vec<SessionMeta> = if chunk_size == 0 {
+            Vec::new()
+        } else {
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = dirs
+                    .chunks(chunk_size)
+                    .map(|chunk| {
+                        scope.spawn(move || {
+                            chunk
+                                .iter()
+                                .filter_map(|p| read_meta(p).ok())
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .flat_map(|h| h.join().unwrap_or_default())
+                    .collect()
+            })
+        };
+        let mut out = out;
         out.sort_by(|a, b| a.session_id.cmp(&b.session_id));
         Ok(out)
     }
@@ -158,30 +185,44 @@ impl SessionStore {
     ) -> Result<Vec<SessionMeta>> {
         let reg = super::ClientRegistry::global();
         let owned = reg.live_session_ids();
-        let all = self.list()?;
-        let filtered = all
-            .into_iter()
-            .map(|mut m| {
-                if m.status == SessionStatus::Open && !owned.contains(&m.session_id) {
-                    if let Some(false) = reg.cached_alive(&m.session_id) {
-                        m.status = SessionStatus::Closed;
-                    }
-                }
-                m
-            })
-            .filter(|s| match status {
+        // Prefer the registry's cached meta list — refreshed each poll
+        // tick, avoids re-parsing ~2k session.json files on every call.
+        // Fall back to a live read on the rare path where the seed
+        // failed and the poller hasn't yet filled it.
+        let cwd = (!all_dirs).then(|| std::env::current_dir().ok()).flatten();
+        let filter = |s: &SessionMeta| -> bool {
+            let status_ok = match status {
                 StatusFilter::Open => s.status == SessionStatus::Open,
                 StatusFilter::Closed => s.status == SessionStatus::Closed,
                 StatusFilter::All => true,
-            })
-            .filter(|s| {
-                all_dirs
-                    || std::env::current_dir()
-                        .map(|cwd| s.working_dir == cwd)
-                        .unwrap_or(false)
-            })
-            .collect();
-        Ok(filtered)
+            };
+            let dir_ok = all_dirs || cwd.as_deref() == Some(&s.working_dir);
+            status_ok && dir_ok
+        };
+        let apply_liveness = |mut m: SessionMeta| -> SessionMeta {
+            if m.status == SessionStatus::Open
+                && !owned.contains(&m.session_id)
+                && let Some(false) = reg.cached_alive(&m.session_id)
+            {
+                m.status = SessionStatus::Closed;
+            }
+            m
+        };
+        if let Some(cached) = reg.cached_metas() {
+            Ok(cached
+                .iter()
+                .cloned()
+                .map(apply_liveness)
+                .filter(filter)
+                .collect())
+        } else {
+            Ok(self
+                .list()?
+                .into_iter()
+                .map(apply_liveness)
+                .filter(filter)
+                .collect())
+        }
     }
 
     fn filter(&self, status: StatusFilter, all_dirs: bool) -> Result<Vec<SessionMeta>> {

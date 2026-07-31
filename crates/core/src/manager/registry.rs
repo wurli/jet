@@ -27,7 +27,7 @@ use tokio::task::JoinSet;
 use crate::client::{Client, KernelStatus};
 use crate::connection_file;
 use crate::kernel::probe_kernel_alive;
-use crate::manager::session::SessionStatus;
+use crate::manager::session::{SessionMeta, SessionStatus};
 use crate::manager::store::SessionStore;
 
 /// Shared multi-threaded tokio runtime. Callers that don't already have a
@@ -70,6 +70,10 @@ struct Liveness {
 pub struct ClientRegistry {
     clients: RwLock<HashMap<String, ClientHandle>>,
     cache: RwLock<HashMap<String, Liveness>>,
+    /// Cached result of `SessionStore::default().list()`, refreshed each
+    /// poll tick. Wrapped in `Arc` so readers can clone without holding
+    /// the lock while they filter. `None` until the first tick lands.
+    metas: RwLock<Option<Arc<Vec<SessionMeta>>>>,
 }
 
 impl ClientRegistry {
@@ -85,7 +89,20 @@ impl ClientRegistry {
             let reg: &'static ClientRegistry = Box::leak(Box::new(ClientRegistry {
                 clients: RwLock::new(HashMap::new()),
                 cache: RwLock::new(HashMap::new()),
+                metas: RwLock::new(None),
             }));
+            // Seed the meta cache off-thread so `global()` returns
+            // immediately — even with thousands of on-disk sessions,
+            // module load stays cheap. `list_filtered_cached()` falls
+            // back to a live read while the cache is still empty, so
+            // callers that race the seed just pay the read once.
+            runtime().spawn_blocking(move || {
+                if let Ok(store) = SessionStore::default()
+                    && let Ok(metas) = store.list()
+                {
+                    *reg.metas.write().unwrap() = Some(Arc::new(metas));
+                }
+            });
             runtime().spawn(reg.poll_loop());
             reg
         });
@@ -165,6 +182,13 @@ impl ClientRegistry {
         self.cache.read().unwrap().get(session_id).map(|l| l.alive)
     }
 
+    /// Snapshot of the on-disk `SessionMeta` list, refreshed each poll
+    /// tick. `None` if the seed read failed and the poller hasn't yet
+    /// filled it; callers should fall back to a live `SessionStore::list()`.
+    pub fn cached_metas(&self) -> Option<Arc<Vec<SessionMeta>>> {
+        self.metas.read().unwrap().clone()
+    }
+
     async fn poll_loop(&'static self) {
         let mut ticker = tokio::time::interval(Duration::from_secs(1));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -182,6 +206,7 @@ impl ClientRegistry {
     pub async fn refresh_once(&self) -> anyhow::Result<()> {
         let store = SessionStore::default()?;
         let metas = store.list()?;
+        *self.metas.write().unwrap() = Some(Arc::new(metas.clone()));
         let owned = self.live_session_ids();
 
         let mut tasks: JoinSet<(String, bool)> = JoinSet::new();
@@ -277,6 +302,7 @@ mod tests {
         let reg = ClientRegistry {
             clients: RwLock::new(HashMap::new()),
             cache: RwLock::new(HashMap::new()),
+            metas: RwLock::new(None),
         };
         reg.refresh_once().await.unwrap();
 
