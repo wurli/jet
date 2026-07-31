@@ -311,11 +311,24 @@ impl Kernel {
             command.process_group(0);
         }
         log::info!("spawning kernel: {:?}", spec.argv);
-        let child = command.spawn().with_context(|| {
-            format!(
-                "running startup command given by kernelspec `{}`",
-                spec.argv.join(" ")
-            )
+        let child = command.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                let program = &spec.argv[0];
+                let where_ = if program.contains('/') {
+                    format!("no such file at `{program}`")
+                } else {
+                    format!("`{program}` is not on PATH")
+                };
+                anyhow!(
+                    "kernel command not found: {where_} (from kernelspec argv `{}`)",
+                    spec.argv.join(" "),
+                )
+            } else {
+                anyhow::Error::new(e).context(format!(
+                    "running startup command given by kernelspec `{}`",
+                    spec.argv.join(" ")
+                ))
+            }
         })?;
         let guard = ChildGuard::new(child);
 
