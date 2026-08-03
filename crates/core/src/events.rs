@@ -206,17 +206,13 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             } else {
                 if !err.ename.is_empty() {
                     traceback.push_str(&err.ename);
-                    traceback.push_str(": ");
+                    if !err.evalue.is_empty() {
+                        traceback.push_str(": ");
+                    }
                 }
 
                 if !err.evalue.is_empty() {
-                    traceback.push_str("\n");
                     traceback.push_str(&err.evalue);
-                }
-
-                if !err.traceback.is_empty() {
-                    traceback.push_str("\n");
-                    traceback.push_str(&err.traceback.join("\n"));
                 }
             }
 
