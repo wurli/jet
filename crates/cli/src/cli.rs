@@ -169,7 +169,7 @@ pub struct ListKernelsArgs {
 pub struct GlobalArgs {
     /// File to write logs to. If unset, logging is disabled.
     /// Log level is controlled with `RUST_LOG` (e.g. `RUST_LOG=jet=trace`).
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "JET_LOG")]
     pub log: Option<PathBuf>,
 }
 
