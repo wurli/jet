@@ -126,6 +126,16 @@ impl LspBackend {
         code: String,
         cursor: usize,
     ) -> Option<jupyter_protocol::CompleteReply> {
+        // Skip the round-trip when the current line up to the cursor is
+        // empty or all-whitespace. Nothing useful can be completed there,
+        // and some ipykernel versions (e.g. 7.3.0) crash their
+        // file_matcher on an empty prefix — `"".split()` unpacks to zero
+        // values in IPython.core.completer._extract_code.
+        let pos = cursor.min(code.len());
+        let line_start = code[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        if code[line_start..pos].trim().is_empty() {
+            return None;
+        }
         let fut = self.completion.complete(code, cursor);
         match tokio::time::timeout(COMPLETE_TIMEOUT, fut).await {
             Ok(Ok(Some(r))) => Some(r),

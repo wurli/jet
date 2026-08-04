@@ -9,6 +9,10 @@ Lua
 CLI
 * with `--no-graphics` repl no longer prints `[image/png NxN bytes]`
 
+Lsp
+* Fix: completions no longer trigger when there's no text before the cursor
+  (was causing noisy errors in some versions of ipykernel)
+
 General
 * Fix: Kernels which fail to start no longer linger as open in the session store
 * Feat: better error messages when kernel command not found
