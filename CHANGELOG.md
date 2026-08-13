@@ -1,6 +1,18 @@
 # Changelog
 
-## Development
+## 0.0.6
+
+Lua
+* The log file can now be set using `$JET_LUA_LOG`
+
+CLI
+* The log file can now be set using `$JET_LOG`
+
+Lsp
+* Completions no longer get triggered on empty lines (this was causing issues
+  with IPython 7.3.0 in particular)
+
+## 0.0.5
 
 Lua
 * Fix: `list_sessions()` is now async, but also way faster
