@@ -244,14 +244,20 @@ fn build_editor(
             ReedlineEvent::MenuNext,
         ]),
     );
-    // Backspace goes through us so we can detect "empty buffer + Backspace"
-    // mid-block and merge the prior line back into the editor. The REPL
-    // loop checks `current_buffer_contents()`; if non-empty it forwards the
-    // event as a normal `EditCommand::Backspace`.
+    // Backspace: run the real edit first (so reedline's menu sees the
+    // buffer change and deactivates when the buffer becomes empty), then
+    // hand control back to us via a host command so we can detect the
+    // "empty buffer + Backspace" case mid-block and merge the prior line
+    // back into the editor. Routing through a lone host command bypasses
+    // reedline's menu bookkeeping and leaves the completions popup on
+    // screen after a delete.
     keybindings.add_binding(
         KeyModifiers::NONE,
         KeyCode::Backspace,
-        ReedlineEvent::ExecuteHostCommand(HOSTCMD_BACKSPACE.to_string()),
+        ReedlineEvent::Multiple(vec![
+            ReedlineEvent::Edit(vec![reedline::EditCommand::Backspace]),
+            ReedlineEvent::ExecuteHostCommand(HOSTCMD_BACKSPACE.to_string()),
+        ]),
     );
     let edit_mode = Box::new(reedline::Emacs::new(keybindings));
     Reedline::create()
@@ -610,57 +616,46 @@ pub async fn drive_repl(
                             break 'accumulate None;
                         }
                         LineRead::HostCommand(cmd) if cmd == HOSTCMD_BACKSPACE => {
-                            // Plain Backspace was routed through us so we
-                            // could decide: normal char-delete, or merge
-                            // the prior accumulator line back into the
-                            // editor when the visible line is empty.
+                            // The Backspace binding already ran the edit
+                            // itself (so reedline can close the menu when
+                            // the buffer empties). This host command runs
+                            // after — if the editor line is now empty and
+                            // we have a prior accumulator line, merge it
+                            // back into the editor.
                             if let Some(LineSource::Tty(ed)) = rl.as_mut() {
-                                if ed.current_buffer_contents().is_empty() {
-                                    // Empty visible line: pop the last
-                                    // line off the accumulator and pre-
-                                    // fill the editor with it. If the
-                                    // accumulator is also empty, ignore.
-                                    if !buffer.is_empty() {
-                                        let prev = match buffer.rfind('\n') {
-                                            Some(i) => buffer.split_off(i + 1),
-                                            None => std::mem::take(&mut buffer),
-                                        };
-                                        if buffer.ends_with('\n') {
-                                            buffer.pop();
-                                        }
-                                        ed.run_edit_commands(&[
-                                            reedline::EditCommand::InsertString(prev),
-                                        ]);
-                                        // Erase the prior prompt row (the
-                                        // one we're rejoining) and the
-                                        // current empty continuation row,
-                                        // then put the cursor at the
-                                        // start of the prior row. The
-                                        // next `read_line` sees a cursor
-                                        // outside the suspended prompt
-                                        // range and draws a fresh prompt
-                                        // there.
-                                        use std::io::Write;
-                                        let mut out = std::io::stdout().lock();
-                                        let _ = out.write_all(b"\x1b[A\r\x1b[J");
-                                        let _ = out.flush();
-                                        // We're back to editing what was
-                                        // the prior line; reset the
-                                        // continuation-prompt state so
-                                        // the next prompt matches.
-                                        next_indent = if buffer.is_empty() {
-                                            None
-                                        } else {
-                                            Some("+ ".to_string())
-                                        };
-                                        next_initial = None;
+                                if ed.current_buffer_contents().is_empty() && !buffer.is_empty() {
+                                    let prev = match buffer.rfind('\n') {
+                                        Some(i) => buffer.split_off(i + 1),
+                                        None => std::mem::take(&mut buffer),
+                                    };
+                                    if buffer.ends_with('\n') {
+                                        buffer.pop();
                                     }
-                                } else {
-                                    // Non-empty: behave like a normal
-                                    // backspace.
                                     ed.run_edit_commands(&[
-                                        reedline::EditCommand::Backspace,
+                                        reedline::EditCommand::InsertString(prev),
                                     ]);
+                                    // Erase the prior prompt row (the one
+                                    // we're rejoining) and the current
+                                    // empty continuation row, then put
+                                    // the cursor at the start of the
+                                    // prior row. The next `read_line`
+                                    // sees a cursor outside the suspended
+                                    // prompt range and draws a fresh
+                                    // prompt there.
+                                    use std::io::Write;
+                                    let mut out = std::io::stdout().lock();
+                                    let _ = out.write_all(b"\x1b[A\r\x1b[J");
+                                    let _ = out.flush();
+                                    // We're back to editing what was the
+                                    // prior line; reset the continuation-
+                                    // prompt state so the next prompt
+                                    // matches.
+                                    next_indent = if buffer.is_empty() {
+                                        None
+                                    } else {
+                                        Some("+ ".to_string())
+                                    };
+                                    next_initial = None;
                                 }
                             }
                             continue;
@@ -795,9 +790,9 @@ pub async fn drive_repl(
                         indicator: req.prompt.clone(),
                     };
                     // For stdin prompts there's no accumulator to merge
-                    // into, so a HostCommand Backspace just becomes a
-                    // plain Backspace edit; we loop until the user
-                    // actually submits or aborts.
+                    // into. The Backspace binding already ran the edit
+                    // itself before this host command fired, so we just
+                    // loop until the user actually submits or aborts.
                     let value = loop {
                         let mut prompt_rl = rl.take().expect("editor present at input prompt");
                         let prompt_for_read = prompt.clone();
@@ -814,9 +809,7 @@ pub async fn drive_repl(
                             LineRead::Line(s) => break s,
                             LineRead::Eof | LineRead::Interrupted => break String::new(),
                             LineRead::HostCommand(cmd) if cmd == HOSTCMD_BACKSPACE => {
-                                if let Some(LineSource::Tty(ed)) = rl.as_mut() {
-                                    ed.run_edit_commands(&[reedline::EditCommand::Backspace]);
-                                }
+                                // Edit already ran; nothing more to do.
                                 continue;
                             }
                             LineRead::HostCommand(_) => continue,

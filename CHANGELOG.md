@@ -7,6 +7,7 @@ Lua
 
 CLI
 * The log file can now be set using `$JET_LOG`
+* Fix: backspace causes the completions window to refresh
 
 Lsp
 * Completions no longer get triggered on empty lines (this was causing issues
