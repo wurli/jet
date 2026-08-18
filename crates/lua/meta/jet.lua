@@ -83,9 +83,7 @@
 ---@field metadata table
 ---@field content table
 
----@class jet.kernel.response
----@field status "busy" | "pending"
----@field msg jet.jupyter.msg?
+---@alias jet.kernel.response { status: "pending" } | { status: "busy", msg: jet.jupyter.msg }
 
 ---@class jet.listen.opts
 ---@field channel? jet.channel | jet.channel[]
