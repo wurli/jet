@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.7
+
+Lua
+* Lua functions which send jupyter messages to the kernel now immediately
+  return the generated message id, along with any callbacks etc. This can be
+  helpful if you want to detect whether messages received from the kernel are
+  related to any that you previously sent, i.e. via the parent header.
+
 ## 0.0.6
 
 Lua
