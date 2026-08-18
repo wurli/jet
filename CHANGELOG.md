@@ -1,6 +1,19 @@
 # Changelog
 
-## Development
+## 0.0.6
+
+Lua
+* The log file can now be set using `$JET_LUA_LOG`
+
+CLI
+* The log file can now be set using `$JET_LOG`
+* Fix: backspace causes the completions window to refresh
+
+Lsp
+* Completions no longer get triggered on empty lines (this was causing issues
+  with IPython 7.3.0 in particular)
+
+## 0.0.5
 
 Lua
 * Fix: `list_sessions()` is now async, but also way faster
@@ -8,6 +21,10 @@ Lua
 
 CLI
 * with `--no-graphics` repl no longer prints `[image/png NxN bytes]`
+
+Lsp
+* Fix: completions no longer trigger when there's no text before the cursor
+  (was causing noisy errors in some versions of ipykernel)
 
 General
 * Fix: Kernels which fail to start no longer linger as open in the session store

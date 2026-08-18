@@ -49,7 +49,9 @@ fn version(_lua: &Lua, _: ()) -> LuaResult<String> {
 
 #[mlua::lua_module]
 fn jet(lua: &Lua) -> LuaResult<LuaTable> {
-    jet_core::logger::init_logger(Some(std::path::Path::new("jet-lua.log")));
+    if let Ok(log_file_path) = std::env::var("JET_LUA_LOG") {
+        jet_core::logger::init_logger(Some(std::path::Path::new(&log_file_path)));
+    }
     // Touch the registry so the tokio runtime, background poller, and
     // on-disk meta cache all warm up while the plugin is being loaded,
     // rather than on the first user-facing call.

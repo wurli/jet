@@ -85,7 +85,7 @@
 
 ---@class jet.kernel.response
 ---@field status "busy" | "pending"
----@field msg jet.jupyter.msg
+---@field msg jet.jupyter.msg?
 
 ---@class jet.listen.opts
 ---@field channel? jet.channel | jet.channel[]

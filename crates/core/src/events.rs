@@ -206,17 +206,13 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             } else {
                 if !err.ename.is_empty() {
                     traceback.push_str(&err.ename);
-                    traceback.push_str(": ");
+                    if !err.evalue.is_empty() {
+                        traceback.push_str(": ");
+                    }
                 }
 
                 if !err.evalue.is_empty() {
-                    traceback.push_str("\n");
                     traceback.push_str(&err.evalue);
-                }
-
-                if !err.traceback.is_empty() {
-                    traceback.push_str("\n");
-                    traceback.push_str(&err.traceback.join("\n"));
                 }
             }
 
@@ -392,7 +388,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg).data {
-            EventData::Error { traceback } => assert_eq!(traceback, "\nError:\n! boom"),
+            EventData::Error { traceback } => assert_eq!(traceback, "Error:\n! boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
@@ -406,7 +402,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg).data {
-            EventData::Error { traceback } => assert_eq!(traceback, "RuntimeError: \nboom"),
+            EventData::Error { traceback } => assert_eq!(traceback, "RuntimeError: boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }

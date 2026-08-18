@@ -114,3 +114,8 @@ fn listen_smoke() {
 fn stop_smoke() {
     run_lua_test("stop.lua");
 }
+
+#[test]
+fn stream_smoke() {
+    run_lua_test("stream.lua");
+}

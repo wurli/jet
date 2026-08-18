@@ -51,12 +51,19 @@ end
 ---@param cb fun(): T
 ---@param timeout_seconds integer?
 ---@return fun(): T?
-local function iter(cb, timeout_seconds)
+local function iter(cb, timeout_seconds, on_timeout)
+	on_timeout = on_timeout or "error"
 	local start_time = os.clock()
 	return function()
 		while true do
 			if timeout_seconds and os.clock() - start_time > timeout_seconds then
-				error(string.format("Iter timeout exceeded %ss", timeout_seconds))
+				if on_timeout == "error" then
+					error(string.format("Iter timeout exceeded %ss", timeout_seconds))
+				elseif on_timeout == "break" then
+					return nil
+				else
+					error("Unknonw on_timeout value: " .. tostring(on_timeout))
+				end
 			end
 			local res = cb()
 			if not res then
@@ -130,8 +137,8 @@ function Kernel.init(spec_name)
 end
 
 ---@param timeout_seconds integer
-function Kernel:stream(timeout_seconds)
-	return iter(self.msg_stream, timeout_seconds)
+function Kernel:stream(timeout_seconds, on_timeout)
+	return iter(self.msg_stream, timeout_seconds, on_timeout)
 end
 
 ---@param code string
