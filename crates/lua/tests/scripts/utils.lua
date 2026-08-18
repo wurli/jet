@@ -144,27 +144,28 @@ end
 ---@param code string
 ---@param timeout_seconds integer
 function Kernel:execute(code, timeout_seconds)
-	return iter(M.jet.execute_code(self.client_id, code, false, true, {}), timeout_seconds)
+	local cb, _msg_id = M.jet.execute_code(self.client_id, code, false, true, {})
+	return iter(cb, timeout_seconds)
 end
 
 ---@param target_name string
 ---@param data table
 function Kernel:comm_open(target_name, data)
-	local comm_id, cb = M.jet.comm_open(self.client_id, target_name, data)
+	local cb, comm_id, _msg_id = M.jet.comm_open(self.client_id, target_name, data)
 	return comm_id, iter(cb, 10)
 end
 
 ---@param comm_id string
 ---@param data table
 function Kernel:comm_send(comm_id, data)
-	local cb = M.jet.comm_send(self.client_id, comm_id, data)
+	local cb, _msg_id = M.jet.comm_send(self.client_id, comm_id, data)
 	return iter(cb, 10)
 end
 
 ---@param comm_id string
 ---@param timeout_seconds integer
 function Kernel:comm_info(comm_id, timeout_seconds)
-	local cb = M.jet.comm_info(self.client_id, comm_id)
+	local cb, _msg_id = M.jet.comm_info(self.client_id, comm_id)
 	return iter(cb, timeout_seconds)
 end
 
