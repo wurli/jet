@@ -388,7 +388,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg).data {
-            EventData::Error { traceback } => assert_eq!(traceback, "\nError:\n! boom"),
+            EventData::Error { traceback } => assert_eq!(traceback, "Error:\n! boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
@@ -402,7 +402,7 @@ mod tests {
         }
         .into();
         match from_message(Channel::IoPub, &msg).data {
-            EventData::Error { traceback } => assert_eq!(traceback, "RuntimeError: \nboom"),
+            EventData::Error { traceback } => assert_eq!(traceback, "RuntimeError: boom"),
             other => panic!("expected Error, got {other:?}"),
         }
     }
