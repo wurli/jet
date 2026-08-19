@@ -8,6 +8,28 @@ Lua
   helpful if you want to detect whether messages received from the kernel are
   related to any that you previously sent, i.e. via the parent header.
 
+CLI
+* Added cursed heuristics to determine which error information to use from
+  Jupyter `ename`, `evalue` and `traceback`. This seems to handle both IPython
+  and ark with `--session-mode notebook` or `--session-mode console`. Highly
+  possible (probable?) other kernels will not fit the pattern though, in which
+  case will need to revisit.
+
+  Until now Jet has followed the JupyterLab behaviour of omitting both the
+  `ename` and `evalue` if the `traceback` is present. This change breaks from
+  JupyterLab behaviour for the following case:
+
+  ``` json
+  {
+      "ename": "",
+      "evalue": "Foo",
+      "traceback": "Bar"
+  }
+  ```
+
+  * JupyterLab will show only the traceback
+  * Jet will show `{evalue}\n{traceback}`
+
 ## 0.0.6
 
 Lua
