@@ -19,7 +19,7 @@
 ---@field nbconvert_exporter string?
 ---@field positron table?
 
----@class juypyter.KernelInfo
+---@class jupyter.KernelInfo
 ---@field status "ok" | "error"
 ---@field protocol_version? string
 ---@field implementation? string
@@ -92,7 +92,7 @@
 ---@class Jet.start.Result
 ---@field session_id? string
 ---@field client_id string
----@field kernel_info juypyter.KernelInfo
+---@field kernel_info jupyter.KernelInfo
 ---@field lsp_port integer
 ---@field stream jet.callback<jupyter.Msg>
 
