@@ -194,29 +194,43 @@ pub fn from_message(channel: Channel, msg: &JupyterMessage) -> Event {
             // https://github.com/posit-dev/positron/issues/1053
 
             // Note 2 (traceback vs ename/evalue):
-            // JupyterLab ignores the ename and evalue if the traceback is present. This is probably
-            // influenced by ipykernel, since here there is overlap in traceback and ename/evalue
-            // content. Other kernels seem to do this too, e.g. Ark rolls ename and evalue into the
-            // traceback if you use `--session-mode notebook` (but not otherwise, leading to omitted
-            // info in the error message).
-            let mut traceback = "".to_string();
+            // JupyterLab ignores the ename and evalue if the traceback is present. Positron does
+            // the same with Ark if `--session-mode notebook`, but this turns off some other nice
+            // features (like the plots comm). So we have to do some unholy gymnastics to try and
+            // handle every case. Right now this seems to work ok, but if any kernels don't fit this
+            // horrible pattern we should just make behaviour configurable with a CLI arg.
+            let mut error = "".to_string();
 
-            if !err.traceback.is_empty() {
-                traceback.push_str(&err.traceback.join("\n"));
-            } else {
-                if !err.ename.is_empty() {
-                    traceback.push_str(&err.ename);
-                    if !err.evalue.is_empty() {
-                        traceback.push_str(": ");
-                    }
-                }
+            let traceback = &err.traceback.join("\n");
+            let ename = &err.ename;
+            let evalue = &err.evalue;
 
-                if !err.evalue.is_empty() {
-                    traceback.push_str(&err.evalue);
+            let has_traceback = !traceback.is_empty();
+            let has_ename = !ename.is_empty();
+            let has_evalue = !evalue.is_empty();
+
+            // IPython sends all 3, but ename and evalue are already in the traceback, so don't duplicate them.
+            if has_traceback && has_ename && has_evalue {
+                error.push_str(traceback);
+            } else if has_traceback && has_evalue {
+                // Ark with `--session-mode notebook` sends traceback and evalue, but the evalue is
+                // prepended to the traceback too, so we shouldn't double-prepend. `--session-mode
+                // console` doesn't prepend, so we should.
+                if !traceback.starts_with(evalue) {
+                    error.push_str(evalue);
+                    error.push_str("\n");
                 }
+                error.push_str(traceback);
+            // This is now just the JupyterLab behaviour.
+            } else if has_ename && has_evalue {
+                error.push_str(ename);
+                error.push_str(": ");
+                error.push_str(evalue);
+            } else if has_evalue {
+                error.push_str(evalue);
             }
 
-            EventData::Error { traceback }
+            EventData::Error { traceback: error }
         }
         (Channel::Shell, JupyterMessageContent::KernelInfoReply(reply)) => EventData::Banner {
             text: reply.banner.clone(),

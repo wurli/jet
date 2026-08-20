@@ -3,6 +3,7 @@
 /deps
 /.jet-dev
 /notes
+/scratch
 /test-logs
 *.log
 tmp.*

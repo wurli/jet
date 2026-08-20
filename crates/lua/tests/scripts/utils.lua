@@ -40,7 +40,8 @@ M.print = function(obj, level)
 end
 
 -- Wrap a poll closure as a stateful iterator: skips "pending" frames,
--- returns each "busy" frame, ends when the kernel goes idle (poll → nil).
+-- returns each "ready" frame's value, ends when the kernel goes idle
+-- (poll → status="done").
 --
 -- Per-request streams (execute/comm) terminate naturally on idle, so
 -- iterating to exhaustion in a `for` loop is fine. Long-lived streams
@@ -48,7 +49,7 @@ end
 -- shutdown — consumers of those must `break` out themselves once they've
 -- seen enough.
 ---@generic T
----@param cb fun(): T
+---@param cb jet.callback<T>
 ---@param timeout_seconds integer?
 ---@return fun(): T?
 local function iter(cb, timeout_seconds, on_timeout)
@@ -66,11 +67,11 @@ local function iter(cb, timeout_seconds, on_timeout)
 				end
 			end
 			local res = cb()
-			if not res then
+			if res.status == "done" then
 				return nil
 			end
-			if res.status ~= "pending" then
-				return res
+			if res.status == "ready" then
+				return res.value
 			end
 		end
 	end
@@ -81,9 +82,9 @@ end
 local await = function(poll)
 	while true do
 		local res = poll()
-		assert(res ~= nil, "kernel boot poll ended before ready")
+		assert(res.status ~= "done", "kernel boot poll ended before ready")
 		if res.status == "ready" then
-			return res
+			return res.value
 		end
 	end
 end
@@ -144,27 +145,28 @@ end
 ---@param code string
 ---@param timeout_seconds integer
 function Kernel:execute(code, timeout_seconds)
-	return iter(M.jet.execute_code(self.client_id, code, false, true, {}), timeout_seconds)
+	local cb, _msg_id = M.jet.execute_code(self.client_id, code, false, true, {})
+	return iter(cb, timeout_seconds)
 end
 
 ---@param target_name string
 ---@param data table
 function Kernel:comm_open(target_name, data)
-	local comm_id, cb = M.jet.comm_open(self.client_id, target_name, data)
+	local cb, comm_id, _msg_id = M.jet.comm_open(self.client_id, target_name, data)
 	return comm_id, iter(cb, 10)
 end
 
 ---@param comm_id string
 ---@param data table
 function Kernel:comm_send(comm_id, data)
-	local cb = M.jet.comm_send(self.client_id, comm_id, data)
+	local cb, _msg_id = M.jet.comm_send(self.client_id, comm_id, data)
 	return iter(cb, 10)
 end
 
 ---@param comm_id string
 ---@param timeout_seconds integer
 function Kernel:comm_info(comm_id, timeout_seconds)
-	local cb = M.jet.comm_info(self.client_id, comm_id)
+	local cb, _msg_id = M.jet.comm_info(self.client_id, comm_id)
 	return iter(cb, timeout_seconds)
 end
 
@@ -200,7 +202,7 @@ M.start_kernel = function(spec_name)
 end
 
 M.list_sessions = function()
-	return await(M.jet.list_sessions()).sessions
+	return await(M.jet.list_sessions())
 end
 
 return M

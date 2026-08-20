@@ -1,10 +1,10 @@
 //! jet_lua — mlua bindings exposing the jet wire layer to Neovim/LuaJIT.
 //!
 //! Loaded by Lua as `require('jet')`. Each "send a request" function
-//! returns a poll closure: calling it repeatedly returns
-//!   - `{status="busy", type=..., data=...}` for one incoming kernel frame,
+//! returns a poll closure: calling it repeatedly returns a table:
+//!   - `{status="ready", value=<table>}` for one incoming kernel frame,
 //!   - `{status="pending"}` when nothing has arrived yet, or
-//!   - `nil` when the kernel has gone idle for that request.
+//!   - `{status="done"}` when the kernel has gone idle for that request.
 //!
 //! Consumers (e.g. a Neovim plugin) drain via `vim.schedule(drain)` so the
 //! UI thread is never blocked.

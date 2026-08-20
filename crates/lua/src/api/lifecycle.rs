@@ -23,8 +23,8 @@ use jet_core::manager::{ClientHandle, ClientRegistry, runtime};
 /// the caller drives (e.g. via `vim.schedule`) until it yields the
 /// `jet.start.response`. While the kernel is booting the closure returns
 /// `{status="pending"}`; on the first call after boot it returns
-/// `{status="ready", client_id=..., session_id=..., kernel_info=..., stream=...}`
-/// and registers the client. Subsequent calls return `nil`.
+/// `{status="ready", value={client_id=..., session_id=..., kernel_info=..., stream=...}}`
+/// and registers the client. Subsequent calls return `{status="done"}`.
 ///
 /// Mirrors `jet start`:
 /// - no `connection_file` → create a tracked SessionStore entry and use its connection path;
@@ -84,7 +84,7 @@ pub fn start(
 ///
 /// Attach to a kernel already running. Non-blocking with the same poll-closure
 /// contract as [`start`]: returns `{status="pending"}` until the handshake
-/// completes, then `{status="ready", ..jet.start.response}` once. Mirrors
+/// completes, then `{status="ready", value=<jet.start.response>}` once. Mirrors
 /// `jet attach`:
 /// - `session_id` given (and no `connection_file`) → resolve the connection file via the
 ///   SessionStore; the Client carries the session id.
@@ -162,8 +162,9 @@ type BootResult = anyhow::Result<(Client, serde_json::Value, RequestStream)>;
 ///
 /// While the future is in flight, the closure returns `{status="pending"}`.
 /// Once the future completes, the next call registers the client and returns
-/// `{status="ready", client_id, session_id?, kernel_info, stream}` (the
-/// `jet.start.response` table). After that, the closure returns `nil`.
+/// `{status="ready", value={client_id, session_id?, kernel_info, stream}}`
+/// (the `value` is the `jet.start.response` table). After that, the closure
+/// returns `{status="done"}`.
 ///
 /// If the boot future itself fails, the call that observes the failure
 /// raises a Lua error.
@@ -176,13 +177,15 @@ fn make_lifecycle_poll(
     lua.create_function(move |lua, ()| {
         let mut borrow = state.borrow_mut();
         let Some((rx, store_entry)) = borrow.as_mut() else {
-            return Ok(LuaValue::Nil);
+            let t = lua.create_table()?;
+            t.set("status", "done")?;
+            return Ok(t);
         };
         match rx.try_recv() {
             Err(oneshot::error::TryRecvError::Empty) => {
                 let t = lua.create_table()?;
                 t.set("status", "pending")?;
-                Ok(LuaValue::Table(t))
+                Ok(t)
             }
             Err(oneshot::error::TryRecvError::Closed) => {
                 *borrow = None;
@@ -209,9 +212,11 @@ fn make_lifecycle_poll(
                 if let (Some(pid), Some(s)) = (client.child_pid(), store_entry.as_mut()) {
                     s.set_kernel_pid(pid);
                 }
-                let t = register(lua, client, info, boot_stream)?;
+                let value = register(lua, client, info, boot_stream)?;
+                let t = lua.create_table()?;
                 t.set("status", "ready")?;
-                Ok(LuaValue::Table(t))
+                t.set("value", value)?;
+                Ok(t)
             }
         }
     })
@@ -268,8 +273,8 @@ type ShutdownOutcome = Result<(), String>;
 /// tracked session, regardless of which process owns the live in-memory client.
 ///
 /// Non-blocking: returns a poll closure that the caller drives (e.g. via
-/// `vim.schedule`) until it yields `{status="ready", success=bool,
-/// failure_msg=string?}`. Subsequent calls return `nil`. Shutdown failures
+/// `vim.schedule`) until it yields `{status="ready", value={success=bool,
+/// failure_msg=string?}}`. Subsequent calls return `{status="done"}`. Shutdown failures
 /// mid-flight raise a Lua error on the observing call; "no such session"
 /// comes back as `{success=false, failure_msg=...}`.
 pub fn shutdown_kernel(lua: &Lua, session_id: String) -> LuaResult<LuaFunction> {
@@ -343,13 +348,15 @@ fn make_shutdown_poll(
     lua.create_function(move |lua, ()| {
         let mut borrow = state.borrow_mut();
         let Some(rx) = borrow.as_mut() else {
-            return Ok(LuaValue::Nil);
+            let t = lua.create_table()?;
+            t.set("status", "done")?;
+            return Ok(t);
         };
         match rx.try_recv() {
             Err(oneshot::error::TryRecvError::Empty) => {
                 let t = lua.create_table()?;
                 t.set("status", "pending")?;
-                Ok(LuaValue::Table(t))
+                Ok(t)
             }
             Err(oneshot::error::TryRecvError::Closed) => {
                 *borrow = None;
@@ -360,18 +367,20 @@ fn make_shutdown_poll(
             Ok(result) => {
                 *borrow = None;
                 let outcome = result.into_lua_err()?;
-                let t = lua.create_table()?;
-                t.set("status", "ready")?;
+                let value = lua.create_table()?;
                 match outcome {
                     Ok(()) => {
-                        t.set("success", true)?;
+                        value.set("success", true)?;
                     }
                     Err(msg) => {
-                        t.set("success", false)?;
-                        t.set("failure_msg", msg)?;
+                        value.set("success", false)?;
+                        value.set("failure_msg", msg)?;
                     }
                 }
-                Ok(LuaValue::Table(t))
+                let t = lua.create_table()?;
+                t.set("status", "ready")?;
+                t.set("value", value)?;
+                Ok(t)
             }
         }
     })
@@ -403,8 +412,8 @@ pub fn list_connections(lua: &Lua, (): ()) -> LuaResult<LuaTable> {
 
 /// `jet.list_sessions({ status?, all_dirs? }) -> poll` — Jet sessions on disk (the
 /// SessionStore). Returns a poll closure the caller drives (e.g. via `vim.schedule`)
-/// until it yields `{status="ready", sessions=<jet.session_info[]>}`; subsequent calls
-/// return `nil`. While the background listing runs it returns `{status="pending"}`.
+/// until it yields `{status="ready", value=<jet.session_info[]>}`; subsequent calls
+/// return `{status="done"}`. While the background listing runs it returns `{status="pending"}`.
 ///
 /// Returns every `session.json` jet has written, regardless of which process owns the live
 /// client (or whether one is open at all). Each entry exposes the full `SessionMeta`.
@@ -451,13 +460,15 @@ fn make_list_sessions_poll(
     lua.create_function(move |lua, ()| {
         let mut borrow = state.borrow_mut();
         let Some(rx) = borrow.as_mut() else {
-            return Ok(LuaValue::Nil);
+            let t = lua.create_table()?;
+            t.set("status", "done")?;
+            return Ok(t);
         };
         match rx.try_recv() {
             Err(oneshot::error::TryRecvError::Empty) => {
                 let t = lua.create_table()?;
                 t.set("status", "pending")?;
-                Ok(LuaValue::Table(t))
+                Ok(t)
             }
             Err(oneshot::error::TryRecvError::Closed) => {
                 *borrow = None;
@@ -474,8 +485,8 @@ fn make_list_sessions_poll(
                 }
                 let t = lua.create_table()?;
                 t.set("status", "ready")?;
-                t.set("sessions", list)?;
-                Ok(LuaValue::Table(t))
+                t.set("value", list)?;
+                Ok(t)
             }
         }
     })

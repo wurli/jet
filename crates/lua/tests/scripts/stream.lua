@@ -14,20 +14,14 @@ local ark = utils.start_kernel("ark")
 ipython:execute("print('this is ipython')", 20)
 ark:execute("print('this is ark')", 20)
 
-for res in ipython:stream(5, "break") do
-	local msg = res.msg
-	if msg then
-		if msg.header.msg_type == "stream" then
-			assert(not msg.content.text:find("this is ark"), "ipython stream should not contain ark output")
-		end
+for msg in ipython:stream(5, "break") do
+	if msg.header.msg_type == "stream" then
+		assert(not msg.content.text:find("this is ark"), "ipython stream should not contain ark output")
 	end
 end
 
-for res in ark:stream(1, "break") do
-	local msg = res.msg
-	if msg then
-		if msg.header.msg_type == "stream" then
-			assert(not msg.content.text:find("this is ipython"), "ark stream should not contain ipython output")
-		end
+for msg in ark:stream(1, "break") do
+	if msg.header.msg_type == "stream" then
+		assert(not msg.content.text:find("this is ipython"), "ark stream should not contain ipython output")
 	end
 end

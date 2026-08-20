@@ -1,11 +1,11 @@
 //! Builds the Lua-callable `poll()` closure each request returns.
 //!
-//! Three-state response, expressed as Lua values:
-//! - `{status="busy", channel=<channel>, type=<msg_type>, data=<content>}`
-//!   when a frame is ready (`channel` is one of `"shell"`, `"iopub"`,
-//!   `"stdin"`, `"control"`)
+//! Three-state response, expressed as a Lua table:
+//! - `{status="ready", value=<msg>}` when a frame is ready. The `value`
+//!   table is the serialized `JupyterMessage` with an added `channel`
+//!   field (one of `"shell"`, `"iopub"`, `"stdin"`, `"control"`).
 //! - `{status="pending"}` when nothing has arrived yet
-//! - `nil` once the kernel has gone idle for this request
+//! - `{status="done"}` once the kernel has gone idle for this request
 
 use crate::to_lua_value;
 use jet_core::client::{RequestStream, TryRecv};
@@ -20,8 +20,11 @@ pub fn make_poll(lua: &Lua, stream: RequestStream) -> LuaResult<LuaFunction> {
     lua.create_function(move |lua, ()| {
         let mut borrow = cell.borrow_mut();
         let Some(stream) = borrow.as_mut() else {
-            return Ok(LuaValue::Nil);
+            let t = lua.create_table()?;
+            t.set("status", "done")?;
+            return Ok(t);
         };
+        let t = lua.create_table()?;
         match stream.try_recv() {
             TryRecv::Frame(f) => {
                 let msg = to_lua_value(lua, &f.message)?
@@ -29,20 +32,17 @@ pub fn make_poll(lua: &Lua, stream: RequestStream) -> LuaResult<LuaFunction> {
                     .cloned()
                     .expect("JupyterMessage serializes to a table");
                 msg.set("channel", lua.to_value(&f.channel)?)?;
-                let t = lua.create_table()?;
-                t.set("status", "busy")?;
-                t.set("msg", msg)?;
-                Ok(LuaValue::Table(t))
+                t.set("status", "ready")?;
+                t.set("value", msg)?;
             }
             TryRecv::Empty => {
-                let t = lua.create_table()?;
                 t.set("status", "pending")?;
-                Ok(LuaValue::Table(t))
             }
             TryRecv::Done => {
                 *borrow = None;
-                Ok(LuaValue::Nil)
+                t.set("status", "done")?;
             }
         }
+        Ok(t)
     })
 }

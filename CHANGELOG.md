@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.0.7
+
+Lua
+* Lua functions which send jupyter messages to the kernel now immediately
+  return the generated message id, along with any callbacks etc. This can be
+  helpful if you want to detect whether messages received from the kernel are
+  related to any that you previously sent, i.e. via the parent header.
+* Kernel callbacks now uniformly return a value with the shape
+  `{ status = "pending" | "done" } | { status = "ready", value = ... }`
+* Type stubs overhauled to be slightly more principled
+
+CLI
+* Added cursed heuristics to determine which error information to use from
+  Jupyter `ename`, `evalue` and `traceback`. This seems to handle both IPython
+  and ark with `--session-mode notebook` or `--session-mode console`. Highly
+  possible (probable?) other kernels will not fit the pattern though, in which
+  case will need to revisit.
+
+  Until now Jet has followed the JupyterLab behaviour of omitting both the
+  `ename` and `evalue` if the `traceback` is present. This change breaks from
+  JupyterLab behaviour for the following case:
+
+  ``` json
+  {
+      "ename": "",
+      "evalue": "Foo",
+      "traceback": "Bar"
+  }
+  ```
+
+  * JupyterLab will show only the traceback
+  * Jet will show `{evalue}\n{traceback}`
+
 ## 0.0.6
 
 Lua

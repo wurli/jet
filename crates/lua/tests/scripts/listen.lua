@@ -32,8 +32,7 @@ for _ in kernel:execute("print(1 + 1)", 3) do
 end
 
 -- Check for messages in 'global' listener ------------------------------------
-for res in kernel:stream(10) do
-	local msg = res.msg
+for msg in kernel:stream(10) do
 	---@diagnostic disable-next-line: unnecessary-assert
 	assert(
 		msg.channel == "shell" or msg.channel == "iopub" or msg.channel == "stdin" or msg.channel == "control",
@@ -52,8 +51,7 @@ end
 
 -- Check for messages in filtered listener ------------------------------------
 local filtered_count = 0
-for res in iopub_streams() do
-	local msg = res.msg
+for msg in iopub_streams() do
 	filtered_count = filtered_count + 1
 	assert(msg.channel == "iopub", "filter violated channel constraint: " .. tostring(msg.channel))
 	assert(msg.header.msg_type == "stream", "filter violated type constraint: " .. tostring(msg.header.msg_type))
