@@ -19,12 +19,11 @@ local kernel = utils.start_kernel("python3")
 -- Simple addition ------------------------------------------------------------
 local ok1 = false
 for msg in kernel:execute("print(1 + 1)", 20) do
-	ok1 = msg.status == "busy"
-		and msg.msg.header
-		and msg.msg.header.msg_type == "stream"
-		and msg.msg.content
-		and msg.msg.content.text
-		and msg.msg.content.text:find("2")
+	ok1 = msg.header
+		and msg.header.msg_type == "stream"
+		and msg.content
+		and msg.content.text
+		and msg.content.text:find("2")
 	if ok1 then
 		break
 	end
@@ -34,11 +33,10 @@ assert(ok1, "expected '2' in stream output")
 -- Error message --------------------------------------------------------------
 local ok2 = nil
 for msg in kernel:execute("raise ValueError('bananas')", 20) do
-	ok2 = msg.status == "busy"
-		and msg.msg.header.msg_type == "error"
-		and msg.msg.content
-		and msg.msg.content.traceback
-		and table.concat(msg.msg.content.traceback):find("bananas")
+	ok2 = msg.header.msg_type == "error"
+		and msg.content
+		and msg.content.traceback
+		and table.concat(msg.content.traceback):find("bananas")
 	if ok2 then
 		break
 	end

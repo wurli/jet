@@ -40,7 +40,8 @@ M.print = function(obj, level)
 end
 
 -- Wrap a poll closure as a stateful iterator: skips "pending" frames,
--- returns each "busy" frame, ends when the kernel goes idle (poll → nil).
+-- returns each "ready" frame's value, ends when the kernel goes idle
+-- (poll → status="done").
 --
 -- Per-request streams (execute/comm) terminate naturally on idle, so
 -- iterating to exhaustion in a `for` loop is fine. Long-lived streams
@@ -48,7 +49,7 @@ end
 -- shutdown — consumers of those must `break` out themselves once they've
 -- seen enough.
 ---@generic T
----@param cb fun(): T
+---@param cb jet.callback<T>
 ---@param timeout_seconds integer?
 ---@return fun(): T?
 local function iter(cb, timeout_seconds, on_timeout)
@@ -66,11 +67,11 @@ local function iter(cb, timeout_seconds, on_timeout)
 				end
 			end
 			local res = cb()
-			if not res then
+			if res.status == "done" then
 				return nil
 			end
-			if res.status ~= "pending" then
-				return res
+			if res.status == "ready" then
+				return res.value
 			end
 		end
 	end
@@ -81,9 +82,9 @@ end
 local await = function(poll)
 	while true do
 		local res = poll()
-		assert(res ~= nil, "kernel boot poll ended before ready")
+		assert(res.status ~= "done", "kernel boot poll ended before ready")
 		if res.status == "ready" then
-			return res
+			return res.value
 		end
 	end
 end
@@ -201,7 +202,7 @@ M.start_kernel = function(spec_name)
 end
 
 M.list_sessions = function()
-	return await(M.jet.list_sessions()).sessions
+	return await(M.jet.list_sessions())
 end
 
 return M

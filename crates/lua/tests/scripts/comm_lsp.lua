@@ -23,8 +23,7 @@ lsp_comm_msgs()
 
 -- Check open comms -----------------------------------------------------------
 local found_lsp = false
-for res in kernel:comm_info("lsp", 20) do
-	local msg = res.msg
+for msg in kernel:comm_info("lsp", 20) do
 	if msg.header.msg_type == "comm_info_reply" and msg.content and msg.content.comms then
 		for _, info in pairs(msg.content.comms) do
 			if info.target_name == "lsp" then
@@ -48,8 +47,8 @@ local ui_comm_notifications = kernel:comm_listen(ui_comm_id, 20)
 local msg1 = ui_comm_notifications()
 local msg2 = ui_comm_notifications()
 
-local method1 = msg1 and msg1.msg and msg1.msg.content and msg1.msg.content.data and msg1.msg.content.data.method
-local method2 = msg2 and msg2.msg and msg2.msg.content and msg2.msg.content.data and msg2.msg.content.data.method
+local method1 = msg1 and msg1.content and msg1.content.data and msg1.content.data.method
+local method2 = msg2 and msg2.content and msg2.content.data and msg2.content.data.method
 
 if method1 == method2 then
 	error(

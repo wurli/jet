@@ -83,38 +83,24 @@
 ---@field metadata table
 ---@field content table
 
----@alias jet.kernel.response { status: "pending" } | { status: "busy", msg: jet.jupyter.msg }
-
 ---@class jet.listen.opts
 ---@field channel? jet.channel | jet.channel[]
 ---@field msg_type? jet.msg_type | jet.msg_type[]
 
+---@alias jet.callback<T> fun(): { status: "pending" | "done" } | { status: "ready", value: T }
+
 ---@class jet.init.response
----@field status "ready" | "pending"
 ---@field session_id? string
 ---@field client_id string
 ---@field kernel_info jet.kernel.info
 ---@field lsp_port integer
----@field stream fun(): jet.kernel.response?
-
----@alias jet.init.callback fun(): jet.init.response?
+---@field stream jet.callback<jet.jupyter.msg>
 
 ---@class jet.stop.response
----@field status "ready" | "pending"
 ---@field success boolean
 ---@field failure_msg string?
 
----@alias jet.stop.callback fun(): jet.stop.response?
-
----@class jet.list_sessions.response
----@field status "ready" | "pending"
----@field sessions jet.session_info[]
-
----@alias jet.list_sessions.callback fun(): jet.list_sessions.response?
-
----@alias jet.kernel.callback fun(): jet.kernel.response?
-
----@class jet.session_info
+---@class jet.SessionInfo
 ---@field session_id string
 ---@field closed_at string?
 ---@field connection_file string
@@ -126,28 +112,28 @@
 ---@field status "open" | "closed"
 ---@field working_dir string
 
----@class jet.engine
----@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.init.callback, jet.session_info?
----@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.init.callback, jet.session_info?
----@field stop fun(session_id: string): jet.stop.callback
+---@class jet.Engine
+---@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.callback<jet.init.response>, jet.SessionInfo?
+---@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.callback<jet.init.response>, jet.SessionInfo?
+---@field stop fun(session_id: string): jet.callback<jet.stop.response>
 ---@field interrupt fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }[]
----@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.list_sessions.callback
+---@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.callback<jet.SessionInfo[]>
 ---@field list_kernels fun(): { path: string, spec: jet.kernel.spec }[]
 ---@field show_spec fun(path: string): jet.kernel.spec
----@field show_session fun(session_id: string): { session: jet.session_info, spec: jet.kernel.spec }
----@field execute_code fun(client_id: string, code: string, silent: boolean, allow_stdin: boolean, user_expressions: table?): jet.kernel.callback, string
----@field is_complete fun(client_id: string, code: string): jet.kernel.callback, string
----@field get_completions fun(client_id: string, code: string): jet.kernel.callback, string
----@field comm_open fun(client_id: string, target_name: string, data: table): jet.kernel.callback, string, string
----@field comm_send fun(client_id: string, comm_id: string, data: table): jet.kernel.callback, string
----@field comm_info fun(client_id: string, target_name: string?): jet.kernel.callback, string
----@field comm_listen fun(client_id: string, comm_id: string): jet.kernel.callback
----@field listen fun(client_id: string, opts?: jet.listen.opts): jet.kernel.callback
+---@field show_session fun(session_id: string): { session: jet.SessionInfo, spec: jet.kernel.spec }
+---@field execute_code fun(client_id: string, code: string, silent: boolean, allow_stdin: boolean, user_expressions: table?): jet.callback<jet.jupyter.msg>, string
+---@field is_complete fun(client_id: string, code: string): jet.callback<jet.jupyter.msg>, string
+---@field get_completions fun(client_id: string, code: string): jet.callback<jet.jupyter.msg>, string
+---@field comm_open fun(client_id: string, target_name: string, data: table): jet.callback<jet.jupyter.msg>, string, string
+---@field comm_send fun(client_id: string, comm_id: string, data: table): jet.callback<jet.jupyter.msg>, string
+---@field comm_info fun(client_id: string, target_name: string?): jet.callback<jet.jupyter.msg>, string
+---@field comm_listen fun(client_id: string, comm_id: string): jet.callback<jet.jupyter.msg>
+---@field listen fun(client_id: string, opts?: jet.listen.opts): jet.callback<jet.jupyter.msg>
 ---@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string): string
 ---@field make_session_id fun(lang: string): string
 ---@field version fun(): string -- Get the current version of Jet
 
----@type jet.engine
+---@type jet.Engine
 local M = {}
 return M

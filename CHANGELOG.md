@@ -7,6 +7,8 @@ Lua
   return the generated message id, along with any callbacks etc. This can be
   helpful if you want to detect whether messages received from the kernel are
   related to any that you previously sent, i.e. via the parent header.
+* Kernel callbacks now uniformly return a value with the shape
+  `{ status = "pending" | "done" } | { status = "ready", value = ... }`
 
 CLI
 * Added cursed heuristics to determine which error information to use from
