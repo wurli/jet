@@ -1,5 +1,10 @@
 # Changelog
 
+## Development
+
+Lua
+* Fix(emmylua): typo `juypyter.KernelInfo` -> `jupyter.KernelInfo`
+
 ## 0.0.7
 
 Lua
