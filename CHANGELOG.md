@@ -3,6 +3,13 @@
 ## Development
 
 Lua
+* Added Lua coverage for the full set of frontend Jupyter messages. New
+  functions:
+  * `jet.inspect()`,
+  * `jet.history()` (with `range` / `tail` / `search` modes),
+  * `jet.kernel_info()`,
+  * `jet.comm_close()`,
+  * `jet.debug()` (sent on the control channel).
 * Fix(emmylua): typo `juypyter.KernelInfo` -> `jupyter.KernelInfo`
 
 ## 0.0.7
