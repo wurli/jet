@@ -617,6 +617,23 @@ impl Client {
         })
     }
 
+    /// Same as [`Client::request`] but sends on the control channel.
+    /// Used for `debug_request` and any other control-channel message
+    /// that expects a parent-id-routed reply.
+    pub fn control_request(&self, msg: JupyterMessage) -> Result<RequestStream> {
+        let msg_id = msg.header.msg_id.clone();
+        let rx = self.router.register(msg_id.clone());
+        self.control_tx
+            .send(msg)
+            .map_err(|e| anyhow!("control_tx send: {e}"))?;
+        Ok(RequestStream {
+            msg_id,
+            kind: SlotKind::Parent,
+            rx: Some(rx),
+            router: self.router.clone(),
+        })
+    }
+
     /// A cheap clonable handle that can issue `complete_request`s without
     /// holding `&Client`. Used by the rustyline completer, which runs on
     /// the blocking thread pool and can't borrow the REPL-owned `Client`.

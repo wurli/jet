@@ -119,3 +119,28 @@ fn stop_smoke() {
 fn stream_smoke() {
     run_lua_test("stream.lua");
 }
+
+#[test]
+fn inspect_smoke() {
+    run_lua_test("inspect.lua");
+}
+
+#[test]
+fn history_smoke() {
+    run_lua_test("history.lua");
+}
+
+#[test]
+fn kernel_info_smoke() {
+    run_lua_test("kernel_info.lua");
+}
+
+#[test]
+fn comm_close_smoke() {
+    run_lua_test("comm_close.lua");
+}
+
+#[test]
+fn debug_smoke() {
+    run_lua_test("debug.lua");
+}

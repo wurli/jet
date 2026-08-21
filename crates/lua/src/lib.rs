@@ -31,8 +31,8 @@ use api::lifecycle::{
     show_session, show_spec, shutdown_kernel, start,
 };
 use api::request::{
-    comm_info, comm_listen, comm_open, comm_send, execute_code, get_completions, is_complete,
-    listen,
+    comm_close, comm_info, comm_listen, comm_open, comm_send, debug, execute_code,
+    get_completions, history, inspect, is_complete, kernel_info, listen,
 };
 use api::stdin::provide_stdin;
 
@@ -79,8 +79,13 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("get_completions", lua.create_function(get_completions)?)?;
     exports.set("comm_open", lua.create_function(comm_open)?)?;
     exports.set("comm_send", lua.create_function(comm_send)?)?;
+    exports.set("comm_close", lua.create_function(comm_close)?)?;
     exports.set("comm_info", lua.create_function(comm_info)?)?;
     exports.set("comm_listen", lua.create_function(comm_listen)?)?;
+    exports.set("inspect", lua.create_function(inspect)?)?;
+    exports.set("history", lua.create_function(history)?)?;
+    exports.set("kernel_info", lua.create_function(kernel_info)?)?;
+    exports.set("debug", lua.create_function(debug)?)?;
     exports.set("listen", lua.create_function(listen)?)?;
     exports.set("provide_stdin", lua.create_function(provide_stdin)?)?;
     exports.set("version", lua.create_function(version)?)?;
