@@ -89,6 +89,32 @@ local await = function(poll)
 	end
 end
 
+-- Drain a poll callback until the first frame with the given `msg_type`
+-- arrives, then return it. Errors on timeout or if the stream ends first.
+---@param cb jet.callback<jupyter.Msg>
+---@param msg_type jupyter.msg_type
+---@param timeout_seconds integer
+---@return jupyter.Msg
+M.await_msg_type = function(cb, msg_type, timeout_seconds)
+	for msg in iter(cb, timeout_seconds) do
+		if msg.header and msg.header.msg_type == msg_type then
+			return msg
+		end
+	end
+	error(string.format("stream ended before receiving a %q frame", msg_type))
+end
+
+-- Drain a poll callback to completion, ignoring every frame it yields.
+-- Errors on timeout. Useful when the caller only needs to know the request
+-- terminated cleanly (e.g. `comm_close`, whose reply is optional).
+---@param cb jet.callback<any>
+---@param timeout_seconds integer
+M.drain = function(cb, timeout_seconds)
+	---@diagnostic disable-next-line: empty-block
+	for _ in iter(cb, timeout_seconds) do
+	end
+end
+
 local get_jet = function()
 	-- Try jet.core.engine for convenience when testing in Neovim
 	local lib_ok, jet = pcall(require, "jet.core.engine")

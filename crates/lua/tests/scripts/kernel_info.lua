@@ -13,27 +13,12 @@ local utils = require("utils")
 local kernel = utils.start_kernel("python3")
 
 local cb, _msg_id = utils.jet.kernel_info(kernel.client_id)
+local reply = utils.await_msg_type(cb, "kernel_info_reply", 20)
 
-local saw_reply = false
-local start_time = os.clock()
-while true do
-	assert(os.clock() - start_time < 20, "kernel_info timed out")
-	local res = cb()
-	if res.status == "done" then
-		break
-	end
-	if res.status == "ready" then
-		local msg = res.value
-		if msg.header and msg.header.msg_type == "kernel_info_reply" then
-			saw_reply = true
-			assert(msg.channel == "shell", "expected kernel_info_reply on shell, got " .. tostring(msg.channel))
-			assert(
-				msg.content and msg.content.language_info and msg.content.language_info.name == "python",
-				"expected language_info.name == 'python'"
-			)
-		end
-	end
-end
-assert(saw_reply, "never received a kernel_info_reply")
+assert(reply.channel == "shell", "expected kernel_info_reply on shell, got " .. tostring(reply.channel))
+assert(
+	reply.content and reply.content.language_info and reply.content.language_info.name == "python",
+	"expected language_info.name == 'python'"
+)
 
 kernel:stop()

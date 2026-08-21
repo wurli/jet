@@ -15,38 +15,66 @@ use serde_json::Value;
 use crate::poll::make_poll;
 use jet_core::manager::{ClientHandle, ClientRegistry, runtime};
 
+/// Which kernel channel a request should go out on. Selects between
+/// [`Client::request`] and [`Client::control_request`].
+#[derive(Clone, Copy)]
+enum RequestChannel {
+    Shell,
+    Control,
+}
+
 /// Common path: hand a message to the kernel session and wrap the
 /// resulting [`RequestStream`] in a Lua poll closure. Returns the
 /// message header id alongside the poll so Lua callers can correlate
 /// the request with routed frames.
-fn shell_request(
+fn send_request(
     lua: &Lua,
     handle: &ClientHandle,
+    channel: RequestChannel,
     msg: JupyterMessage,
 ) -> LuaResult<(LuaFunction, String)> {
     let session = handle.clone();
     let stream = runtime()
-        .block_on(async move { session.lock().await.request(msg) })
+        .block_on(async move {
+            let client = session.lock().await;
+            match channel {
+                RequestChannel::Shell => client.request(msg),
+                RequestChannel::Control => client.control_request(msg),
+            }
+        })
         .into_lua_err()?;
     let msg_id = stream.msg_id.clone();
     let poll = make_poll(lua, stream)?;
     Ok((poll, msg_id))
 }
 
-/// Control-channel sibling of [`shell_request`]. Used for messages the
-/// Jupyter protocol routes over control (debug_request, ...).
+fn shell_request(
+    lua: &Lua,
+    handle: &ClientHandle,
+    msg: JupyterMessage,
+) -> LuaResult<(LuaFunction, String)> {
+    send_request(lua, handle, RequestChannel::Shell, msg)
+}
+
 fn control_request(
     lua: &Lua,
     handle: &ClientHandle,
     msg: JupyterMessage,
 ) -> LuaResult<(LuaFunction, String)> {
-    let session = handle.clone();
-    let stream = runtime()
-        .block_on(async move { session.lock().await.control_request(msg) })
-        .into_lua_err()?;
-    let msg_id = stream.msg_id.clone();
-    let poll = make_poll(lua, stream)?;
-    Ok((poll, msg_id))
+    send_request(lua, handle, RequestChannel::Control, msg)
+}
+
+/// Coerce a Lua value into a `serde_json::Map` suitable for the `data`
+/// field of comm messages. Anything that doesn't deserialize to a JSON
+/// object (nil, numbers, mismatched types) becomes an empty map.
+fn lua_value_to_json_map(
+    lua: &Lua,
+    data: LuaValue,
+) -> LuaResult<serde_json::Map<String, Value>> {
+    Ok(match lua.from_value::<Value>(data)? {
+        Value::Object(m) => m,
+        _ => Default::default(),
+    })
 }
 
 pub fn execute_code(
@@ -117,11 +145,7 @@ pub fn comm_open(
     (session_id, target_name, data): (String, String, LuaValue),
 ) -> LuaResult<(LuaFunction, String, String)> {
     let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
-    let data_json: Value = lua.from_value(data)?;
-    let data_map = match data_json {
-        Value::Object(m) => m,
-        _ => Default::default(),
-    };
+    let data_map = lua_value_to_json_map(lua, data)?;
     let comm_id = format!("{:032x}", rand::thread_rng().r#gen::<u128>());
     let req: JupyterMessage = CommOpen {
         comm_id: comm_id.clone().into(),
@@ -205,11 +229,7 @@ pub fn comm_send(
     (session_id, comm_id, data): (String, String, LuaValue),
 ) -> LuaResult<(LuaFunction, String)> {
     let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
-    let data_json: Value = lua.from_value(data)?;
-    let data_map = match data_json {
-        Value::Object(m) => m,
-        _ => Default::default(),
-    };
+    let data_map = lua_value_to_json_map(lua, data)?;
     let req: JupyterMessage = CommMsg {
         comm_id: comm_id.into(),
         data: data_map,
@@ -224,10 +244,7 @@ pub fn comm_close(
 ) -> LuaResult<(LuaFunction, String)> {
     let handle = ClientRegistry::global().require(&session_id).into_lua_err()?;
     let data_map = match data {
-        Some(v) => match lua.from_value::<Value>(v)? {
-            Value::Object(m) => m,
-            _ => Default::default(),
-        },
+        Some(v) => lua_value_to_json_map(lua, v)?,
         None => Default::default(),
     };
     let req: JupyterMessage = CommClose {

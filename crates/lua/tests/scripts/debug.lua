@@ -34,26 +34,11 @@ local cb, _msg_id = utils.jet.debug(kernel.client_id, {
 		locale = "en",
 	},
 })
+local reply = utils.await_msg_type(cb, "debug_reply", 20)
 
-local saw_reply = false
-local start_time = os.clock()
-while true do
-	assert(os.clock() - start_time < 20, "debug_request timed out")
-	local res = cb()
-	if res.status == "done" then
-		break
-	end
-	if res.status == "ready" then
-		local msg = res.value
-		if msg.header and msg.header.msg_type == "debug_reply" then
-			saw_reply = true
-			assert(
-				msg.channel == "control",
-				"expected debug_reply on control channel, got " .. tostring(msg.channel)
-			)
-		end
-	end
-end
-assert(saw_reply, "never received a debug_reply")
+assert(
+	reply.channel == "control",
+	"expected debug_reply on control channel, got " .. tostring(reply.channel)
+)
 
 kernel:stop()

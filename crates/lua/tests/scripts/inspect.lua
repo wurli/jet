@@ -13,28 +13,13 @@ local kernel = utils.start_kernel("python3")
 
 local code = "print"
 local cb, _msg_id = utils.jet.inspect(kernel.client_id, code, #code, 0)
+local reply = utils.await_msg_type(cb, "inspect_reply", 20)
 
-local saw_reply = false
-local start_time = os.clock()
-while true do
-	assert(os.clock() - start_time < 20, "inspect timed out")
-	local res = cb()
-	if res.status == "done" then
-		break
-	end
-	if res.status == "ready" then
-		local msg = res.value
-		if msg.header and msg.header.msg_type == "inspect_reply" then
-			saw_reply = true
-			assert(msg.channel == "shell", "expected inspect_reply on shell, got " .. tostring(msg.channel))
-			assert(
-				msg.content and msg.content.status == "ok",
-				"expected content.status == 'ok', got " .. tostring(msg.content and msg.content.status)
-			)
-			assert(msg.content.found == true, "expected content.found == true for `print`")
-		end
-	end
-end
-assert(saw_reply, "never received an inspect_reply")
+assert(reply.channel == "shell", "expected inspect_reply on shell, got " .. tostring(reply.channel))
+assert(
+	reply.content and reply.content.status == "ok",
+	"expected content.status == 'ok', got " .. tostring(reply.content and reply.content.status)
+)
+assert(reply.content.found == true, "expected content.found == true for `print`")
 
 kernel:stop()
