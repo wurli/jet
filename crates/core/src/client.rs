@@ -604,11 +604,28 @@ impl Client {
     /// frames. The stream ends when the kernel reports `status: idle`
     /// matching this request's `msg_id`.
     pub fn request(&self, msg: JupyterMessage) -> Result<RequestStream> {
+        self.request_on(&self.shell_tx, "shell_tx", msg)
+    }
+
+    /// Same as [`Client::request`] but sends on the control channel.
+    /// Used for `debug_request` and any other control-channel message
+    /// that expects a parent-id-routed reply.
+    pub fn control_request(&self, msg: JupyterMessage) -> Result<RequestStream> {
+        self.request_on(&self.control_tx, "control_tx", msg)
+    }
+
+    /// Shared body of [`Client::request`] and [`Client::control_request`]:
+    /// register a parent-id router slot, send the message on `tx`, and
+    /// return the stream the router will drive.
+    fn request_on(
+        &self,
+        tx: &UnboundedSender<JupyterMessage>,
+        tx_name: &'static str,
+        msg: JupyterMessage,
+    ) -> Result<RequestStream> {
         let msg_id = msg.header.msg_id.clone();
         let rx = self.router.register(msg_id.clone());
-        self.shell_tx
-            .send(msg)
-            .map_err(|e| anyhow!("shell_tx send: {e}"))?;
+        tx.send(msg).map_err(|e| anyhow!("{tx_name} send: {e}"))?;
         Ok(RequestStream {
             msg_id,
             kind: SlotKind::Parent,

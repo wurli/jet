@@ -87,6 +87,16 @@
 ---@field channel? jupyter.channel | jupyter.channel[]
 ---@field msg_type? jupyter.msg_type | jupyter.msg_type[]
 
+---@class Jet.history.Opts
+---@field output? boolean # Whether to include the (output) tuple. Defaults to false.
+---@field raw? boolean # Whether to return the raw or transformed input. Defaults to true.
+---@field session? integer # `range` only.
+---@field start? integer # `range` only.
+---@field stop? integer # `range` only.
+---@field n? integer # `tail` and `search` only.
+---@field pattern? string # `search` only (required).
+---@field unique? boolean # `search` only. Defaults to false.
+
 ---@alias jet.callback<Val> fun(): { status: "done" | "pending" } | { status: "ready", value: Val }
 
 ---@class Jet.start.Result
@@ -127,8 +137,13 @@
 ---@field get_completions fun(client_id: string, code: string): jet.callback<jupyter.Msg>, string
 ---@field comm_open fun(client_id: string, target_name: string, data: table): jet.callback<jupyter.Msg>, string, string
 ---@field comm_send fun(client_id: string, comm_id: string, data: table): jet.callback<jupyter.Msg>, string
+---@field comm_close fun(client_id: string, comm_id: string, data: table?): jet.callback<jupyter.Msg>, string
 ---@field comm_info fun(client_id: string, target_name: string?): jet.callback<jupyter.Msg>, string
 ---@field comm_listen fun(client_id: string, comm_id: string): jet.callback<jupyter.Msg>
+---@field inspect fun(client_id: string, code: string, cursor_pos: integer, detail_level: integer?): jet.callback<jupyter.Msg>, string
+---@field history fun(client_id: string, mode: "range" | "tail" | "search", opts: Jet.history.Opts): jet.callback<jupyter.Msg>, string
+---@field kernel_info fun(client_id: string): jet.callback<jupyter.Msg>, string
+---@field debug fun(client_id: string, content: table): jet.callback<jupyter.Msg>, string
 ---@field listen fun(client_id: string, opts?: Jet.listen.Opts): jet.callback<jupyter.Msg>
 ---@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string): string
 ---@field make_session_id fun(lang: string): string
