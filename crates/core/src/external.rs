@@ -1,10 +1,11 @@
 //! Probe unmanaged Jupyter kernels by their connection files.
 //!
-//! Enumerates connection files under `$JUPYTER_RUNTIME_DIR` (or takes an
-//! explicit path), heartbeat-probes each for liveness, and — when alive
-//! and we have no cached reply — sends a one-shot `kernel_info_request`
-//! to learn what the kernel is. Replies are cached on disk keyed by the
-//! absolute connection-file path; liveness is never cached.
+//! Enumerates connection files under the Jupyter runtime directory (or
+//! takes an explicit path), heartbeat-probes each for liveness, and —
+//! when alive and we have no cached reply — sends a one-shot
+//! `kernel_info_request` to learn what the kernel is. Replies are cached
+//! on disk keyed by the absolute connection-file path; liveness is never
+//! cached.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -49,38 +50,13 @@ pub struct ExternalKernelReport {
     pub error: Option<String>,
 }
 
-/// Directory jet searches for external connection files:
-///  1. `$JUPYTER_RUNTIME_DIR` if set
-///  2. `$XDG_RUNTIME_DIR/jupyter` if set
-///  3. `~/Library/Jupyter/runtime` on macOS, `~/.local/share/jupyter/runtime` elsewhere
-pub fn jupyter_runtime_dir() -> Result<PathBuf> {
-    if let Some(v) = std::env::var_os("JUPYTER_RUNTIME_DIR")
-        && !v.is_empty()
-    {
-        return Ok(PathBuf::from(v));
-    }
-    if let Some(v) = std::env::var_os("XDG_RUNTIME_DIR")
-        && !v.is_empty()
-    {
-        return Ok(PathBuf::from(v).join("jupyter"));
-    }
-    let home = std::env::var_os("HOME").context("$HOME not set")?;
-    #[cfg(target_os = "macos")]
-    {
-        Ok(PathBuf::from(home).join("Library/Jupyter/runtime"))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Ok(PathBuf::from(home).join(".local/share/jupyter/runtime"))
-    }
-}
-
-/// Enumerate `*.json` files under [`jupyter_runtime_dir`] that parse as
-/// Jupyter kernel connection files. Non-connection-file JSON
+/// Enumerate `*.json` files under the Jupyter runtime directory that
+/// parse as Jupyter kernel connection files. Non-connection-file JSON
 /// (e.g. `nbserver-*.json`) is silently skipped. A missing runtime dir
-/// yields an empty list.
+/// yields an empty list. See [`crate::jupyter_dirs::jupyter_runtime_dir`]
+/// for the directory resolution rules.
 pub fn discover_connection_files() -> Result<Vec<PathBuf>> {
-    let dir = jupyter_runtime_dir()?;
+    let dir = crate::jupyter_dirs::jupyter_runtime_dir()?;
     let read_dir = match std::fs::read_dir(&dir) {
         Ok(d) => d,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),

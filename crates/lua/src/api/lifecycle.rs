@@ -538,7 +538,7 @@ pub fn make_session_id(_: &Lua, lang: String) -> LuaResult<String> {
 /// `jet.list_external(connection_file?, include_closed?) -> poll`
 ///
 /// Probe unmanaged Jupyter kernels (not tracked by jet's SessionStore).
-/// Without `connection_file`, scans `$JUPYTER_RUNTIME_DIR`. When
+/// Without `connection_file`, scans the Jupyter runtime directory. When
 /// `include_closed` is true, dead kernels are included; by default only
 /// alive kernels are returned. Returns a poll closure the caller drives
 /// (e.g. via `vim.schedule`) until it yields
