@@ -535,14 +535,21 @@ pub fn make_session_id(_: &Lua, lang: String) -> LuaResult<String> {
     ))
 }
 
-/// `jet.list_external(connection_file?) -> poll`
+/// `jet.list_external(connection_file?, include_closed?) -> poll`
 ///
 /// Probe unmanaged Jupyter kernels (not tracked by jet's SessionStore).
-/// Without `connection_file`, scans `$JUPYTER_RUNTIME_DIR`. Returns a poll
-/// closure the caller drives (e.g. via `vim.schedule`) until it yields
-/// `{status="ready", value=<jet.external_report[]>}`; subsequent calls
+/// Without `connection_file`, scans `$JUPYTER_RUNTIME_DIR`. When
+/// `include_closed` is true, dead kernels are included; by default only
+/// alive kernels are returned. Returns a poll closure the caller drives
+/// (e.g. via `vim.schedule`) until it yields
+/// `{status="ready", value=<jet.ExternalKernelReport[]>}`; subsequent calls
 /// return `{status="done"}`.
-pub fn list_external(lua: &Lua, connection_file: Option<String>) -> LuaResult<LuaFunction> {
+pub fn list_external(
+    lua: &Lua,
+    (connection_file, include_closed): (Option<String>, Option<bool>),
+) -> LuaResult<LuaFunction> {
+    let include_closed = include_closed.unwrap_or(false);
+
     let (tx, rx) = oneshot::channel::<anyhow::Result<Vec<jet_core::external::ExternalKernelReport>>>();
     runtime().spawn(async move {
         let result = async {
@@ -550,7 +557,7 @@ pub fn list_external(lua: &Lua, connection_file: Option<String>) -> LuaResult<Lu
                 Some(p) => vec![PathBuf::from(p)],
                 None => jet_core::external::discover_connection_files()?,
             };
-            Ok::<_, anyhow::Error>(jet_core::external::probe_external_many(&paths).await)
+            Ok::<_, anyhow::Error>(jet_core::external::probe_external_many(&paths, include_closed).await)
         }
         .await;
         let _ = tx.send(result);

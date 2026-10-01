@@ -364,6 +364,15 @@ pub struct ListExternalArgs {
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
 
+    /// Include kernels that are not responding (dead). By default only
+    /// alive kernels are shown.
+    #[arg(long)]
+    pub include_closed: bool,
+
+    /// Emit results as a JSON array instead of the default table.
+    #[arg(long)]
+    pub json: bool,
+
     #[command(flatten)]
     pub global: GlobalArgs,
 }

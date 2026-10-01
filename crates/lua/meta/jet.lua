@@ -1,5 +1,17 @@
 ---@meta Jet
 
+---@class jupyter.ConnectionFile
+---@field ip string
+---@field transport "tcp" | "ipc"
+---@field shell_port integer
+---@field iopub_port integer
+---@field stdin_port integer
+---@field control_port integer
+---@field hb_port integer
+---@field key string
+---@field signature_scheme string
+---@field kernel_name string?
+
 ---@class jupyter.KernelSpec
 ---@field argv string[]
 ---@field display_name string
@@ -110,6 +122,13 @@
 ---@field success boolean
 ---@field failure_msg string?
 
+---@class jet.ExternalKernelInfo
+---@field connection_file_path string
+---@field alive boolean
+---@field connection_file jupyter.ConnectionFile?
+---@field kernel_info jupyter.KernelInfo?
+---@field error string?
+
 ---@class jet.SessionInfo
 ---@field session_id string
 ---@field closed_at string?
@@ -123,31 +142,32 @@
 ---@field working_dir string
 
 ---@class Jet
----@field start fun(spec_path: string, connection_file: string?, session_name: string?): jet.callback<Jet.start.Result>, jet.SessionInfo?
----@field attach fun(session_id: string?, connection_file: string?, session_name: string?): jet.callback<Jet.start.Result>, jet.SessionInfo?
----@field stop fun(session_id: string): jet.callback<Jet.stop.Result>
----@field interrupt fun(client_id: string)
+---@field start            fun(spec_path: string, connection_file: string?, session_name: string?): jet.callback<Jet.start.Result>, jet.SessionInfo?
+---@field attach           fun(session_id: string?, connection_file: string?, session_name: string?): jet.callback<Jet.start.Result>, jet.SessionInfo?
+---@field stop             fun(session_id: string): jet.callback<Jet.stop.Result>
+---@field interrupt        fun(client_id: string)
 ---@field list_connections fun(): { client_id: string, session_id: string? }[]
----@field list_sessions fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.callback<jet.SessionInfo[]>
----@field list_kernels fun(): { path: string, spec: jupyter.KernelSpec }[]
----@field show_spec fun(path: string): jupyter.KernelSpec
----@field show_session fun(session_id: string): { session: jet.SessionInfo, spec: jupyter.KernelSpec }
----@field execute_code fun(client_id: string, code: string, silent: boolean, allow_stdin: boolean, user_expressions: table?): jet.callback<jupyter.Msg>, string
----@field is_complete fun(client_id: string, code: string): jet.callback<jupyter.Msg>, string
----@field get_completions fun(client_id: string, code: string): jet.callback<jupyter.Msg>, string
----@field comm_open fun(client_id: string, target_name: string, data: table): jet.callback<jupyter.Msg>, string, string
----@field comm_send fun(client_id: string, comm_id: string, data: table): jet.callback<jupyter.Msg>, string
----@field comm_close fun(client_id: string, comm_id: string, data: table?): jet.callback<jupyter.Msg>, string
----@field comm_info fun(client_id: string, target_name: string?): jet.callback<jupyter.Msg>, string
----@field comm_listen fun(client_id: string, comm_id: string): jet.callback<jupyter.Msg>
----@field inspect fun(client_id: string, code: string, cursor_pos: integer, detail_level: integer?): jet.callback<jupyter.Msg>, string
----@field history fun(client_id: string, mode: "range" | "tail" | "search", opts: Jet.history.Opts): jet.callback<jupyter.Msg>, string
----@field kernel_info fun(client_id: string): jet.callback<jupyter.Msg>, string
----@field debug fun(client_id: string, content: table): jet.callback<jupyter.Msg>, string
----@field listen fun(client_id: string, opts?: Jet.listen.Opts): jet.callback<jupyter.Msg>
----@field provide_stdin fun(client_id: string, parent_msg_id: string, value: string): string
----@field make_session_id fun(lang: string): string
----@field version fun(): string -- Get the current version of Jet
+---@field list_sessions    fun(opts?: { status?: "open" | "closed" | "all", all_dirs?: boolean }): jet.callback<jet.SessionInfo[]>
+---@field list_kernels     fun(): { path: string, spec: jupyter.KernelSpec }[]
+---@field list_external    fun(connection_file?: string, include_closed?: boolean): jet.callback<jet.ExternalKernelInfo[]>
+---@field show_spec        fun(path: string): jupyter.KernelSpec
+---@field show_session     fun(session_id: string): { session: jet.SessionInfo, spec: jupyter.KernelSpec }
+---@field execute_code     fun(client_id: string, code: string, silent: boolean, allow_stdin: boolean, user_expressions: table?): jet.callback<jupyter.Msg>, string
+---@field is_complete      fun(client_id: string, code: string): jet.callback<jupyter.Msg>, string
+---@field get_completions  fun(client_id: string, code: string): jet.callback<jupyter.Msg>, string
+---@field comm_open        fun(client_id: string, target_name: string, data: table): jet.callback<jupyter.Msg>, string, string
+---@field comm_send        fun(client_id: string, comm_id: string, data: table): jet.callback<jupyter.Msg>, string
+---@field comm_close       fun(client_id: string, comm_id: string, data: table?): jet.callback<jupyter.Msg>, string
+---@field comm_info        fun(client_id: string, target_name: string?): jet.callback<jupyter.Msg>, string
+---@field comm_listen      fun(client_id: string, comm_id: string): jet.callback<jupyter.Msg>
+---@field inspect          fun(client_id: string, code: string, cursor_pos: integer, detail_level: integer?): jet.callback<jupyter.Msg>, string
+---@field history          fun(client_id: string, mode: "range" | "tail" | "search", opts: Jet.history.Opts): jet.callback<jupyter.Msg>, string
+---@field kernel_info      fun(client_id: string): jet.callback<jupyter.Msg>, string
+---@field debug            fun(client_id: string, content: table): jet.callback<jupyter.Msg>, string
+---@field listen           fun(client_id: string, opts?: Jet.listen.Opts): jet.callback<jupyter.Msg>
+---@field provide_stdin    fun(client_id: string, parent_msg_id: string, value: string): string
+---@field make_session_id  fun(lang: string): string
+---@field version          fun(): string -- Get the current version of Jet
 
 ---@type Jet
 local M = {}

@@ -31,12 +31,12 @@ const KERNEL_INFO_TIMEOUT: Duration = Duration::from_secs(3);
 /// Result of probing one external kernel.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExternalKernelReport {
-    pub connection_file: PathBuf,
+    pub connection_file_path: PathBuf,
     pub alive: bool,
     /// Parsed connection info. `None` when the file failed to parse
     /// (`error` is set in that case).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub connection_info: Option<ConnectionInfo>,
+    pub connection_file: Option<ConnectionInfo>,
     /// `kernel_info_reply.content` as JSON. Sourced from the cache when
     /// present (whether the kernel is alive or not); otherwise fetched
     /// fresh when alive. `None` when we have no cached reply and either
@@ -110,9 +110,9 @@ pub async fn probe_external(path: &Path) -> ExternalKernelReport {
         Ok(i) => i,
         Err(e) => {
             return ExternalKernelReport {
-                connection_file: abs,
+                connection_file_path: abs,
                 alive: false,
-                connection_info: None,
+                connection_file: None,
                 kernel_info: None,
                 error: Some(format!("{e:#}")),
             };
@@ -144,16 +144,17 @@ pub async fn probe_external(path: &Path) -> ExternalKernelReport {
     };
 
     ExternalKernelReport {
-        connection_file: abs,
+        connection_file_path: abs,
         alive,
-        connection_info: Some(info),
+        connection_file: Some(info),
         kernel_info,
         error,
     }
 }
 
 /// Probe many connection files in parallel. Output order matches input order.
-pub async fn probe_external_many(paths: &[PathBuf]) -> Vec<ExternalKernelReport> {
+/// When `include_closed` is `false`, dead kernels are dropped from the result.
+pub async fn probe_external_many(paths: &[PathBuf], include_closed: bool) -> Vec<ExternalKernelReport> {
     let mut set: JoinSet<(usize, ExternalKernelReport)> = JoinSet::new();
     for (idx, path) in paths.iter().enumerate() {
         let path = path.clone();
@@ -176,13 +177,14 @@ pub async fn probe_external_many(paths: &[PathBuf]) -> Vec<ExternalKernelReport>
         .zip(paths.iter())
         .map(|(slot, path)| {
             slot.unwrap_or_else(|| ExternalKernelReport {
-                connection_file: path.clone(),
+                connection_file_path: path.clone(),
                 alive: false,
-                connection_info: None,
+                connection_file: None,
                 kernel_info: None,
                 error: Some("probe task panicked".to_string()),
             })
         })
+        .filter(|r| include_closed || r.alive)
         .collect()
 }
 
@@ -244,7 +246,7 @@ async fn fetch_kernel_info(info: &ConnectionInfo) -> Result<Value> {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CacheEntry {
-    connection_file: PathBuf,
+    connection_file_path: PathBuf,
     kernel_info: Value,
 }
 
@@ -274,7 +276,7 @@ fn store_cached_kernel_info(abs_path: &Path, kernel_info: &Value) -> Result<()> 
         .with_context(|| format!("creating cache dir {}", dir.display()))?;
     let path = dir.join(cache_filename(abs_path));
     let entry = CacheEntry {
-        connection_file: abs_path.to_path_buf(),
+        connection_file_path: abs_path.to_path_buf(),
         kernel_info: kernel_info.clone(),
     };
     let json = serde_json::to_vec_pretty(&entry).map_err(|e| anyhow!("serialize cache: {e}"))?;
@@ -360,7 +362,7 @@ mod tests {
             .unwrap();
         let report = rt.block_on(probe_external(&path));
         assert!(!report.alive, "dead kernel should report alive=false");
-        assert!(report.connection_info.is_some());
+        assert!(report.connection_file.is_some());
         // No cache entry → dead → kernel_info stays None.
         assert!(report.kernel_info.is_none());
 
