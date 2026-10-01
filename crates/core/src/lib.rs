@@ -8,6 +8,7 @@
 pub mod client;
 pub mod connection_file;
 pub mod events;
+pub mod external;
 pub mod kernel;
 pub mod kernel_spec;
 pub mod logger;

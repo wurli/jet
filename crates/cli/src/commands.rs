@@ -7,8 +7,8 @@ use jet_core::kernel::{AttachOptions, Kernel, KernelSpec};
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
-    AttachArgs, ExecuteArgs, ListKernelsArgs, ListSessionsArgs, SendArgs, ShowArgs, StartArgs,
-    StatusFilter, StopArgs,
+    AttachArgs, ExecuteArgs, ListKernelsArgs, ListSessionsArgs, SendArgs, ShowArgs,
+    ListExternalArgs, StartArgs, StatusFilter, StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::{ReplTarget, drive_repl};
@@ -70,6 +70,16 @@ pub fn run_skill() -> Result<()> {
 pub fn run_show(args: ShowArgs) -> Result<()> {
     let view = jet_core::manager::show_session(&args.session_id)?;
     println!("{}", serde_json::to_string_pretty(&view)?);
+    Ok(())
+}
+
+pub async fn run_list_external(args: ListExternalArgs) -> Result<()> {
+    let paths = match args.connection_file {
+        Some(p) => vec![p],
+        None => jet_core::external::discover_connection_files()?,
+    };
+    let reports = jet_core::external::probe_external_many(&paths).await;
+    println!("{}", serde_json::to_string_pretty(&reports)?);
     Ok(())
 }
 

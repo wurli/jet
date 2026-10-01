@@ -9,6 +9,7 @@ pub(crate) mod registry;
 pub(crate) mod session;
 pub(crate) mod store;
 
+pub use dir::jet_data_dir;
 pub use naming::generate_session_name;
 pub use registry::{ClientHandle, ClientRegistry, ClientView, runtime};
 pub use session::{Session, SessionMeta, SessionStatus};

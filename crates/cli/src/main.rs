@@ -34,6 +34,7 @@ async fn main() -> Result<()> {
         Command::Execute(c) => commands::run_execute(c).await,
         Command::Send(c) => commands::run_send(c).await,
         Command::Show(c) => commands::run_show(c),
+        Command::ListExternal(c) => commands::run_list_external(c).await,
         Command::Skill => commands::run_skill(),
     }
 }

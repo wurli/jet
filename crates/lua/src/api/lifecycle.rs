@@ -534,3 +534,60 @@ pub fn make_session_id(_: &Lua, lang: String) -> LuaResult<String> {
         &std::env::current_dir().into_lua_err()?,
     ))
 }
+
+/// `jet.list_external(connection_file?) -> poll`
+///
+/// Probe unmanaged Jupyter kernels (not tracked by jet's SessionStore).
+/// Without `connection_file`, scans `$JUPYTER_RUNTIME_DIR`. Returns a poll
+/// closure the caller drives (e.g. via `vim.schedule`) until it yields
+/// `{status="ready", value=<jet.external_report[]>}`; subsequent calls
+/// return `{status="done"}`.
+pub fn list_external(lua: &Lua, connection_file: Option<String>) -> LuaResult<LuaFunction> {
+    let (tx, rx) = oneshot::channel::<anyhow::Result<Vec<jet_core::external::ExternalKernelReport>>>();
+    runtime().spawn(async move {
+        let result = async {
+            let paths = match connection_file {
+                Some(p) => vec![PathBuf::from(p)],
+                None => jet_core::external::discover_connection_files()?,
+            };
+            Ok::<_, anyhow::Error>(jet_core::external::probe_external_many(&paths).await)
+        }
+        .await;
+        let _ = tx.send(result);
+    });
+
+    let state = RefCell::new(Some(rx));
+    lua.create_function(move |lua, ()| {
+        let mut borrow = state.borrow_mut();
+        let Some(rx) = borrow.as_mut() else {
+            let t = lua.create_table()?;
+            t.set("status", "done")?;
+            return Ok(t);
+        };
+        match rx.try_recv() {
+            Err(oneshot::error::TryRecvError::Empty) => {
+                let t = lua.create_table()?;
+                t.set("status", "pending")?;
+                Ok(t)
+            }
+            Err(oneshot::error::TryRecvError::Closed) => {
+                *borrow = None;
+                Err(LuaError::external(anyhow::anyhow!(
+                    "list_external task aborted before completing"
+                )))
+            }
+            Ok(result) => {
+                *borrow = None;
+                let reports = result.into_lua_err()?;
+                let list = lua.create_table()?;
+                for report in reports {
+                    list.push(crate::to_lua_value(lua, &report)?)?;
+                }
+                let t = lua.create_table()?;
+                t.set("status", "ready")?;
+                t.set("value", list)?;
+                Ok(t)
+            }
+        }
+    })
+}

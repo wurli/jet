@@ -62,6 +62,12 @@ pub enum Command {
     #[command(alias = "sh")]
     Show(ShowArgs),
 
+    /// Probe Jupyter kernels not tracked by jet, either the ones discovered
+    /// under $JUPYTER_RUNTIME_DIR or a single kernel identified by
+    /// `--connection-file`. Reports liveness + kernel_info as JSON.
+    #[command()]
+    ListExternal(ListExternalArgs),
+
     /// Execute code against a running kernel and stream the result to stdout.
     /// Exits once the kernel goes idle for the request.
     #[command(alias = "e")]
@@ -89,6 +95,7 @@ impl Command {
             Command::Execute(c) => Some(&c.global),
             Command::Send(c) => Some(&c.global),
             Command::Show(c) => Some(&c.global),
+            Command::ListExternal(c) => Some(&c.global),
             Command::Skill => None,
         }
     }
@@ -345,6 +352,17 @@ pub struct SendArgs {
     /// A name used to identify the client.
     #[arg(long, env = "JET_SESSION_NAME")]
     pub session_name: Option<String>,
+
+    #[command(flatten)]
+    pub global: GlobalArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct ListExternalArgs {
+    /// Path to a Jupyter kernel connection file to probe. When set, jet
+    /// does not scan `$JUPYTER_RUNTIME_DIR`.
+    #[arg(long)]
+    pub connection_file: Option<PathBuf>,
 
     #[command(flatten)]
     pub global: GlobalArgs,

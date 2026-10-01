@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-pub(super) fn jet_data_dir() -> Result<PathBuf> {
+pub fn jet_data_dir() -> Result<PathBuf> {
     if let Some(xdg) = std::env::var_os("XDG_DATA_HOME")
         && !xdg.is_empty()
     {
