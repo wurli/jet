@@ -63,7 +63,7 @@ pub enum Command {
     Show(ShowArgs),
 
     /// Probe Jupyter kernels not tracked by jet, either the ones discovered
-    /// under $JUPYTER_RUNTIME_DIR or a single kernel identified by
+    /// under the Jupyter runtime directory or a single kernel identified by
     /// `--connection-file`. Reports liveness + kernel_info as JSON.
     #[command()]
     ListExternal(ListExternalArgs),
@@ -360,7 +360,7 @@ pub struct SendArgs {
 #[derive(Parser, Debug)]
 pub struct ListExternalArgs {
     /// Path to a Jupyter kernel connection file to probe. When set, jet
-    /// does not scan `$JUPYTER_RUNTIME_DIR`.
+    /// does not scan the Jupyter runtime directory.
     #[arg(long)]
     pub connection_file: Option<PathBuf>,
 
