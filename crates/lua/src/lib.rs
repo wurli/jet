@@ -28,7 +28,7 @@ pub(crate) fn to_lua_value<T: Serialize + ?Sized>(lua: &Lua, value: &T) -> LuaRe
 
 use api::lifecycle::{
     attach, interrupt, list_available_kernels, list_connections, list_sessions, make_session_id,
-    show_session, show_spec, shutdown_kernel, start,
+    list_external, show_session, show_spec, shutdown_kernel, start,
 };
 use api::request::{
     comm_close, comm_info, comm_listen, comm_open, comm_send, debug, execute_code,
@@ -73,6 +73,7 @@ pub fn register(lua: &Lua) -> LuaResult<LuaTable> {
     exports.set("list_kernels", lua.create_function(list_available_kernels)?)?;
     exports.set("show_spec", lua.create_function(show_spec)?)?;
     exports.set("show_session", lua.create_function(show_session)?)?;
+    exports.set("list_external", lua.create_function(list_external)?)?;
     exports.set("make_session_id", lua.create_function(make_session_id)?)?;
     exports.set("execute_code", lua.create_function(execute_code)?)?;
     exports.set("is_complete", lua.create_function(is_complete)?)?;

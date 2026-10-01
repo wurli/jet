@@ -57,6 +57,10 @@ result) using `jet execute`:
 echo 'print("HI")' | jet execute 2026-07-03_152521_r_dotfiles_bc9832 --session-name Claude
 ```
 
+Your code will be echoed to the user in the repl so make your code readable.
+Don't pack statements into a single line using `;` or similar - use real
+linebreaks.
+
 ### Starting a new persistent session
 
 Use `jet start --persist` to start a new long-lived session. Once started, you

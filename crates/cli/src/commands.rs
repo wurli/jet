@@ -7,8 +7,8 @@ use jet_core::kernel::{AttachOptions, Kernel, KernelSpec};
 use jet_core::manager::{SessionStatus, SessionStore};
 
 use crate::cli::{
-    AttachArgs, ExecuteArgs, ListKernelsArgs, ListSessionsArgs, SendArgs, ShowArgs, StartArgs,
-    StatusFilter, StopArgs,
+    AttachArgs, ExecuteArgs, ListKernelsArgs, ListSessionsArgs, SendArgs, ShowArgs,
+    ListExternalArgs, StartArgs, StatusFilter, StopArgs,
 };
 use crate::pickers::{pick_kernelspec, pick_session, pick_sessions_multi};
 use crate::repl::{ReplTarget, drive_repl};
@@ -70,6 +70,46 @@ pub fn run_skill() -> Result<()> {
 pub fn run_show(args: ShowArgs) -> Result<()> {
     let view = jet_core::manager::show_session(&args.session_id)?;
     println!("{}", serde_json::to_string_pretty(&view)?);
+    Ok(())
+}
+
+pub async fn run_list_external(args: ListExternalArgs) -> Result<()> {
+    let paths = match args.connection_file {
+        Some(p) => vec![p],
+        None => jet_core::external::discover_connection_files()?,
+    };
+    let reports = jet_core::external::probe_external_many(&paths, args.include_closed).await;
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&reports)?);
+        return Ok(());
+    }
+
+    if reports.is_empty() {
+        println!("No external kernels found.");
+        return Ok(());
+    }
+
+    let path_w = reports
+        .iter()
+        .map(|r| r.connection_file_path.display().to_string().len())
+        .max()
+        .unwrap_or(0);
+
+    for r in &reports {
+        let status = if r.alive { "alive" } else { "dead " };
+        let lang = r
+            .kernel_info
+            .as_ref()
+            .and_then(|v| v["language_info"]["name"].as_str())
+            .unwrap_or("?");
+        println!(
+            "{}  {:<path_w$}  {}",
+            status,
+            r.connection_file_path.display(),
+            lang,
+        );
+    }
     Ok(())
 }
 

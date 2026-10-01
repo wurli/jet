@@ -144,3 +144,8 @@ fn comm_close_smoke() {
 fn debug_smoke() {
     run_lua_test("debug.lua");
 }
+
+#[test]
+fn list_external_smoke() {
+    run_lua_test("list_external.lua");
+}
