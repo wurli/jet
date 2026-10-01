@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0
+
+* Jet now correctly resolves [the
+  directories](https://docs.jupyter.org/en/stable/use/jupyter-directories.html)
+  used by Jupyter if the user hasn't set any env vars
+* We're now 0.1.0, but more because this is how semver should really be used
+  than anything else.
+
 ## 0.0.9
 
 Lua
